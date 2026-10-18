@@ -23,7 +23,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
   const g = Math.max(0, Number(grams.replace(",", ".")) || 0);
   const m = Math.max(0, Number(ml.replace(",", ".")) || 0);
   const budget = Math.max(0, Number(budgetBs.replace(",", ".")) || 0);
-  const factor = Math.max(0.000001, Number(selected?.factor) || 1);
+  const factor = Math.max(0.000001, Number((mode === "unit" ? individualPresentation?.factor : selected?.factor)) || 1);
   let baseQty = 1, unitPrice = product.precioUSD, total = product.precioUSD, displayName = product.nombre;
   let selectedPresentation: ProductPresentation | undefined;
   if (mode === "presentation" && selected) {
@@ -32,6 +32,12 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     total = Number(selected.precioUSD) * Math.max(1, q);
     unitPrice = total / baseQty;
     displayName = `${product.nombre} — ${selected.nombre}`;
+  } else if (mode === "unit" && individualPresentation) {
+    selectedPresentation = individualPresentation;
+    baseQty = factor * Math.max(1, q);
+    total = Number(individualPresentation.precioUSD) * Math.max(1, q);
+    unitPrice = total / baseQty;
+    displayName = `${product.nombre} — ${individualPresentation.nombre}`;
   } else if (mode === "grams") {
     baseQty = g / 1000; total = product.precioUSD * baseQty; unitPrice = product.precioUSD;
     displayName = `${product.nombre} (${g} g)`;
@@ -51,7 +57,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
   const confirm = () => {
     if (invalid) return;
     onConfirm({
-      ...(selectedPresentation && mode === "presentation" ? { presentacion: selectedPresentation.nombre, factorPresentacion: factor } : {}),
+      ...(selectedPresentation && (mode === "presentation" || mode === "unit") ? { presentacion: selectedPresentation.nombre, factorPresentacion: factor } : {}),
       cantidad: Number(baseQty.toFixed(6)), precioUnitUSD: unitPrice, subtotalUSD: total,
       ...(mode === "grams" ? { cantidadGramos: Math.round(g) } : {}),
       ...(mode === "budget" ? { ventaLibreBS: true } : {}),
