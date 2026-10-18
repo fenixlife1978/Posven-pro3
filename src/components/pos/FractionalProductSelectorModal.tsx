@@ -45,8 +45,8 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     baseQty = product.precioUSD > 0 ? total / product.precioUSD : 0; unitPrice = product.precioUSD;
     displayName = `${product.nombre} — Bs ${budget.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
-  const invalidStock = mode === "presentation" && baseQty > stock;
-  const invalid = baseQty <= 0 || total <= 0 || ((mode === "budget") && (rate <= 0 || budget <= 0)) || invalidStock || ((mode === "grams" || mode === "kg") && baseQty > stock);
+  const invalidStock = baseQty > stock;
+  const invalid = baseQty <= 0 || total <= 0 || ((mode === "budget") && (rate <= 0 || budget <= 0)) || invalidStock;
   const confirm = () => {
     if (invalid) return;
     onConfirm({
