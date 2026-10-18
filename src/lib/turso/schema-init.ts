@@ -35,18 +35,22 @@ let initialized = false;
 let initializing: Promise<void> | null = null;
 
 async function initialize() {
-  const probe = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1" });
-  if (probe.rows.length) {
-    initialized = true;
-    return;
-  }
-
+  // Repetir los CREATE IF NOT EXISTS corrige instalaciones interrumpidas.
+  // Son idempotentes y no borran datos existentes.
   await tursoBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
 
-  const verify = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','sessions','terminales','ventas','caja') ORDER BY name" });
+  const requiredTables = [
+    'app_config', 'users', 'catalogos', 'productos', 'movimientos', 'ventas',
+    'cxc', 'cxp', 'clientes', 'proveedores', 'devoluciones', 'anulaciones',
+    'terminales', 'libro_diario', 'reportes_z', 'caja', 'compras',
+    'operaciones', 'auditoria_sistema', 'legacy_documents', 'sessions',
+    'migration_runs',
+  ];
+  const verify = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table'" });
   const names = new Set(verify.rows.map((row: any) => String(row.name)));
-  for (const required of ['users', 'sessions', 'terminales', 'ventas', 'caja']) {
-    if (!names.has(required)) throw new Error(`La inicialización de Turso no creó la tabla requerida: ${required}`);
+  const missing = requiredTables.filter(required => !names.has(required));
+  if (missing.length) {
+    throw new Error('Esquema Turso incompleto. Faltan tablas: ' + missing.join(', '));
   }
   initialized = true;
 }
