@@ -9,6 +9,185 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 
+const DEFAULT_CATEGORY_ASSOCIATIONS: Array<{ departamento: string; categoria: string }> = [
+  {
+    "departamento": "Frutas y Verduras",
+    "categoria": "Verduras y Hortalizas"
+  },
+  {
+    "departamento": "Frutas y Verduras",
+    "categoria": "Frutas Frescas"
+  },
+  {
+    "departamento": "Frutas y Verduras",
+    "categoria": "Hierbas y Aromáticas"
+  },
+  {
+    "departamento": "Frutas y Verduras",
+    "categoria": "Tubérculos y Raíces"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Carne de Res"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Aves"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Cerdo"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Embutidos y Charcutería"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Pescados y Mariscos"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Leche Líquida y Derivados"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Quesos"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Yogures y Postres"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Mantequillas y Margarinas"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Huevos"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Granos y Legumbres"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Arroz y Cereales"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Pastas"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Harinas y Mezclas"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Aceites y Grasas"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Salsas y Envasados"
+  },
+  {
+    "departamento": "Condimentos y Especias",
+    "categoria": "Condimentos Secos"
+  },
+  {
+    "departamento": "Condimentos y Especias",
+    "categoria": "Caldos y Sazonadores"
+  },
+  {
+    "departamento": "Condimentos y Especias",
+    "categoria": "Azúcar y Endulzantes"
+  },
+  {
+    "departamento": "Condimentos y Especias",
+    "categoria": "Repostería y Hornear"
+  },
+  {
+    "departamento": "Panadería y Galletas",
+    "categoria": "Pan Fresco y Empacado"
+  },
+  {
+    "departamento": "Panadería y Galletas",
+    "categoria": "Galletas Saladas"
+  },
+  {
+    "departamento": "Panadería y Galletas",
+    "categoria": "Galletas Dulces y Ponqués"
+  },
+  {
+    "departamento": "Bebidas",
+    "categoria": "Bebidas No Alcohólicas"
+  },
+  {
+    "departamento": "Bebidas",
+    "categoria": "Café y Té"
+  },
+  {
+    "departamento": "Bebidas",
+    "categoria": "Cervezas y Maltas"
+  },
+  {
+    "departamento": "Bebidas",
+    "categoria": "Licores y Vinos"
+  },
+  {
+    "departamento": "Snacks y Golosinas",
+    "categoria": "Snacks Salados"
+  },
+  {
+    "departamento": "Snacks y Golosinas",
+    "categoria": "Chocolates y Confitería"
+  },
+  {
+    "departamento": "Cuidado del Hogar y Limpieza",
+    "categoria": "Detergentes y Lavado"
+  },
+  {
+    "departamento": "Cuidado del Hogar y Limpieza",
+    "categoria": "Limpieza de Superficies"
+  },
+  {
+    "departamento": "Cuidado del Hogar y Limpieza",
+    "categoria": "Lavaplatos y Cocina"
+  },
+  {
+    "departamento": "Cuidado del Hogar y Limpieza",
+    "categoria": "Utensilios y Desechables"
+  },
+  {
+    "departamento": "Cuidado Personal e Higiene",
+    "categoria": "Higiene Corporal"
+  },
+  {
+    "departamento": "Cuidado Personal e Higiene",
+    "categoria": "Higiene Oral"
+  },
+  {
+    "departamento": "Cuidado Personal e Higiene",
+    "categoria": "Papel e Higiene Femenina"
+  },
+  {
+    "departamento": "Cuidado Personal e Higiene",
+    "categoria": "Cuidado del Bebé"
+  }
+];
+
+function categoriesForDepartment(departamento: string, associations?: Array<{ departamento: string; categoria: string }>): string[] {
+  const source = Array.isArray(associations) && associations.length ? associations : DEFAULT_CATEGORY_ASSOCIATIONS;
+  return [...new Set(source.filter(item => String(item.departamento).trim() === String(departamento).trim()).map(item => String(item.categoria).trim()).filter(Boolean))];
+}
+
+function skuToken(value: string): string {
+  const words = String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().match(/[A-Z0-9]+/g) || [];
+  const significant = words.filter(word => !['Y', 'E', 'DE', 'DEL', 'LA', 'LAS', 'EL', 'LOS'].includes(word));
+  if (!significant.length) return 'GEN';
+  return (significant.length === 1 ? significant[0].slice(0, 3) : significant.map(word => word.slice(0, 3)).join('').slice(0, 6)) || 'GEN';
+}
+
 interface ProductFormModalProps {
   producto?: Product;
   state: AppState;
@@ -22,8 +201,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
   const [datos, setDatos] = useState<any>({
     codigo: producto?.codigo || '',
     nombre: producto?.nombre || '',
-    categoria: producto?.categoria || state.categorias[0] || '',
     departamento: producto?.departamento || state.departamentos[0] || '',
+    categoria: producto?.categoria || categoriesForDepartment(producto?.departamento || state.departamentos[0] || '', state.categoriasPorDepartamento)[0] || '',
     marca: producto?.marca || state.marcas[0] || '',
     costoUSD: producto?.costoUSD?.toString() ?? '0',
     margen: producto?.margen?.toString() ?? '0',
@@ -77,13 +256,19 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
   };
 
 
-  const generarSkuGeneral = () => {
-    const prefijo = String(datos.categoria || datos.departamento || 'PROD').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'PROD';
-    let n = state.productos.filter(p => p.codigo.toUpperCase().startsWith('SKU-' + prefijo + '-')).length + 1;
+  const generarSkuGeneral = (departamento = datos.departamento, categoria = datos.categoria) => {
+    const prefijo = 'SKU-' + skuToken(departamento || 'DEP') + '-' + skuToken(categoria || 'CAT') + '-';
+    let n = state.productos.filter(p => String(p.codigo || '').toUpperCase().startsWith(prefijo)).length + 1;
     let sku = '';
-    do { sku = 'SKU-' + prefijo + '-' + String(n++).padStart(5, '0'); } while (state.productos.some(p => p.activo && p.id !== producto?.id && p.codigo.toUpperCase() === sku.toUpperCase()));
+    do { sku = prefijo + String(n++).padStart(5, '0'); } while (state.productos.some(p => p.activo && p.id !== producto?.id && String(p.codigo || '').toUpperCase() === sku.toUpperCase()));
     return sku;
   };
+
+  const categoriaOptions = useMemo(() => {
+    const mapped = categoriesForDepartment(datos.departamento, state.categoriasPorDepartamento);
+    if (producto?.departamento === datos.departamento && producto?.categoria && !mapped.includes(producto.categoria)) mapped.unshift(producto.categoria);
+    return mapped;
+  }, [datos.departamento, state.categoriasPorDepartamento, producto]);
 
   const validarDecimal = (val: string) => /^[\d]*\.?[\d]*$/.test(val) || val === '';
 
@@ -131,20 +316,46 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
 
   const handleAddListItem = (listName: 'categorias' | 'marcas' | 'departamentos' | 'presentaciones') => {
     const newVal = prompt(`Ingrese nueva opción para ${listName.toUpperCase()}:`);
-    if (newVal) {
-      onUpdateLists({ [listName]: [...(state[listName] || []), newVal] });
+    const value = String(newVal || '').trim();
+    if (!value) return;
+    if (listName === 'categorias') {
+      const associations = [...(state.categoriasPorDepartamento || DEFAULT_CATEGORY_ASSOCIATIONS)];
+      if (!associations.some(item => item.departamento === datos.departamento && item.categoria.toLocaleLowerCase('es') === value.toLocaleLowerCase('es'))) associations.push({ departamento: datos.departamento, categoria: value });
+      const categorias = [...(state.categorias || [])];
+      if (!categorias.some(item => item.toLocaleLowerCase('es') === value.toLocaleLowerCase('es'))) categorias.push(value);
+      onUpdateLists({ categorias, categoriasPorDepartamento: associations });
+      setDatos((prev: any) => ({ ...prev, categoria: value, codigo: prev.skuAutomatico ? generarSkuGeneral(datos.departamento, value) : prev.codigo }));
+      return;
     }
+    if (listName === 'departamentos') {
+      const list = [...(state.departamentos || [])];
+      if (!list.some(item => item.toLocaleLowerCase('es') === value.toLocaleLowerCase('es'))) list.push(value);
+      onUpdateLists({ departamentos: list });
+      setDatos((prev: any) => ({ ...prev, departamento: value, categoria: '', codigo: prev.skuAutomatico ? generarSkuGeneral(value, '') : prev.codigo }));
+      return;
+    }
+    const list = [...(state[listName] || [])];
+    if (!list.some(item => String(item).toLocaleLowerCase('es') === value.toLocaleLowerCase('es'))) list.push(value);
+    onUpdateLists({ [listName]: list });
   };
 
   const handleRemoveListItem = (listName: 'categorias' | 'marcas' | 'departamentos' | 'presentaciones', current: string) => {
-    if (confirm(`¿Eliminar "${current}" de la lista?`)) {
-      const newList = (state[listName] || []).filter(i => i !== current);
-      onUpdateLists({ [listName]: newList });
+    if (!current || !confirm(`¿Eliminar "${current}" de la lista?`)) return;
+    if (listName === 'categorias') {
+      const associations = [...(state.categoriasPorDepartamento || DEFAULT_CATEGORY_ASSOCIATIONS)].filter(item => !(item.departamento === datos.departamento && item.categoria === current));
+      const stillUsed = associations.some(item => item.categoria === current);
+      const categorias = stillUsed ? (state.categorias || []) : (state.categorias || []).filter(item => item !== current);
+      onUpdateLists({ categorias, categoriasPorDepartamento: associations });
+      const nextCategory = categoriesForDepartment(datos.departamento, associations)[0] || '';
+      setDatos((prev: any) => ({ ...prev, categoria: prev.categoria === current ? nextCategory : prev.categoria, codigo: prev.skuAutomatico && prev.categoria === current ? generarSkuGeneral(datos.departamento, nextCategory) : prev.codigo }));
+      return;
     }
+    const newList = (state[listName] || []).filter(i => i !== current);
+    onUpdateLists({ [listName]: newList });
   };
 
   const handleSave = () => {
-    if (!datos.nombre || !datos.codigo) return alert('Nombre y Código requeridos');
+    if (!datos.nombre || !datos.codigo || !datos.departamento || !datos.categoria) return alert('Nombre, SKU, departamento y categoría son requeridos');
     
     const existe = state.productos.find(p => p.activo && p.id !== producto?.id && (p.codigo.trim().toUpperCase() === String(datos.codigo).trim().toUpperCase() || (!!datos.barcode && String(p.barcode || '').trim() === String(datos.barcode).trim()) || (!!p.barcode && String(p.barcode).trim() === String(datos.codigo).trim())));
     if (existe) {
@@ -214,7 +425,12 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                          <button onClick={() => handleRemoveListItem('departamentos', datos.departamento)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
                        </div>
                      </div>
-                     <select className="form-select h-10 text-xs font-bold bg-white" value={datos.departamento} onChange={e => setDatos({...datos, departamento: e.target.value})}>
+                     <select className="form-select h-10 text-xs font-bold bg-white" value={datos.departamento} onChange={e => {
+                       const departamento = e.target.value;
+                       const categorias = categoriesForDepartment(departamento, state.categoriasPorDepartamento);
+                       const categoria = categorias[0] || '';
+                       setDatos((prev: any) => ({ ...prev, departamento, categoria, codigo: prev.skuAutomatico ? generarSkuGeneral(departamento, categoria) : prev.codigo }));
+                     }}>
                        {(state.departamentos || []).map((d: string) => <option key={d} value={d}>{d}</option>)}
                      </select>
                    </div>
@@ -227,8 +443,12 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                          <button onClick={() => handleRemoveListItem('categorias', datos.categoria)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
                        </div>
                      </div>
-                     <select className="form-select h-10 text-xs font-bold bg-white" value={datos.categoria} onChange={e => setDatos({...datos, categoria: e.target.value})}>
-                       {(state.categorias || []).map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
+                     <select className="form-select h-10 text-xs font-bold bg-white" value={datos.categoria} onChange={e => {
+                       const categoria = e.target.value;
+                       setDatos((prev: any) => ({ ...prev, categoria, codigo: prev.skuAutomatico ? generarSkuGeneral(datos.departamento, categoria) : prev.codigo }));
+                     }}>
+                       <option value="">Seleccione categoría</option>
+                       {categoriaOptions.map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
                      </select>
                    </div>
 
