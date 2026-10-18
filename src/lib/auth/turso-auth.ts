@@ -23,7 +23,7 @@ export function getRequestSessionId(request: Request) {
   if (mode === 'tab') return tabSessionId || null;
 
   const cookieHeader = request.headers.get('cookie') || '';
-  const match = cookieHeader.match(/(?:^|;\\s*)posven_session=([^;]+)/);
+  const match = cookieHeader.match(/(?:^|;\s*)posven_session=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;
 }
 
