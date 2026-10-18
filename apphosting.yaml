@@ -1,0 +1,4 @@
+# Este archivo se mantiene vacío para desactivar el aprovisionamiento automático 
+# de recursos de Google Cloud App Hosting. 
+# El proyecto está configurado para 'output: export' en next.config.ts 
+# y su objetivo principal es la distribución mediante Electron (.exe).

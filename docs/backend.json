@@ -1,0 +1,47 @@
+
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfil de usuario del sistema (Administrador o Cajero)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "nombre": { "type": "string" },
+        "email": { "type": "string" },
+        "rol": { "type": "string", "enum": ["administrador", "cajero"] },
+        "accesoBloqueado": { "type": "boolean" },
+        "fechaCreacion": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "nombre", "email", "rol"]
+    },
+    "SystemState": {
+      "title": "SystemState",
+      "description": "Estado global persistente del sistema POS",
+      "type": "object",
+      "properties": {
+        "tasa": { "type": "number" },
+        "pinDevolucion": { "type": "string" },
+        "empresa": { "type": "object" },
+        "productos": { "type": "array" },
+        "ventas": { "type": "array" },
+        "cxc": { "type": "array" },
+        "cxp": { "type": "array" },
+        "terminales": { "type": "array" }
+      }
+    }
+  },
+  "auth": {
+    "providers": ["password"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/backend/entities/UserProfile" },
+      "description": "Perfiles de usuario y estados de bloqueo"
+    },
+    "/pos_system_data/{docId}": {
+      "schema": { "$ref": "#/backend/entities/SystemState" },
+      "description": "Almacenamiento del estado global y configuración"
+    }
+  }
+}
