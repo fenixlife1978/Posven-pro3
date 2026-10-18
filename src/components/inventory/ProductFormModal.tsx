@@ -182,7 +182,7 @@ function categoriesForDepartment(departamento: string, associations?: Array<{ de
 }
 
 function skuToken(value: string): string {
-  const words = String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().match(/[A-Z0-9]+/g) || [];
+  const words = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().match(/[A-Z0-9]+/g) || [];
   const significant = words.filter(word => !['Y', 'E', 'DE', 'DEL', 'LA', 'LAS', 'EL', 'LOS'].includes(word));
   if (!significant.length) return 'GEN';
   return (significant.length === 1 ? significant[0].slice(0, 3) : significant.map(word => word.slice(0, 3)).join('').slice(0, 6)) || 'GEN';
