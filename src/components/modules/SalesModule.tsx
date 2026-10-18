@@ -54,7 +54,8 @@ import { Pagination } from '@/components/ui/pagination';
 import { cn } from '@/lib/utils';
 import CashZArqueoModal from '@/components/pos/CashZArqueoModal';
 import ZReportPreview80mm from '@/components/pos/ZReportPreview80mm';
-import FractionalProductSelectorModal, { PresentationSaleSelection } from '@/components/pos/FractionalProductSelectorModal';
+import FractionalProductSelectorModal from '@/components/pos/FractionalProductSelectorModal';
+import type { PresentationSaleSelection } from '@/components/pos/FractionalProductSelectorModal';
 
 // ============================================================
 // UTILIDADES DE NORMALIZACIÓN DE CÉDULA (integradas)
