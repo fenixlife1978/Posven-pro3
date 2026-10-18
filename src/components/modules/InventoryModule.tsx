@@ -191,7 +191,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
               <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => setShowPriceLabels(true)}>
                 <Tags className="w-4 h-4" /> Habladores
               </Button>
-              <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => setShowConteoFisico(true)>
+              <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => setShowConteoFisico(true)}
                 <Boxes className="w-4 h-4" /> Conteo Físico
               </Button>
               <Button className="flex-1 md:flex-none h-11 bg-brand-gold hover:bg-brand-gold-deep text-ink font-black uppercase text-[10px] shadow-lg" onClick={() => setShowProducto('nuevo')}>
