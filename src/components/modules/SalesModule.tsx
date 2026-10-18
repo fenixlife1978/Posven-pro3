@@ -1015,7 +1015,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const saldoRestanteUSD = Math.max(0, subtotalUSD - totalPagadoUSD);
 
   const matches = search.trim().length > 0 
-    ? state.productos.filter(p => p.activo && ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase()))).slice(0, 8)
+    ? state.productos.filter(p => p.activo && ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').toLowerCase().includes(search.toLowerCase()))).slice(0, 8)
     : [];
 
   const filteredClients = useMemo(() => {
@@ -1317,7 +1317,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     <div key={p.id} onClick={() => agregar(p.id)} className="flex items-center justify-between p-3 hover:bg-brand-gold/10 cursor-pointer border-b border-line group">
                       <div className="flex flex-col flex-1 min-w-0">
                         <span className="text-ink text-sm font-black uppercase truncate group-hover:text-brand-gold-deep transition-colors">{p.nombre}</span>
-                        <span className="text-ink/60 text-[10px] mono font-bold">{p.codigo}</span>
+                        <span className="text-ink/60 text-[10px] mono font-bold">SKU: {p.codigo}{p.barcode ? ` · CB: ${p.barcode}` : ''}</span>
                       </div>
                       <div className="flex items-center gap-10 shrink-0 ml-4">
                          <div className="flex flex-col items-end min-w-[70px]"><span className="text-[9px] font-black uppercase text-ink/40 mb-0.5">Stock</span><span className={`text-lg font-black leading-none ${p.stock <= (p.stockMinimo || 3) ? 'text-red-600' : p.stock <= (p.stockMinimo || 3) * 2 ? 'text-amber-500' : 'text-green-600'}`}>{p.stock} <span className="text-[10px] opacity-60">Und.</span></span></div>
