@@ -17,6 +17,7 @@ Turso es la única base de datos operativa para usuarios, sesiones, inventario, 
 - `TURSO_DATABASE_URL`: URL de la base de datos Turso.
 - `TURSO_AUTH_TOKEN`: token de acceso a Turso.
 - `SESSION_SECRET`: secreto de sesión si el despliegue lo requiere.
+- `POSVEN_SEED_ADMIN_PASSWORD`: contraseña inicial opcional para el administrador semilla cuando no existe ningún administrador activo. Si se omite, se usa `admin123`; cámbiala antes de instalar siempre que sea posible.
 
 Estas variables se configuran en el entorno seguro del servidor y no se incluyen en el código del cliente ni en el instalador de Windows.
 
@@ -31,3 +32,5 @@ GitHub Actions compila exclusivamente en `windows-latest`. La compilación debe 
 3. No confirmar una operación si la respuesta del servidor no acredita su persistencia.
 4. No incluir credenciales de base de datos en el instalador.
 5. Verificar login, creación de usuarios, caja, venta, compra, Corte Z y reimpresión antes de declarar una versión lista.
+6. Antes de validar credenciales, el login comprueba si hay un administrador activo en Turso. Si no lo hay, recupera o crea el usuario semilla `admin` (correo `admin@posven.local`). Si ya hay un administrador activo, no crea una cuenta adicional.
+7. La reinstalación de la aplicación no elimina datos de Turso. Si se reinicia intencionalmente la tabla de usuarios, el administrador semilla se recrea en el siguiente intento de inicio de sesión; define `POSVEN_SEED_ADMIN_PASSWORD` en el `.env` externo para no usar la contraseña predeterminada.
