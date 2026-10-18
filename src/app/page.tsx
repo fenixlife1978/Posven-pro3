@@ -169,7 +169,7 @@ export default function LicoreriaPOS() {
             }
 
             // La identidad operativa de un cajero queda fijada al terminal
-            // resuelto en Turso. No dependemos de un uid heredado/Firebase
+            // resuelto en Turso. No dependemos de identificadores heredados
             // para volver a encontrar la caja después de un Z y una nueva
             // apertura.
             const profileWithTerminal = { ...profile, terminalId: String(myTerm.id) };
