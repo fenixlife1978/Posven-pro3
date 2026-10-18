@@ -30,7 +30,7 @@ import {
   Cell
 } from 'recharts';
 
-export default function DashboardModule({ state }: { state: AppState }) {
+export default function DashboardModule({ state, onNavigate }: { state: AppState; onNavigate?: (moduleId: string) => void }) {
   const [historicalSalesCount, setHistoricalSalesCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -146,7 +146,7 @@ export default function DashboardModule({ state }: { state: AppState }) {
             Se registran {ventasHoy.length} transacciones el día de hoy. Existen {stockCritico} productos con niveles de inventario por debajo del mínimo configurado.
           </p>
           <div className="flex flex-wrap gap-3.5 pt-2">
-            <button className="h-12 px-6 rounded-full bg-brand-gold text-ink font-bold flex items-center gap-2.5 shadow-lg shadow-brand-gold/20 hover:bg-brand-gold-deep hover:text-white transition-all">
+            <button type="button" onClick={() => onNavigate?.('inventario')} className="h-12 px-6 rounded-full bg-brand-gold text-ink font-bold flex items-center gap-2.5 shadow-lg shadow-brand-gold/20 hover:bg-brand-gold-deep hover:text-white transition-all">
               <Zap className="w-4 h-4" />
               Gestión de Inventario
             </button>
