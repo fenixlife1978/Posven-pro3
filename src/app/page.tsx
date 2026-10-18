@@ -396,13 +396,13 @@ export default function LicoreriaPOS() {
   const renderModule = () => {
     if (!mounted || loading || !activeModule) return null;
     switch (activeModule) {
-      case 'dashboard': return <DashboardModule state={state} />;
+      case 'dashboard': return <DashboardModule state={state} onNavigate={handleModuleChange} />;
       case 'inventario': return <InventoryModule state={state} updateState={updateState} />;
       case 'ventas':
         // Defensa final de UI: aunque el estado de navegación quedara
         // contaminado por una sesión previa, un administrador jamás renderiza
         // el módulo POS/caja.
-        if (userRole !== 'cajero') return <DashboardModule state={state} />;
+        if (userRole !== 'cajero') return <DashboardModule state={state} onNavigate={handleModuleChange} />;
         return <SalesModule state={state} updateState={updateState} />;
       case 'compras': return <PurchaseModule state={state} updateState={updateState} />;
       case 'proveedores': return <SuppliersModule state={state} updateState={updateState} />;
