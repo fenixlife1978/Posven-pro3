@@ -128,10 +128,10 @@ export default function LoginPage() {
             </select>
           </div>
           <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-black/40 tracking-widest block ml-1">Correo Electrónico</label>
+            <label className="text-[10px] font-black uppercase text-black/40 tracking-widest block ml-1">Correo o usuario</label>
             <div className="relative group">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9CA3AF] group-focus-within:text-[#C8952E] transition-colors"><Mail className="w-5 h-5" /></div>
-              <input type="email" required className="w-full h-[52px] bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl pl-12 pr-4 text-black font-semibold placeholder:text-[#D1D5DB] focus:border-[#C8952E] focus:bg-white outline-none transition-all" placeholder="ejemplo@correo.com" value={email} onChange={e => setEmail(e.target.value)} />
+              <input type="text" autoComplete="username" required className="w-full h-[52px] bg-[#F9FAFB] border border-[#E5E7EB] rounded-2xl pl-12 pr-4 text-black font-semibold placeholder:text-[#D1D5DB] focus:border-[#C8952E] focus:bg-white outline-none transition-all" placeholder="admin o admin@posven.local" value={email} onChange={e => setEmail(e.target.value)} />
             </div>
           </div>
           <div className="space-y-2">
