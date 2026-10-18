@@ -214,14 +214,25 @@ export function InventoryModule({ state, updateState }: InventoryModuleProps) {
         </div>
       </Card>
 
-      <ProductFormModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        product={selectedProduct}
-        onSave={refreshData}
+      {isModalOpen && <ProductFormModal
+        producto={selectedProduct}
+        onClose={() => setIsModalOpen(false)}
         state={state}
-        updateState={updateState}
-      />
+        onUpdateLists={updateState}
+        onSave={(draft: any) => {
+          const now = Utils.ahora();
+          const saved: Product = selectedProduct
+            ? { ...selectedProduct, ...draft, id: selectedProduct.id, activo: selectedProduct.activo !== false }
+            : { ...draft, id: Store.uid(), fechaCreacion: now, activo: true };
+          const nextProducts = selectedProduct
+            ? products.map(item => item.id === selectedProduct.id ? saved : item)
+            : [...products, saved];
+          updateState({ productos: nextProducts });
+          setProducts(nextProducts);
+          setIsModalOpen(false);
+          toast({ title: selectedProduct ? "Producto actualizado" : "Producto creado", description: saved.codigo });
+        }}
+      />}
     </div>
   );
 }
