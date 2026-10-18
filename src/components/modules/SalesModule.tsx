@@ -846,6 +846,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const agregar = (pid: string) => {
     const p = state.productos.find(x => x.id === pid);
     if (!p) return;
+    if (p.permiteVentaLibreBS) {
+      const raw = prompt(`Importe de venta para ${p.nombre} en bolívares (Bs):`, "");
+      if (raw === null) return;
+      const montoBS = Number(raw.replace(',', '.'));
+      if (!Number.isFinite(montoBS) || montoBS <= 0 || !state.tasa) {
+        toast({ variant: "destructive", title: "Importe inválido", description: "Introduzca un monto en Bs mayor que cero." });
+        return;
+      }
+      const montoUSD = montoBS / state.tasa;
+      updateState({ carrito: [...state.carrito, { productoId: `VENTA-LIBRE-${Date.now()}`, nombre: `${p.nombre} — Bs ${montoBS.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cantidad: 1, precioUnitUSD: montoUSD, subtotalUSD: montoUSD, ventaLibreBS: true }] });
+      setSearch('');
+      setPagos([]);
+      toast({ title: "Venta libre agregada", description: `Bs ${montoBS.toFixed(2)} · ${Utils.fmtUSD(montoUSD)}` });
+      return;
+    }
     const stockAvail = getStockDisponible(p);
     if (stockAvail <= 0) {
       toast({ variant: "destructive", title: "Sin Stock" });
