@@ -500,7 +500,30 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-surface-soft p-5 rounded-2xl border border-line shadow-inner">
-                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/50">Costo ($)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.costoUSD} onChange={e => setDatos({...datos, costoUSD: e.target.value})} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/50">Costo ($)</Label><Input className="h-12 font-black text-lg bg-white" inputMode="decimal" value={datos.costoUSD} onChange={e => {
+                  const value = e.target.value;
+                  if (!validarDecimal(value)) return;
+                  const costo = parseFloat(value) || 0;
+                  const margen = parseFloat(datos.margen) || 0;
+                  const tasa = Number(state.tasa) || 0;
+                  let precioUSD = Number(datos.precioUSD) || 0;
+                  if (datos.modoMarkup === 'sobre_costo') {
+                    precioUSD = costo * (1 + margen / 100);
+                  } else if (margen < 100) {
+                    precioUSD = costo / (1 - margen / 100);
+                  }
+                  setDatos((prev: any) => ({
+                    ...prev,
+                    costoUSD: value,
+                    precioUSD: precioUSD.toFixed(2),
+                    precioBS: (precioUSD * tasa).toFixed(2),
+                    presentacionesVenta: (prev.presentacionesVenta || []).map((pres: any) =>
+                      pres.id === 'base' || /^(unidad|unit|base)$/i.test(String(pres.nombre || '').trim())
+                        ? { ...pres, precioUSD, precioBS: Number((precioUSD * tasa).toFixed(2)) }
+                        : pres
+                    )
+                  }));
+                }} /></div>
                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-brand-gold-deep">{datos.modoMarkup === 'sobre_costo' ? 'Markup sobre costo %' : 'Margen sobre venta %'}</Label><Input className="h-12 font-black text-lg text-brand-gold-deep bg-white" value={datos.margen} onChange={e => recalcularTridireccional('margen', e.target.value)} /></div>
                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-status-success">Venta ($)</Label><Input className="h-12 font-black text-lg text-status-success bg-white" value={datos.precioUSD} onChange={e => recalcularTridireccional('precioUSD', e.target.value)} /></div>
                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink">Venta (BS)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.precioBS} onChange={e => recalcularTridireccional('precioBS', e.target.value)} /></div>
