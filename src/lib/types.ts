@@ -95,9 +95,16 @@ export interface Product {
 export interface ProductPresentation {
   id: string;
   nombre: string;
+  /** Factor de conversión a la unidad base del inventario (p. ej. una caja de 12 unidades = 12). */
   factor: number;
   precioUSD: number;
   precioBS: number;
+  /** Equivalencia de presentación siguiendo el modelo BODEGA. */
+  unidad?: string;
+  unidadMedida?: string;
+  contenido?: number;
+  unidadContenido?: string;
+  codigoBarras?: string;
 }
 
 export interface PriceTier {
