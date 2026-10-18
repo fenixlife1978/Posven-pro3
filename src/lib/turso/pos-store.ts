@@ -1,9 +1,8 @@
 /**
  * Repositorio POSVEN sobre Turso.
  *
- * Exclusivamente servidor. No activa Turso ni toca Firebase por sí solo.
- * Las operaciones críticas usan transacción interactiva para conservar la
- * semántica de concurrencia que tenía Firestore runTransaction().
+ * Exclusivamente servidor. Turso es la única base de datos operativa.
+ * Las operaciones críticas usan transacciones interactivas.
  */
 import {
   isTursoConfigured,
@@ -706,10 +705,10 @@ export async function applyInventoryMovementsTransaction(params: {
 }
 
 
-function assertTerminalAccess(user: { rol: string; id: string; firebaseUid?: string | null }, terminal: any) {
+function assertTerminalAccess(user: { rol: string; id: string }, terminal: any) {
   if (user.rol === 'administrador') return;
   const assigned = String(terminal?.usuarioId || '');
-  const allowed = new Set([String(user.id), user.firebaseUid ? String(user.firebaseUid) : '']);
+  const allowed = new Set([String(user.id)]);
   if (!assigned || !allowed.has(assigned)) throw new Error('Esta terminal no está asignada al usuario autenticado.');
 }
 
