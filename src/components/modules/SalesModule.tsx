@@ -509,7 +509,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (showReportType || reportLoadingType) return;
     setReportLoadingType(type);
     try {
-      // Garantiza que las colecciones necesarias estén cargadas desde Firestore
       // antes de calcular el reporte. Evita el bug de reporte en $0 tras reinicio.
       await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', Utils.getTerminalCash(currentTerminal).fechaUltimoZ || new Date().toISOString().split('T')[0]);
       
@@ -924,7 +923,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         movements: [mov]
       });
       // No actualizamos productos/movimientos desde el estado local:
-      // Firestore/RTDB emite el estado autoritativo a todas las cajas.
       setStockEdit(null);
       toast({ title: "Stock Actualizado", description: stockEdit.nombre + ": ajuste de " + (delta > 0 ? "+" : "") + delta + " Und." });
     } catch (e: any) {
