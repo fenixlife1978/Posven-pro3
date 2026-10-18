@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const http = require('http');
 const dotenv = require('dotenv');
 const path = require('path');
-const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { PosPrinter } = require('electron-pos-printer');
 
@@ -10,32 +9,6 @@ let mainWindow = null;
 let splashWindow = null;
 let nextServer = null;
 let nextApplication = null;
-
-// ============================================================
-// PROTOCOLO SEGURO 'app' (VITAL PARA EL EXPORT ESTÁTICO)
-// ============================================================
-// El export de Next.js genera rutas ABSOLUTAS (/ _next/static/...) en el HTML.
-// Con loadFile() / file:// esas rutas apuntan a la raíz del disco y NO cargan,
-// produciendo pantalla en blanco. El protocolo 'app' sirve los archivos desde
-// la carpeta 'out' dentro del ASAR resolviendo esas rutas correctamente.
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }
-]);
-
-function resolveOutPath() {
-  // main.js vive en la raíz del ASAR (package.json "main": "main.js"), por lo
-  // que el bundle Next está en <raíz>/out. Probar variantes (asar, asar.unpacked,
-  // resourcesPath) por si electron-builder extrajo los assets.
-  const candidates = [
-    path.join(__dirname, 'out'),
-    path.join(__dirname.replace(/app\.asar$/, 'app.asar.unpacked'), 'out'),
-    path.join(process.resourcesPath || '', 'app', 'out'),
-  ];
-  for (const p of candidates) {
-    if (p && fs.existsSync(p)) return p;
-  }
-  return candidates[0];
-}
 
 function fatalError(title, detail) {
   try {
