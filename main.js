@@ -1,12 +1,15 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const http = require('http');
+const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
-const { pathToFileURL } = require('url');
 const { autoUpdater } = require('electron-updater');
 const { PosPrinter } = require('electron-pos-printer');
 
 let mainWindow = null;
 let splashWindow = null;
+let nextServer = null;
+let nextApplication = null;
 
 // ============================================================
 // PROTOCOLO SEGURO 'app' (VITAL PARA EL EXPORT ESTÁTICO)
@@ -83,7 +86,7 @@ function closeSplash() {
   }
 }
 
-function createWindow() {
+function createWindow(serverPort) {
   closeSplash();
 
   mainWindow = new BrowserWindow({
@@ -107,15 +110,10 @@ function createWindow() {
   });
 
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:9002').catch((err) => {
-      fatalError('Error cargando app (dev)', String(err));
-    });
-  } else {
-    // ✅ Cargar vía protocolo 'app' (como en el proyecto que funciona), no loadFile.
-    mainWindow.loadURL('app://-');
-  }
+  const appUrl = isDev ? 'http://localhost:9002' : 'http://127.0.0.1:' + serverPort;
+  mainWindow.loadURL(appUrl).catch((err) => {
+    fatalError('Error cargando POSVEN-PRO3', String(err));
+  });
 
   const readyTimeout = setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
@@ -166,35 +164,61 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  // ✅ Manejador del protocolo 'app': sirve los archivos del out/ resolviendo
-  // las rutas absolutas del export estático de Next.js.
-  protocol.handle('app', (request) => {
-    const url = new URL(request.url);
-    let pathname = decodeURIComponent(url.pathname);
+async function startLocalNextServer() {
+  // La configuración se guarda fuera del instalador para no incrustar secretos.
+  const envPath = path.join(app.getPath('userData'), '.env');
+  dotenv.config({ path: envPath });
+  process.env.TURSO_MIGRATION_BUILD = '1';
 
-    if (pathname === '/' || pathname === '') {
-      pathname = '/index.html';
-    } else if (!path.extname(pathname)) {
-      pathname = path.join(pathname, 'index.html');
-    }
+  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+    console.warn('Faltan credenciales Turso en ' + envPath);
+  }
 
-    const outDir = resolveOutPath();
-    const filePath = path.join(outDir, pathname);
-    if (!fs.existsSync(filePath)) {
-      console.error('📁 Archivo no encontrado:', filePath);
-      return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/plain' } });
-    }
-    return net.fetch(pathToFileURL(filePath).toString());
+  const next = require('next');
+  nextApplication = next({ dev: false, dir: app.getAppPath() });
+  await nextApplication.prepare();
+
+  const handler = nextApplication.getRequestHandler();
+  nextServer = http.createServer((request, response) => handler(request, response));
+  await new Promise((resolve, reject) => {
+    nextServer.once('error', reject);
+    nextServer.listen(0, '127.0.0.1', resolve);
   });
+  const address = nextServer.address();
+  if (!address || typeof address === 'string') throw new Error('No se pudo abrir el servidor local de POSVEN-PRO3.');
+  return address.port;
+}
 
-  createWindow();
-
-  app.on('activate', () => {
-    if (mainWindow === null || BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+app.whenReady().then(async () => {
+  try {
+    if (app.isPackaged) {
+      const port = await startLocalNextServer();
+      createWindow(port);
+    } else {
+      createWindow(0);
     }
-  });
+
+    app.on('activate', () => {
+      if (mainWindow === null || BrowserWindow.getAllWindows().length === 0) {
+        if (app.isPackaged && nextServer?.address()) {
+          const address = nextServer.address();
+          createWindow(address && typeof address !== 'string' ? address.port : 0);
+        } else {
+          createWindow(0);
+        }
+      }
+    });
+  } catch (error) {
+    fatalError('No se pudo iniciar POSVEN-PRO3', String(error));
+    app.quit();
+  }
+});
+
+app.on('before-quit', () => {
+  if (nextServer) {
+    try { nextServer.close(); } catch {}
+    nextServer = null;
+  }
 });
 
 app.on('window-all-closed', () => {
