@@ -14,10 +14,13 @@ Aplicación de punto de venta para Windows, construida con Next.js y Electron.
 
 Abre la pestaña Actions, ejecuta Build Windows EXE (Turso only) y descarga el artefacto PosVEN-Pro3-Windows-Installer.
 
-## Variables de entorno para las API
+## Configuración local de Turso para Windows
 
-- TURSO_DATABASE_URL
-- TURSO_AUTH_TOKEN
-- SESSION_SECRET (si se habilita para firma adicional de sesiones en el despliegue)
+La aplicación de escritorio carga un archivo `.env` externo al instalador desde la carpeta de datos de usuario que Electron devuelve mediante `app.getPath('userData')`. Crea ese archivo con este contenido:
 
-No añadas credenciales al repositorio ni al instalador.
+```dotenv
+TURSO_DATABASE_URL=libsql://TU-BASE.turso.io
+TURSO_AUTH_TOKEN=TU_TOKEN
+```
+
+No reemplaces los valores por credenciales reales dentro del repositorio. No compartas el archivo `.env` ni lo incluyas en el instalador. En un despliegue con API remota, estas credenciales deben permanecer en el servidor, no en el equipo cliente.
