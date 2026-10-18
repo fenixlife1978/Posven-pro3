@@ -754,7 +754,7 @@ export async function deleteTerminalTransaction(params: {
 }
 
 export async function createZClosureTransaction(params: {
-  user: { rol: string; id: string; firebaseUid?: string | null };
+  user: { rol: string; id: string };
   terminalId: string;
   report: any;
   terminalPatch: Record<string, any>;
