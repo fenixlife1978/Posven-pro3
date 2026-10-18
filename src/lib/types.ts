@@ -467,6 +467,8 @@ export interface AppState {
   };
   departamentos: string[];
   categorias: string[];
+  /** Relación persistida departamento-categoría; cada categoría pertenece a un departamento. */
+  categoriasPorDepartamento?: Array<{ departamento: string; categoria: string }>;
   marcas: string[];
   presentaciones: string[];
   proveedores: Supplier[];
