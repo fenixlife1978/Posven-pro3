@@ -40,7 +40,9 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
     stockMinimo: producto?.stockMinimo?.toString() ?? '3',
     aplicaIVA: producto?.aplicaIVA ?? false,
     isKit: producto?.isKit || false,
+    skuAutomatico: (producto as any)?.skuAutomatico || false,
     skuCompuestoAutomatico: (producto as any)?.skuCompuestoAutomatico || false,
+    barcode: producto?.barcode || '',
     kitType: producto?.kitType || 'stock_propio',
     kitItems: producto?.kitItems || [],
     proveedor: producto?.proveedor || '',
@@ -72,6 +74,15 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
     let n = 2;
     while (existe(base.slice(0, 57 - String(n).length) + '-' + n) && n < 10000) n++;
     return base.slice(0, 57 - String(n).length) + '-' + n;
+  };
+
+
+  const generarSkuGeneral = () => {
+    const prefijo = String(datos.categoria || datos.departamento || 'PROD').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'PROD';
+    let n = state.productos.filter(p => p.codigo.toUpperCase().startsWith('SKU-' + prefijo + '-')).length + 1;
+    let sku = '';
+    do { sku = 'SKU-' + prefijo + '-' + String(n++).padStart(5, '0'); } while (state.productos.some(p => p.activo && p.id !== producto?.id && p.codigo.toUpperCase() === sku.toUpperCase()));
+    return sku;
   };
 
   const validarDecimal = (val: string) => /^[\d]*\.?[\d]*$/.test(val) || val === '';
@@ -135,9 +146,9 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
   const handleSave = () => {
     if (!datos.nombre || !datos.codigo) return alert('Nombre y Código requeridos');
     
-    const existe = state.productos.find(p => p.activo && p.codigo === datos.codigo && p.id !== producto?.id);
+    const existe = state.productos.find(p => p.activo && p.id !== producto?.id && (p.codigo.trim().toUpperCase() === String(datos.codigo).trim().toUpperCase() || (!!datos.barcode && String(p.barcode || '').trim() === String(datos.barcode).trim()) || (!!p.barcode && String(p.barcode).trim() === String(datos.codigo).trim())));
     if (existe) {
-      alert(`ERROR: El código "${datos.codigo}" ya se encuentra registrado para el producto "${existe.nombre}". No se permiten duplicados.`);
+      alert(`ERROR: El SKU o código de barras ya está registrado para el producto "${existe.nombre}". Cada identificador debe ser único.`);
       return;
     }
 
@@ -174,8 +185,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-black uppercase text-ink/50 block">Código (Scanner/Manual)</Label>
-                  <Input className="h-10 font-black text-ink bg-white" value={datos.codigo} readOnly={!!datos.skuCompuestoAutomatico} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="00000000" autoFocus />
+                  <Label className="text-[10px] font-black uppercase text-ink/50 block">SKU / Código interno</Label>
+                  <Input className="h-10 font-black text-ink bg-white" value={datos.codigo} readOnly={!!datos.skuCompuestoAutomatico} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="SKU-REP-00001" autoFocus />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] font-black uppercase text-ink/50 block">Nombre del Producto</Label>
@@ -315,8 +326,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                 <label className="flex items-start gap-2 text-xs font-bold">
                   <input type="checkbox" checked={!!datos.skuCompuestoAutomatico} onChange={e => {
                     const enabled = e.target.checked;
-                    const generated = enabled ? generarSkuCompuesto(datos.kitItems || []) : datos.codigo;
-                    setDatos({...datos, isKit: enabled ? true : datos.isKit, skuCompuestoAutomatico: enabled, codigo: generated || (enabled ? "" : datos.codigo)});
+                    const generated = enabled ? generarSkuCompuesto(datos.kitItems || []) : (datos.skuAutomatico ? generarSkuGeneral() : datos.codigo);
+                    setDatos({...datos, isKit: enabled ? true : datos.isKit, skuCompuestoAutomatico: enabled, skuAutomatico: enabled ? false : datos.skuAutomatico, codigo: generated || (enabled ? "" : datos.codigo)});
                   }} />
                   <span>Generar SKU compuesto automáticamente a partir de los códigos de sus componentes y cantidades. Al activar esta opción, el SKU se actualiza al modificar el combo.</span>
                 </label>
