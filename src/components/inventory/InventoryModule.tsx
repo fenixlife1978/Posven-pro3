@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Pencil, Trash2, PackageCheck, AlertCircle, FileText } from 'lucide-react';
+import { Plus, Search, Filter, Pencil, Trash2, PackageCheck, AlertCircle, FileText, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import { Store } from '@/lib/db-store';
 import { Product, getProductBarcode, getProductPrice, AppState } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
 import { ProductFormModal } from './ProductFormModal';
+import { PriceLabelsModal } from './PriceLabelsModal';
 import { generarPDFInventario } from '@/lib/pdf-generator';
 
 interface InventoryModuleProps {
@@ -30,6 +31,7 @@ export function InventoryModule({ state, updateState }: InventoryModuleProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPriceLabelsOpen, setIsPriceLabelsOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | undefined>(undefined);
 
   useEffect(() => {
@@ -93,7 +95,14 @@ export function InventoryModule({ state, updateState }: InventoryModuleProps) {
           <h2 className="text-2xl font-black text-[#c8952e]">Gestión de Inventario</h2>
           <p className="text-sm text-white/50">Control de existencias y catálogo de productos</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            className="gap-2 border-[#c8952e]/70 text-[#c8952e] hover:bg-[#c8952e]/10"
+            onClick={() => setIsPriceLabelsOpen(true)}
+          >
+            <Tag className="w-5 h-5" /> Etiquetas y Habladores
+          </Button>
           <Button 
             variant="outline" 
             className="gap-2 border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
@@ -213,6 +222,8 @@ export function InventoryModule({ state, updateState }: InventoryModuleProps) {
           </Table>
         </div>
       </Card>
+
+      {isPriceLabelsOpen && <PriceLabelsModal productos={products} state={state} onClose={() => setIsPriceLabelsOpen(false)} />}
 
       {isModalOpen && <ProductFormModal
         producto={selectedProduct}
