@@ -40,6 +40,7 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
     stockMinimo: producto?.stockMinimo?.toString() ?? '3',
     aplicaIVA: producto?.aplicaIVA ?? false,
     isKit: producto?.isKit || false,
+    skuCompuestoAutomatico: (producto as any)?.skuCompuestoAutomatico || false,
     kitType: producto?.kitType || 'stock_propio',
     kitItems: producto?.kitItems || [],
     proveedor: producto?.proveedor || '',
@@ -56,6 +57,16 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
       (p.nombre.toLowerCase().includes(kitSearch.toLowerCase()) || p.codigo.toLowerCase().includes(kitSearch.toLowerCase()))
     ).slice(0, 5);
   }, [kitSearch, state.productos]);
+
+  const generarSkuCompuesto = (items: KitItem[]) => {
+    const fragmentos = (items || []).map(item => {
+      const p = state.productos.find(prod => prod.id === item.productoId);
+      const codigo = String(p?.codigo || item.productoId).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+      const cantidad = Math.max(1, Number(item.cantidad) || 1);
+      return codigo + (cantidad > 1 ? 'X' + cantidad : '');
+    }).filter(Boolean);
+    return fragmentos.length ? 'KIT-' + fragmentos.join('-').slice(0, 54) : '';
+  };
 
   const validarDecimal = (val: string) => /^[\d]*\.?[\d]*$/.test(val) || val === '';
 
@@ -295,6 +306,14 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                   <button onClick={() => setDatos({...datos, isKit: !datos.isKit})} className={`w-12 h-6 rounded-full transition-all relative ${datos.isKit ? 'bg-brand-gold' : 'bg-white/20'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.isKit ? 'right-1' : 'left-1'}`} /></button>
                   <Label className="text-[11px] font-black uppercase tracking-widest cursor-pointer" onClick={() => setDatos({...datos, isKit: !datos.isKit})}>Habilitar KIT / COMBO</Label>
                 </div>
+                <label className="flex items-start gap-2 text-xs font-bold">
+                  <input type="checkbox" checked={!!datos.skuCompuestoAutomatico} onChange={e => {
+                    const enabled = e.target.checked;
+                    const generated = enabled ? generarSkuCompuesto(datos.kitItems || []) : datos.codigo;
+                    setDatos({...datos, skuCompuestoAutomatico: enabled, codigo: generated || datos.codigo});
+                  }} />
+                  <span>Generar SKU compuesto automáticamente a partir de los códigos de sus componentes y cantidades. Al activar esta opción, el SKU se actualiza al modificar el combo.</span>
+                </label>
 
                 {datos.isKit && (
                    <div className="space-y-2 pt-2 border-t border-white/10">
@@ -308,10 +327,10 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
               </div>
               {datos.isKit && (
                 <div className="space-y-4">
-                  <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><Input className="h-12 pl-10 text-xs font-black uppercase bg-white" placeholder="Buscar productos componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{(filteredProdsForKit || []).length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { setDatos({...datos, kitItems: [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black uppercase text-ink">{pk.nombre}</span><PlusCircle className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
+                  <div className="relative"><Search className="absolute left-3 top-3 w-4 h-4 text-ink/30" /><Input className="h-12 pl-10 text-xs font-black uppercase bg-white" placeholder="Buscar productos componentes..." value={kitSearch} onChange={e => setKitSearch(e.target.value)} />{(filteredProdsForKit || []).length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border border-line rounded-lg shadow-2xl z-50 mt-1 overflow-hidden">{filteredProdsForKit.map(pk => (<div key={pk.id} onClick={() => { const kitItems = [...datos.kitItems, { productoId: pk.id, nombre: pk.nombre, cantidad: 1 }]; setDatos({...datos, kitItems, codigo: datos.skuCompuestoAutomatico ? generarSkuCompuesto(kitItems) : datos.codigo}); setKitSearch(''); }} className="p-3 border-b border-line hover:bg-brand-gold-soft cursor-pointer flex justify-between items-center"><span className="text-xs font-black uppercase text-ink">{pk.nombre}</span><PlusCircle className="w-4 h-4 text-brand-gold"/></div>))}</div>)}</div>
                   <Card className="border-line shadow-sm overflow-hidden bg-white"><div className="table-wrap"><table><thead className="bg-surface-soft"><tr><th className="text-[10px] font-black uppercase text-ink">Componente</th><th className="text-[10px] font-black uppercase text-center text-ink">Cant</th><th /></tr></thead><tbody>
                     {datos.kitItems.map((ki: KitItem, index: number) => (
-                      <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><Input className="w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n}); }} /></td><td className="text-center"><button onClick={() => setDatos({...datos, kitItems: (datos.kitItems || []).filter((_:any, i:number) => i !== index)})} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
+                      <tr key={index} className="border-b border-line/30"><td className="text-[11px] font-black uppercase text-ink">{ki.nombre}</td><td className="text-center"><Input className="w-12 h-8 text-center font-black bg-surface-soft border-line inline-block" type="number" value={ki.cantidad} onChange={e => { const n = [...datos.kitItems]; n[index].cantidad = parseInt(e.target.value) || 1; setDatos({...datos, kitItems: n, codigo: datos.skuCompuestoAutomatico ? generarSkuCompuesto(n) : datos.codigo}); }} /></td><td className="text-center"><button onClick={() => { const kitItems = (datos.kitItems || []).filter((_:any, i:number) => i !== index); setDatos({...datos, kitItems, codigo: datos.skuCompuestoAutomatico ? generarSkuCompuesto(kitItems) : datos.codigo}); }} className="text-status-danger"><Trash2 className="w-4 h-4"/></button></td></tr>
                     ))}
                   </tbody></table></div></Card>
                 </div>
