@@ -2,7 +2,7 @@
  * Cliente Turso serverless para POSVEN PRO.
  *
  * Usa SQL sobre HTTP v3 directamente con fetch(), sin agregar dependencias.
- * No se activa automáticamente ni toca Firebase.
+ * Solo se utiliza desde el servidor y únicamente para operaciones Turso.
  *
  * Solo debe importarse desde código servidor/API.
  */
@@ -224,7 +224,7 @@ export type TursoTransactionContext = {
 /**
  * Transacción interactiva: permite leer datos dentro de BEGIN IMMEDIATE,
  * calcular el siguiente estado y escribirlo antes de COMMIT. Es la pieza
- * necesaria para conservar las garantías de concurrencia que tenía Firestore
+ * necesaria para conservar las garantías de concurrencia de las operaciones POS
  * runTransaction().
  */
 export async function tursoInteractiveTransaction<T>(
