@@ -187,7 +187,9 @@ export function InventoryModule({ state, updateState }: InventoryModuleProps) {
                 const stock = p.stock || 0;
                 const stockLabel = p.ventaPorPeso
                   ? (() => { const totalGrams = Math.max(0, Math.round(stock * 1000)); const kg = Math.floor(totalGrams / 1000); const grams = totalGrams % 1000; return `${kg} kg${grams ? ` ${grams} g` : ""}`; })()
-                  : String(stock);
+                  : /ml|mililitro|litro|lts|lt\\b|\\bl\\b/i.test([p.cantidad, p.unit, ...(p.presentacionesVenta || []).map(x => `${x.nombre} ${x.unidadMedida || x.unidad || ""} ${x.unidadContenido || ""}`)].join(" "))
+                    ? (() => { const totalMl = Math.max(0, Math.round(stock * 1000)); const liters = Math.floor(totalMl / 1000); const ml = totalMl % 1000; return `${liters} Lts${ml ? ` ${ml} ml` : ""}`; })()
+                    : String(stock);
                 const minStock = p.stockMinimo || 0;
                 return (
                   <TableRow key={p.id} className="hover:bg-[#1a1a1a] transition-colors border-[#2a2a2a]">
