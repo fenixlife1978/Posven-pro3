@@ -465,7 +465,7 @@ function syncLegacyRealtimeProducts(prevArr: any[] | undefined, newArr: any[] | 
   const payload: Record<string, any> = { ...updates };
   removals.forEach(id => { payload[id] = null; });
   return update(rootRef, payload)
-    .catch(e => console.error('RTDB sync productos:', e));
+    .catch(e => console.error('sincronización de productos:', e));
 }
 
 async function bootstrapProductos(): Promise<boolean> {
@@ -1011,7 +1011,7 @@ function init() {
       const val = snap.val() || {};
       const items = Object.values(val).filter(Boolean);
       applyPatch({ productos: items });
-    }, (err) => { if (err?.code !== 'permission-denied') console.warn("RTDB productos:", err); }));
+    }, (err) => { if (err?.code !== 'permission-denied') console.warn("sincronización de productos:", err); }));
   })();
 
   // 3) LISTAS VIVAS ENTRE CAJAS.
