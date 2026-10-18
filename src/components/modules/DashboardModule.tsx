@@ -314,7 +314,7 @@ export default function DashboardModule({ state }: { state: AppState }) {
         <div className="bg-white border border-line rounded-[20px] shadow-sm-card p-6 flex flex-col items-center justify-center text-center">
             <Sparkles className="w-12 h-12 text-brand-gold opacity-20 mb-4" />
             <h3 className="font-display font-black text-ink uppercase text-sm mb-2">Sistema PosVEN Pro Cloud</h3>
-            <p className="text-xs font-medium text-ink-subtle max-w-xs uppercase tracking-widest leading-loose">Información sincronizada en tiempo real con Firebase RTDB para todos los terminales de venta.</p>
+            <p className="text-xs font-medium text-ink-subtle max-w-xs uppercase tracking-widest leading-loose">Información sincronizada con la base de datos Turso para todos los terminales de venta.</p>
         </div>
       </section>
 
