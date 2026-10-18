@@ -321,7 +321,6 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
   const historialUnificado = useMemo(() => {
     const enRango = (f: string) => f && f.slice(0, 10) >= rango.desde && f.slice(0, 10) <= rango.hasta;
     // La lista operativa de la jornada empieza después del último Z de ESTA caja.
-    // No borramos documentos históricos de Firestore: quedan disponibles para
     // trazabilidad, pero la nueva jornada arranca limpia aunque el Z se haga
     // durante el mismo día.
     const terminal = state.terminales.find(t => t.id === terminalId);
