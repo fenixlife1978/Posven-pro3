@@ -41,6 +41,8 @@ export interface Product {
   activo: boolean;
   aplicaIVA?: boolean;
   isKit?: boolean;
+  /** Cuando está activo, el código SKU del combo se deriva de los códigos y cantidades de sus componentes. */
+  skuCompuestoAutomatico?: boolean;
   kitType?: 'stock_propio' | 'stock_componentes';
   kitItems?: KitItem[];
   proveedor?: string;
