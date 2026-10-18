@@ -8,7 +8,7 @@ import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-que
 type DocumentData = any;
 type QueryDocumentSnapshot<T = any> = any;
 const db: any = null;
-const rtdb: any = null;
+const legacyRealtime: any = null;
 const servidorTursoRetirado = (..._args: any[]): never => {
   throw new Error('servidor Turso fue retirado del flujo operativo. Turso es la única fuente de datos.');
 };
@@ -27,17 +27,16 @@ const startAfter: any = servidorTursoRetirado;
 const onValue: any = servidorTursoRetirado;
 const ref: any = servidorTursoRetirado;
 const update: any = servidorTursoRetirado;
-const rtdbGet: any = servidorTursoRetirado;
+const legacyRealtimeGet: any = servidorTursoRetirado;
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
 const CONFIG_COLLECTION = 'config';
 const CONFIG_DOC_ID = 'general';
 const CATALOGOS_COLLECTION = 'catalogos';
-const RTDB_PRODUCTS_PATH = 'pos_system_data/productos';
+const LEGACY_REALTIME_PRODUCTS_PATH = 'pos_system_data/productos';
 
 // ============================================================
-// UBICACIÓN EN FIRESTORE POR LISTA DEL ESTADO.
 // Cada lista vive en SU PROPIA COLECCIÓN (documento por registro).
 // El doc pos_system_data/state YA NO se lee ni se escribe.
 // ============================================================
@@ -253,7 +252,6 @@ export const initialState: AppState = {
 
 // ============================================================
 // CACHE EN MEMORIA + localStorage (SOLO para mostrar UI rápido).
-// El cache NUNCA se sube a Firestore (no más sobrescritura de datos).
 //
 // ⚠️ localStorage (no sessionStorage): la sesión debe sobrevivir
 // cortes de luz / reinicios del PC. Si sessionStorage se usa, el cache
@@ -304,8 +302,7 @@ function applyPatch(patch: Partial<AppState>) {
   listeners.forEach(cb => { try { cb(patch); } catch (e) { console.error(e); } });
 }
 
-// Firestore rechaza undefined (y NaN/Infinity): los normaliza para no tumbar la escritura.
-function sanitizeForFirestore(value: any): any {
+function sanitizeRecord(value: any): any {
   if (value === undefined) return undefined;
   if (value === null) return null;
   if (typeof value === 'number') {
@@ -313,12 +310,12 @@ function sanitizeForFirestore(value: any): any {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map(sanitizeForFirestore).filter(v => v !== undefined);
+    return value.map(sanitizeRecord).filter(v => v !== undefined);
   }
   if (typeof value === 'object') {
     const out: Record<string, any> = {};
     for (const k of Object.keys(value)) {
-      const v = sanitizeForFirestore(value[k]);
+      const v = sanitizeRecord(value[k]);
       if (v !== undefined) out[k] = v;
     }
     return out;
@@ -336,12 +333,11 @@ function mergeById<T extends { id?: any }>(existing: T[] | undefined, incoming: 
 
 // Persistencia optimista por documento.
 // Antes de sobrescribir un registro existente se comprueba dentro de una
-// transacción que Firestore siga teniendo exactamente la versión que esta
 // caja leyó. Si otra caja lo cambió entretanto, abortamos en lugar de
 // pisar silenciosamente su modificación con un array local antiguo.
 async function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
   const previousIds = new Set((prevArr || []).filter(x => x && x.id).map(x => String(x.id)));
-  const records = (newArr || []).filter(x => x && x.id).map(sanitizeForFirestore);
+  const records = (newArr || []).filter(x => x && x.id).map(sanitizeRecord);
   const currentIds = new Set(records.map((x: any) => String(x.id)));
   const deletedIds = [...previousIds].filter(id => !currentIds.has(id));
   if (records.length === 0 && deletedIds.length === 0) return;
@@ -354,7 +350,6 @@ function syncProductosTransactional(_prevArr: any[] | undefined, _newArr: any[] 
   throw new Error('La persistencia de productos está gestionada exclusivamente por Turso.');
 }
 
-// Movimiento de inventario atómico: toma el stock REAL de Firestore y registra
 // el movimiento con stockAntes/stockDespues calculados dentro de la transacción.
 async function applyInventoryMovementsTransaction(params: {
   operationId: string;
@@ -388,8 +383,8 @@ async function applyInventoryMovementsTransaction(params: {
     const remoteProducts = new Map<string, any>();
     for (const pid of productIds) {
       const snap = await tx.get(doc(db, 'productos', pid));
-      if (!snap.exists()) throw new Error('El producto ' + pid + ' ya no existe en Firestore.');
-      remoteProducts.set(pid, { ...sanitizeForFirestore(snap.data()), id: pid });
+      if (!snap.exists()) throw new Error('El producto ' + pid + ' ya no existe en Turso.');
+      remoteProducts.set(pid, { ...sanitizeRecord(snap.data()), id: pid });
     }
 
     if (movements.length + productIds.length + 1 > 450) {
@@ -420,13 +415,13 @@ async function applyInventoryMovementsTransaction(params: {
           stockDespues: running,
           id: String(movement.id || Store.uid())
         };
-        tx.set(doc(db, 'movimientos', persistedMovement.id), sanitizeForFirestore(persistedMovement), { merge: false });
+        tx.set(doc(db, 'movimientos', persistedMovement.id), sanitizeRecord(persistedMovement), { merge: false });
         persisted.push(persistedMovement);
       }
 
       const patch = productPatches[pid] || {};
       const persistedProduct = { ...product, ...patch, stock: running };
-      tx.set(doc(db, 'productos', pid), sanitizeForFirestore(persistedProduct), { merge: true });
+      tx.set(doc(db, 'productos', pid), sanitizeRecord(persistedProduct), { merge: true });
       persistedProducts.push(persistedProduct);
     }
 
@@ -439,19 +434,15 @@ async function applyInventoryMovementsTransaction(params: {
     result = { movements: persisted, productIds, products: persistedProducts };
   });
   if (result?.products?.length) {
-    await syncProductosRTDB([], result.products);
+    await syncLegacyRealtimeProducts([], result.products);
   }
   return result;
 }
 
 // ============================================================
-// ESPEJO EN TIEMPO REAL (RTDB) PARA PRODUCTOS.
-// El stock/precios viven en RTDB para sincronizar cajas sin re-leer
-// toda la colección de Firestore en cada cambio (gran ahorro de lecturas).
-// Firestore sigue siendo la fuente de verdad persistente.
 // ============================================================
-function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
-  if (!rtdb) return Promise.resolve();
+function syncLegacyRealtimeProducts(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
+  if (!legacyRealtime) return Promise.resolve();
   const prevById = new Map((prevArr || []).filter(x => x && x.id).map(x => [String(x.id), x]));
   const newList = newArr || [];
   const updates: Record<string, any> = {};
@@ -459,8 +450,8 @@ function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined
   newList.forEach(p => {
     if (!p || !p.id) return;
     const before = prevById.get(String(p.id));
-    const clean = sanitizeForFirestore(p);
-    if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(clean)) {
+    const clean = sanitizeRecord(p);
+    if (!before || JSON.stringify(sanitizeRecord(before)) !== JSON.stringify(clean)) {
       updates[String(p.id)] = clean;
     }
   });
@@ -468,20 +459,15 @@ function syncProductosRTDB(prevArr: any[] | undefined, newArr: any[] | undefined
     if (!newList.some(p => p && String(p.id) === id)) removals.push(id);
   });
   if (Object.keys(updates).length === 0 && removals.length === 0) return Promise.resolve();
-  // RTDB permite enviar actualizaciones y eliminaciones en un único update
   // multipath. Así una operación que elimina varios productos no genera un
   // write remoto independiente por cada producto.
-  const rootRef = ref(rtdb, RTDB_PRODUCTS_PATH);
+  const rootRef = ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH);
   const payload: Record<string, any> = { ...updates };
   removals.forEach(id => { payload[id] = null; });
   return update(rootRef, payload)
     .catch(e => console.error('RTDB sync productos:', e));
 }
 
-// Sincroniza el espejo RTDB con Firestore (migración y sanado):
-//  - Si el espejo está vacío → lo siembra COMPLETO desde Firestore.
-//  - Si está incompleto (menos productos que Firestore) → lo repuebla completo.
-// Firestore sigue siendo la fuente de verdad; RTDB es el espejo barato de tiempo real.
 async function bootstrapProductos(): Promise<boolean> {
   try {
     const tursoItems = await tryTursoRead('productos', { limit: 5000 });
@@ -489,8 +475,8 @@ async function bootstrapProductos(): Promise<boolean> {
       applyPatch({ productos: tursoItems });
       return true;
     }
-    if (!rtdb) return false;
-    const snap = await rtdbGet(ref(rtdb, RTDB_PRODUCTS_PATH));
+    if (!legacyRealtime) return false;
+    const snap = await legacyRealtimeGet(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH));
     const val = snap.val();
     const mirrorItems: any[] = val ? Object.values(val).filter(Boolean) : [];
 
@@ -499,8 +485,8 @@ async function bootstrapProductos(): Promise<boolean> {
       if (items.length > 0) {
         applyPatch({ productos: mergeById((cache as any).productos, items) });
         const updates: Record<string, any> = {};
-        items.forEach(p => { updates[String(p.id)] = sanitizeForFirestore(p); });
-        await update(ref(rtdb, RTDB_PRODUCTS_PATH), updates);
+        items.forEach(p => { updates[String(p.id)] = sanitizeRecord(p); });
+        await update(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), updates);
       }
       return false;
     }
@@ -520,10 +506,10 @@ const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
 async function loadCollection(name: string): Promise<any[]> {
   const tursoItems = await tryTursoRead(name);
-  if (tursoItems !== null) return tursoItems.map(sanitizeForFirestore).filter(Boolean);
+  if (tursoItems !== null) return tursoItems.map(sanitizeRecord).filter(Boolean);
   if (!db) return [];
   const snap = await getDocs(collection(db, name));
-  return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+  return snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
 }
 
 // Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
@@ -570,7 +556,6 @@ async function ensureLoaded(name: string): Promise<void> {
 // Garantiza que TODAS las colecciones necesarias para los Reportes X/Z
 // estén cargadas antes de generar el reporte. Evita la race condition
 // donde el usuario abre X/Z justo después de un reinicio y el cache
-// aún no terminó de hidratarse desde Firestore (resultados en $0).
 // Como cada caja filtra por SU PROPIO `fechaUltimoZ` (per-terminal), ventas y
 // libroDiario se cargan COMPLETOS: una caja nunca debe perder datos porque
 // otra hizo su corte Z.
@@ -615,7 +600,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
           : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
         snap = await getDocs(fallbackQuery);
       }
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean)
+      const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean)
         .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item.terminalId || '') === terminalId);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
@@ -690,7 +675,7 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
         ? query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
         : query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), limit(1000));
       const snap = await getDocs(q);
-      const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+      const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
       cursor = snap.docs[snap.docs.length - 1];
@@ -718,7 +703,7 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
       ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(last), limit(pageSize))
       : query(collection(db, col), orderBy('fecha', 'desc'), limit(pageSize));
     const snap = await getDocs(q);
-    const items = snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+    const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
     cursors[name] = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
     applyPatch({ [name]: mergeById((cache as any)[name], items) });
     return items.length;
@@ -748,7 +733,7 @@ async function kardex(productoId: string, max = 100): Promise<any[]> {
         orderBy('fecha', 'desc'),
         limit(max)
       ));
-      return snap.docs.map(d => sanitizeForFirestore(d.data())).filter(Boolean);
+      return snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
     } catch (e: any) {
       if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
         await ensureLoaded('movimientos');
@@ -864,10 +849,10 @@ function startTerminalSync(terminalId?: string, all = false, initialItems: Termi
     target as any,
     (snap: any) => {
       if (all) {
-        const items = snap.docs.map((d: any) => sanitizeForFirestore(d.data())).filter(Boolean);
+        const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
         applyPatch({ terminales: items });
       } else if (snap.exists()) {
-        const item = sanitizeForFirestore(snap.data());
+        const item = sanitizeRecord(snap.data());
         const id = String(item?.id || snap.id);
         applyPatch({ terminales: mergeById((cache as any).terminales, [{ ...item, id }]) });
       }
@@ -894,7 +879,7 @@ function startTerminalSync(terminalId?: string, all = false, initialItems: Termi
       salesQuery,
       (snap: any) => {
         const items = snap.docs
-          .map((d: any) => sanitizeForFirestore({ ...d.data(), id: d.data()?.id || d.id }))
+          .map((d: any) => sanitizeRecord({ ...d.data(), id: d.data()?.id || d.id }))
           .filter(Boolean)
           .sort((a: any, b: any) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
         applyPatch({ ventas: items });
@@ -957,7 +942,7 @@ function startMasterSync(name: string): () => void {
       collection(db, col),
       (snap) => {
         const items = snap.docs
-          .map(d => sanitizeForFirestore(d.data()))
+          .map(d => sanitizeRecord(d.data()))
           .filter(Boolean);
         applyPatch({ [name]: items });
         if (name === 'clientes' || name === 'proveedores') loadedAll[name] = true;
@@ -1010,7 +995,7 @@ function init() {
       const tursoConfig = await tryTursoSpecialRead('config');
       const patch: any = {};
       for (const f of CONFIG_FIELDS) if (tursoConfig?.[f] !== undefined) {
-        patch[f] = sanitizeForFirestore(tursoConfig[f]);
+        patch[f] = sanitizeRecord(tursoConfig[f]);
       }
       if (Object.keys(patch).length) applyPatch(patch);
       await loadCatalogs(true, String(tursoConfig?.catalogosVersion || ''));
@@ -1019,11 +1004,10 @@ function init() {
     }
   })();
 
-  // 2) PRODUCTOS: Turso es la fuente cuando está activo. RTDB solo se usa como fallback.
   void (async () => {
     const usingTurso = await bootstrapProductos();
-    if (usingTurso || !rtdb) return;
-    teardownFns.push(onValue(ref(rtdb, RTDB_PRODUCTS_PATH), (snap) => {
+    if (usingTurso || !legacyRealtime) return;
+    teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap) => {
       const val = snap.val() || {};
       const items = Object.values(val).filter(Boolean);
       applyPatch({ productos: items });
@@ -1052,7 +1036,7 @@ function init() {
             const currentArr = [...((cache as any)[name] || [])];
             const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
             snap.docChanges().forEach(change => {
-              const item = sanitizeForFirestore(change.doc.data());
+              const item = sanitizeRecord(change.doc.data());
               const id = String(item?.id || change.doc.id);
               if (change.type === 'removed') {
                 if (item && String(item.estado || '') !== 'pagada') map.delete(id);
@@ -1092,7 +1076,7 @@ function init() {
             const currentArr = [...((cache as any)[name] || [])];
             const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
             snap.docChanges().forEach(change => {
-              const item = sanitizeForFirestore(change.doc.data());
+              const item = sanitizeRecord(change.doc.data());
               if (!item || !item.id) return;
               if (change.type === 'removed') map.delete(String(item.id));
               else map.set(String(item.id), item);
@@ -1108,7 +1092,6 @@ function init() {
   })();
 
   // Históricos operativos: Turso es la única fuente de movimientos.
-  // No se instala ningún listener servidor Turso/Firestore porque servidor Turso fue retirado.
   void (async () => {
     try {
       const tursoItems = await tryTursoRead('movimientos', { limit: 50 });
@@ -1181,11 +1164,11 @@ async function getSaleById(saleId: string): Promise<any | null> {
       if (response.status === 503) throw new Error('Turso no está configurado o no está disponible.');
       const body: any = await response.json();
       if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
-      if (body?.record) return sanitizeForFirestore(body.record);
+      if (body?.record) return sanitizeRecord(body.record);
       return null;
     }
     const cached = (cache.ventas || []).find((v: any) => String(v?.id || '') === id);
-    if (cached) return sanitizeForFirestore(cached);
+    if (cached) return sanitizeRecord(cached);
     return null;
   } catch (e) {
     console.error('Error leyendo venta puntual:', e);
@@ -1222,7 +1205,6 @@ export const Store = {
   },
 
   /**
-   * Aplica un abono sobre la deuda REAL de Firestore.
    * La deuda y sus efectos contables se escriben en una sola transacción,
    * evitando que dos cajas trabajen sobre el mismo saldo antiguo.
    */
@@ -1240,44 +1222,44 @@ export const Store = {
       const operationRef = await claimOperation(tx, operationType, operationId);
       const saleRef = doc(db, 'ventas', String(saleId));
       const saleSnap = await tx.get(saleRef);
-      if (!saleSnap.exists()) throw new Error('La venta ya no existe en Firestore.');
-      const sale = { ...sanitizeForFirestore(saleSnap.data()), id: String(saleId) } as any;
+      if (!saleSnap.exists()) throw new Error('La venta ya no existe en Turso.');
+      const sale = { ...sanitizeRecord(saleSnap.data()), id: String(saleId) } as any;
       if (operationType === 'ANULACION' && String(sale.estado || '') === 'anulada') throw new Error('La factura ya fue anulada.');
       const productIds = [...new Set((movements || []).map((m:any) => String(m.productoId || '')).filter(Boolean))];
       const products = new Map<string, any>();
-      for (const pid of productIds) { const s = await tx.get(doc(db,'productos',pid)); if (!s.exists()) throw new Error('Un producto de la operación ya no existe en Firestore.'); products.set(pid,{...sanitizeForFirestore(s.data()),id:pid}); }
+      for (const pid of productIds) { const s = await tx.get(doc(db,'productos',pid)); if (!s.exists()) throw new Error('Un producto de la operación ya no existe en Turso.'); products.set(pid,{...sanitizeRecord(s.data()),id:pid}); }
       const journalRef = journal ? doc(db,'libroDiario',String(journal.id)) : null;
       if (journalRef) { const js = await tx.get(journalRef); if (js.exists()) throw new Error('El asiento contable de esta operación ya existe.'); }
       const terminalId = String(operationDoc.terminalId || '');
       const terminalRef = terminalId ? doc(db,'terminales',terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
       if (terminalId && !terminalSnap?.exists()) throw new Error('La terminal de la operación ya no existe.');
-      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
+      const terminalRemote = terminalSnap?.exists() ? sanitizeRecord(terminalSnap.data()) as any : null;
       const counterField = operationType === 'DEVOLUCION' ? 'proximaDevolucion' : 'proximaAnulacion';
       const label = operationType === 'DEVOLUCION' ? 'DEV' : 'ANU';
       const nextCounter = Number(terminalRemote?.[counterField]) || 1;
       const canonicalId = terminalRemote
         ? terminalSeries(terminalPrefix(terminalRemote, terminalId), label, nextCounter, 6)
         : terminalSeries('GLOBAL', label, Date.now(), 6);
-      const canonicalOperationDoc = sanitizeForFirestore({ ...operationDoc, id: canonicalId, terminalId: terminalId || operationDoc.terminalId, terminalName: terminalRemote?.nombre || operationDoc.terminalName });
+      const canonicalOperationDoc = sanitizeRecord({ ...operationDoc, id: canonicalId, terminalId: terminalId || operationDoc.terminalId, terminalName: terminalRemote?.nombre || operationDoc.terminalName });
       const existingRef = doc(db, operationType === 'DEVOLUCION' ? 'devoluciones' : 'anulaciones', canonicalId);
       const existingOp = await tx.get(existingRef); if (existingOp.exists()) throw new Error('Esta operación ya fue registrada.');
       if ((movements?.length || 0) + productIds.length + 6 > 450) throw new Error('La operación contiene demasiados movimientos.');
       for (const m of movements || []) {
         const pid = String(m.productoId); const p = products.get(pid); const before = Number(p.stock)||0; const after = before + (Number(m.cantidad)||0);
         const mr = doc(db,'movimientos',String(m.id || Store.uid()));
-        tx.set(mr,sanitizeForFirestore({...m,productoId:pid,stockAntes:before,stockDespues:after,id:mr.id}),{merge:false});
+        tx.set(mr,sanitizeRecord({...m,productoId:pid,stockAntes:before,stockDespues:after,id:mr.id}),{merge:false});
         products.set(pid,{...p,stock:after});
       }
-      for (const [pid,p] of products) tx.set(doc(db,'productos',pid),sanitizeForFirestore(p),{merge:true});
+      for (const [pid,p] of products) tx.set(doc(db,'productos',pid),sanitizeRecord(p),{merge:true});
       tx.set(existingRef, canonicalOperationDoc, {merge:false});
-      tx.set(saleRef,sanitizeForFirestore({...sale,estado: operationType === 'ANULACION' ? 'anulada' : 'parcialmente_devuelta'}),{merge:true});
-      if (journalRef && journal) tx.set(journalRef,sanitizeForFirestore({ ...journal, referencia: canonicalId, terminalId: terminalId || journal.terminalId, terminalName: terminalRemote?.nombre || journal.terminalName }),{merge:false});
+      tx.set(saleRef,sanitizeRecord({...sale,estado: operationType === 'ANULACION' ? 'anulada' : 'parcialmente_devuelta'}),{merge:true});
+      if (journalRef && journal) tx.set(journalRef,sanitizeRecord({ ...journal, referencia: canonicalId, terminalId: terminalId || journal.terminalId, terminalName: terminalRemote?.nombre || journal.terminalName }),{merge:false});
       if (terminalRef && terminalRemote) tx.set(terminalRef, {[counterField]: nextCounter + 1}, {merge:true});
       tx.set(operationRef,{tipo:operationType,operationId,fecha:String(canonicalOperationDoc.fecha||Utils.ahora()),referencia:String(canonicalId),terminalId:terminalId||'GLOBAL'},{merge:false});
       result={operationId,operationType,receiptId:canonicalId,operationDoc:canonicalOperationDoc,products:[...products.values()],terminal: terminalRef ? {...terminalRemote,id:terminalId,[counterField]:nextCounter+1} : null};
     });
-    if (result?.products?.length) await syncProductosRTDB([],result.products);
+    if (result?.products?.length) await syncLegacyRealtimeProducts([],result.products);
     return result;
   },
 
@@ -1309,9 +1291,8 @@ export const Store = {
       const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
       const terminalRef = effectiveTerminalId ? doc(db, 'terminales', effectiveTerminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
-      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
-      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Firestore.');
-      // IMPORTANTE: Firestore puede reintentar esta función completa si detecta
+      const terminalRemote = terminalSnap?.exists() ? sanitizeRecord(terminalSnap.data()) as any : null;
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Turso.');
       // concurrencia. Todo el resultado se reconstruye en cada intento para no
       // duplicar appliedUSD/debts en memoria.
       const nextResult = { appliedUSD: 0, debts: [] as any[], receiptId: '' as string };
@@ -1322,7 +1303,7 @@ export const Store = {
       const snap = await tx.get(q);
 
       const docs = snap.docs
-        .map(d => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
+        .map(d => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
         .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
         .sort((a, b) => {
           const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
@@ -1341,7 +1322,7 @@ export const Store = {
         remanente = Math.max(0, remanente - pago);
 
         const historial = Array.isArray(item.data.historialPagos) ? [...item.data.historialPagos] : [];
-        const pagoHistorial = sanitizeForFirestore({
+        const pagoHistorial = sanitizeRecord({
           ...payment,
           id: nextResult.receiptId,
           reciboId: nextResult.receiptId,
@@ -1362,7 +1343,7 @@ export const Store = {
           historialPagos: historial
         };
 
-        tx.set(item.ref, sanitizeForFirestore(updated), { merge: true });
+        tx.set(item.ref, sanitizeRecord(updated), { merge: true });
         nextResult.debts.push({ ...updated, appliedUSD: pago });
         nextResult.appliedUSD += pago;
       }
@@ -1374,7 +1355,7 @@ export const Store = {
       if (journal?.id) {
         tx.set(
           doc(db, 'libroDiario', journal.id),
-          sanitizeForFirestore({ ...journal, montoUSD: nextResult.appliedUSD, referencia: nextResult.receiptId, terminalId: terminalId || journal.terminalId, terminalName: terminalRemote?.nombre || journal.terminalName }),
+          sanitizeRecord({ ...journal, montoUSD: nextResult.appliedUSD, referencia: nextResult.receiptId, terminalId: terminalId || journal.terminalId, terminalName: terminalRemote?.nombre || journal.terminalName }),
           { merge: true }
         );
       }
@@ -1426,8 +1407,8 @@ export const Store = {
       const operationRef = await claimOperation(tx, 'PAGO-CXC-GLOBAL', opId);
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
-      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
-      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Firestore.');
+      const terminalRemote = terminalSnap?.exists() ? sanitizeRecord(terminalSnap.data()) as any : null;
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Turso.');
 
       const nextResult = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
       const nextCounter = Number(terminalRemote?.proximoCobroDeuda) || 1;
@@ -1437,7 +1418,7 @@ export const Store = {
 
       const snap = await tx.get(q);
       const docs = snap.docs
-        .map(d => ({ ref: d.ref, data: sanitizeForFirestore(d.data()) as any }))
+        .map(d => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
         .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
         .sort((a, b) => {
           const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
@@ -1459,7 +1440,7 @@ export const Store = {
         remanenteBS = Math.max(0, remanenteBS - pagoBS);
 
         const historial = Array.isArray(item.data.historialPagos) ? [...item.data.historialPagos] : [];
-        const pagoHistorial = sanitizeForFirestore({
+        const pagoHistorial = sanitizeRecord({
           ...payment,
           id: nextResult.receiptId,
           reciboId: nextResult.receiptId,
@@ -1478,7 +1459,7 @@ export const Store = {
           historialPagos: historial
         };
 
-        tx.set(item.ref, sanitizeForFirestore(updated), { merge: true });
+        tx.set(item.ref, sanitizeRecord(updated), { merge: true });
         nextResult.debts.push({ ...updated, appliedUSD: pagoUSD, appliedBS: pagoBS });
         nextResult.appliedUSD += pagoUSD;
         nextResult.appliedBS += pagoBS;
@@ -1501,7 +1482,7 @@ export const Store = {
       if (journal?.id) {
         tx.set(
           doc(db, 'libroDiario', journal.id),
-          sanitizeForFirestore({
+          sanitizeRecord({
             ...journal,
             montoUSD: nextResult.appliedUSD,
             montoBS: nextResult.appliedBS,
@@ -1598,11 +1579,11 @@ export const Store = {
       const operationRef = await claimOperation(tx, 'PAGO-DEUDA', opId);
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
-      const terminalRemote = terminalSnap?.exists() ? sanitizeForFirestore(terminalSnap.data()) as any : null;
-      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Firestore.');
+      const terminalRemote = terminalSnap?.exists() ? sanitizeRecord(terminalSnap.data()) as any : null;
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Turso.');
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
-      const remote = sanitizeForFirestore(debtSnap.data()) as any;
+      const remote = sanitizeRecord(debtSnap.data()) as any;
       const saldoActual = Number(remote.saldoUSD) || 0;
       if (saldoActual <= 0.001) throw new Error('La deuda ya está pagada en otra caja.');
       if (amountUSD > saldoActual + 0.001) throw new Error('El saldo cambió en otra caja. Actualice y vuelva a intentar.');
@@ -1614,7 +1595,7 @@ export const Store = {
       const nextCounter = Number(terminalRemote?.[counterField]) || 1;
       const receiptId = terminalRemote ? terminalSeries(terminalPrefix(terminalRemote, terminalId), collectionName === 'cxc' ? 'CXC' : 'CXP', nextCounter, 6) : terminalSeries('GLOBAL', collectionName === 'cxc' ? 'CXC' : 'CXP', Date.now(), 6);
       const appliedBS = Number(amountBS) > 0 ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS)) : (Number(payment?.montoBS) || (applied * (Number(Store.get().tasa) || 0)));
-      const pago = sanitizeForFirestore({ ...payment, id: receiptId, reciboId: receiptId, terminalId: terminalId || payment?.terminalId, montoUSD: applied, montoBS: appliedBS });
+      const pago = sanitizeRecord({ ...payment, id: receiptId, reciboId: receiptId, terminalId: terminalId || payment?.terminalId, montoUSD: applied, montoBS: appliedBS });
       historial.push(pago);
       const updated = {
         ...remote,
@@ -1634,14 +1615,14 @@ export const Store = {
           customerDebt = Number(customer.debt) || 0;
         }
       }
-      tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
+      tx.set(debtRef, sanitizeRecord(updated), { merge: true });
       if (customerRef) tx.set(customerRef, { debt: Math.max(0, (customerDebt || 0) - applied) }, { merge: true });
-      const journalItems = (Array.isArray(journal) ? journal : (journal ? [journal] : [])).map((entry: any) => entry ? sanitizeForFirestore({ ...entry, referencia: receiptId, terminalId: terminalId || entry.terminalId, terminalName: terminalRemote?.nombre || entry.terminalName }) : entry);
+      const journalItems = (Array.isArray(journal) ? journal : (journal ? [journal] : [])).map((entry: any) => entry ? sanitizeRecord({ ...entry, referencia: receiptId, terminalId: terminalId || entry.terminalId, terminalName: terminalRemote?.nombre || entry.terminalName }) : entry);
       journalItems.forEach((entry: any) => {
-        if (entry?.id) tx.set(doc(db, 'libroDiario', entry.id), sanitizeForFirestore(entry), { merge: true });
+        if (entry?.id) tx.set(doc(db, 'libroDiario', entry.id), sanitizeRecord(entry), { merge: true });
       });
       const persistedSale = sale?.id
-        ? sanitizeForFirestore({ ...sale, id: receiptId, terminalId: terminalId || sale.terminalId, terminalName: terminalRemote?.nombre || sale.terminalName })
+        ? sanitizeRecord({ ...sale, id: receiptId, terminalId: terminalId || sale.terminalId, terminalName: terminalRemote?.nombre || sale.terminalName })
         : null;
       if (persistedSale?.id) tx.set(doc(db, 'ventas', persistedSale.id), persistedSale, { merge: true });
       if (terminalRef && terminalRemote) {
@@ -1692,8 +1673,8 @@ export const Store = {
       const operationRef = await claimOperation(tx, 'DEUDA-CXP', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda de proveedor ya existe en otra caja. Actualice y vuelva a intentar.');
-      tx.set(debtRef, sanitizeForFirestore(debt), { merge: false });
-      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
+      tx.set(debtRef, sanitizeRecord(debt), { merge: false });
+      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeRecord(journal), { merge: false });
       tx.set(operationRef, { tipo: 'DEUDA-CXP', operationId: opId, fecha: debt.fecha, referencia: debt.id }, { merge: false });
       result = debt;
     });
@@ -1914,7 +1895,7 @@ export const Store = {
       const operationRef = await claimOperation(tx, 'ELIMINAR-CLIENTE', opId);
       const customerSnap = await tx.get(customerRef);
       if (!customerSnap.exists()) throw new Error('El cliente ya no existe o fue eliminado en otra caja.');
-      const customer = sanitizeForFirestore(customerSnap.data()) as any;
+      const customer = sanitizeRecord(customerSnap.data()) as any;
       // Evita leer toda CxC: cuando conocemos la cédula, el formato
       // canónico de cliente permite consultar únicamente las deudas de esa persona.
       // Solo usamos la consulta histórica amplia como compatibilidad para datos
@@ -1977,19 +1958,19 @@ export const Store = {
       const operationRef = await claimOperation(tx, 'ELIMINAR-CXC', opId);
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
-      const debt = sanitizeForFirestore(debtSnap.data()) as any;
+      const debt = sanitizeRecord(debtSnap.data()) as any;
       const saldo = Number(debt.saldoUSD) || 0;
       let customerRef: any = null;
       let customer: any = null;
       if (customerId) {
         customerRef = doc(db, 'clientes', customerId);
         const snap = await tx.get(customerRef);
-        if (snap.exists()) customer = sanitizeForFirestore(snap.data()) as any;
+        if (snap.exists()) customer = sanitizeRecord(snap.data()) as any;
       } else if (customerCedula) {
         const snaps = await tx.get(query(collection(db, 'clientes'), where('cedula', '==', customerCedula), limit(1)));
         if (!snaps.empty) {
           customerRef = snaps.docs[0].ref;
-          customer = sanitizeForFirestore(snaps.docs[0].data()) as any;
+          customer = sanitizeRecord(snaps.docs[0].data()) as any;
         }
       }
       tx.delete(debtRef);
@@ -2042,19 +2023,19 @@ export const Store = {
         customerRef = doc(db, 'clientes', customerId);
         const snap = await tx.get(customerRef);
         if (!snap.exists()) throw new Error('El cliente ya no existe en otra caja.');
-        remoteCustomer = sanitizeForFirestore(snap.data()) as any;
+        remoteCustomer = sanitizeRecord(snap.data()) as any;
       } else if (customerCedula) {
         const snaps = await tx.get(query(collection(db, 'clientes'), where('cedula', '==', customerCedula), limit(1)));
         if (!snaps.empty) {
           customerRef = snaps.docs[0].ref;
-          remoteCustomer = sanitizeForFirestore(snaps.docs[0].data()) as any;
+          remoteCustomer = sanitizeRecord(snaps.docs[0].data()) as any;
         }
       }
       if (!remoteCustomer && customer) {
         customerRef = doc(db, 'clientes', customer.id);
         const snap = await tx.get(customerRef);
-        if (snap.exists()) remoteCustomer = sanitizeForFirestore(snap.data()) as any;
-        else tx.set(customerRef, sanitizeForFirestore(customer), { merge: false });
+        if (snap.exists()) remoteCustomer = sanitizeRecord(snap.data()) as any;
+        else tx.set(customerRef, sanitizeRecord(customer), { merge: false });
       }
       const amount = Number(debt.montoUSD) || 0;
       const mergedCustomer = remoteCustomer ? {
@@ -2063,9 +2044,9 @@ export const Store = {
         address: customer?.address || remoteCustomer.address || 'Sin dirección',
         phone: customer?.phone || remoteCustomer.phone || 'Sin teléfono'
       } : null;
-      if (customerRef && mergedCustomer) tx.set(customerRef, sanitizeForFirestore(mergedCustomer), { merge: true });
-      tx.set(debtRef, sanitizeForFirestore(debt), { merge: false });
-      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeForFirestore(journal), { merge: false });
+      if (customerRef && mergedCustomer) tx.set(customerRef, sanitizeRecord(mergedCustomer), { merge: true });
+      tx.set(debtRef, sanitizeRecord(debt), { merge: false });
+      if (journal?.id) tx.set(doc(db, 'libroDiario', journal.id), sanitizeRecord(journal), { merge: false });
       tx.set(operationRef, { tipo: 'DEUDA-CXC', operationId: opId, fecha: debt.fecha, referencia: debt.id }, { merge: false });
       result = { debt, customer: mergedCustomer };
     });
@@ -2103,7 +2084,7 @@ export const Store = {
       const journalRef = journalId ? doc(db, 'libroDiario', journalId) : null;
       const journalSnap = journalRef ? await tx.get(journalRef) : null;
 
-      const remote = sanitizeForFirestore(debtSnap.data()) as any;
+      const remote = sanitizeRecord(debtSnap.data()) as any;
       const historial = Array.isArray(remote.historialPagos) ? [...remote.historialPagos] : [];
       const idx = historial.findIndex((p: any) => String(p?.id || '') === String(paymentId));
       if (idx < 0) throw new Error('El abono ya fue eliminado o no existe en la deuda remota.');
@@ -2128,10 +2109,10 @@ export const Store = {
         historialPagos: restantes
       };
 
-      tx.set(debtRef, sanitizeForFirestore(updated), { merge: true });
+      tx.set(debtRef, sanitizeRecord(updated), { merge: true });
 
       if (journalRef && journalSnap?.exists()) {
-        const journal = sanitizeForFirestore(journalSnap.data()) as any;
+        const journal = sanitizeRecord(journalSnap.data()) as any;
         const nuevoMonto = Math.max(
           0,
           Math.round(((Number(journal.montoUSD) || 0) - monto + Number.EPSILON) * 100) / 100
@@ -2150,7 +2131,7 @@ export const Store = {
             montoBS: nuevoBS,
             concepto: String(journal.concepto || '').replace(/ \\(abono revertido\\)$/i, '') + ' (abono revertido)'
           };
-          tx.set(journalRef, sanitizeForFirestore(nextJournalResult), { merge: true });
+          tx.set(journalRef, sanitizeRecord(nextJournalResult), { merge: true });
         }
       }
 
@@ -2259,7 +2240,7 @@ export const Store = {
         const deletedIds: string[] = [];
         newById.forEach((after, id) => {
           const before = prevById.get(id);
-          if (!before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after))) {
+          if (!before || JSON.stringify(sanitizeRecord(before)) !== JSON.stringify(sanitizeRecord(after))) {
             changes.push({ before: before || null, after });
           }
         });
@@ -2285,7 +2266,7 @@ export const Store = {
             applyPatch({ productos: corrected });
             toSync = corrected;
           }
-          await syncProductosRTDB(prevArr, toSync);
+          await syncLegacyRealtimeProducts(prevArr, toSync);
         })().catch(e => console.error("Error persistiendo productos:", e)));
       } else if (k === 'terminales') {
         // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete.
@@ -2298,14 +2279,14 @@ export const Store = {
         const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
         const records = [...newById.values()].filter((after: any) => {
           const before = prevById.get(String(after.id));
-          return !before || JSON.stringify(sanitizeForFirestore(before)) !== JSON.stringify(sanitizeForFirestore(after));
+          return !before || JSON.stringify(sanitizeRecord(before)) !== JSON.stringify(sanitizeRecord(after));
         });
         const deletedIds = [...prevById.keys()].filter(id => !newById.has(id));
 
         jobs.push((async () => {
           const result = await tryTursoOperation('recordsSync', {
             table: String(k),
-            records: sanitizeForFirestore(records),
+            records: sanitizeRecord(records),
             deletedIds,
           });
           if (result) {
@@ -2329,8 +2310,8 @@ export const Store = {
       if (JSON.stringify(prevList) !== JSON.stringify(newList)) {
         catalogosChanged = true;
         catalogJobs.push((async () => {
-          const result = await tryTursoOperation('catalogPatch', { name: catName, lista: sanitizeForFirestore(newList) });
-          if (!result) await setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeForFirestore(newList) });
+          const result = await tryTursoOperation('catalogPatch', { name: catName, lista: sanitizeRecord(newList) });
+          if (!result) await setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeRecord(newList) });
         })());
       }
     }
@@ -2347,7 +2328,7 @@ export const Store = {
     for (const f of CONFIG_FIELDS) {
       const key = f as keyof AppState;
       if ((patch as any)[f] === undefined) continue;
-      const clean = sanitizeForFirestore((patch as any)[f]);
+      const clean = sanitizeRecord((patch as any)[f]);
       if (clean === undefined) continue;
       if (JSON.stringify(prev[key]) !== JSON.stringify((patch as any)[f])) toWrite[f] = clean;
     }
@@ -2364,13 +2345,13 @@ export const Store = {
     if (typeof window === 'undefined') return Store.get();
     const cleanPatch: Record<string, any> = {};
     for (const key of CONFIG_FIELDS) {
-      if ((patch as any)[key] !== undefined) cleanPatch[key] = sanitizeForFirestore((patch as any)[key]);
+      if ((patch as any)[key] !== undefined) cleanPatch[key] = sanitizeRecord((patch as any)[key]);
     }
     if (Object.keys(cleanPatch).length === 0) return Store.get();
     const result = await tryTursoOperation('configPatch', { patch: cleanPatch });
     if (!result?.config) throw new Error('Turso no confirmó la actualización de configuración.');
     const applied: any = {};
-    for (const key of CONFIG_FIELDS) if (result.config[key] !== undefined) applied[key] = sanitizeForFirestore(result.config[key]);
+    for (const key of CONFIG_FIELDS) if (result.config[key] !== undefined) applied[key] = sanitizeRecord(result.config[key]);
     applyPatch(applied);
     return Store.get();
   },
