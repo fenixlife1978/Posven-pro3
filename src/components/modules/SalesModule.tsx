@@ -852,14 +852,37 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       return;
     }
     setSelectedProductDisplay(p);
+    let presentation: any = null;
+    const presentations = (p.presentacionesVenta || []).filter((x: any) => x && x.nombre && Number(x.precioUSD) >= 0);
+    if (presentations.length > 1) {
+      const options = presentations.map((x: any, i: number) => `${i + 1}. ${x.nombre} — ${Utils.fmtUSD(Number(x.precioUSD) || 0)}`).join('\n');
+      const answer = prompt(`Seleccione presentación para ${p.nombre}:\n${options}\n\nEscriba el número de la presentación:`, '1');
+      if (answer === null) return;
+      const choice = Number(answer);
+      if (!Number.isInteger(choice) || choice < 1 || choice > presentations.length) {
+        toast({ variant: "destructive", title: "Presentación inválida", description: "Seleccione una opción de la lista." });
+        return;
+      }
+      presentation = presentations[choice - 1];
+    } else if (presentations.length === 1 && presentations[0].nombre !== p.cantidad) {
+      presentation = presentations[0];
+    }
+    const factor = Math.max(0.000001, Number(presentation?.factor) || 1);
+    const unitPrice = presentation ? (Number(presentation.precioUSD) || 0) / factor : p.precioUSD;
+    const lineName = presentation ? `${p.nombre} — ${presentation.nombre}` : p.nombre;
+    if (factor > stockAvail) {
+      toast({ variant: "destructive", title: "Stock insuficiente", description: "No hay suficiente existencia para esa presentación." });
+      return;
+    }
     const nuevoCarrito = [...state.carrito];
-    const idx = nuevoCarrito.findIndex(i => i.productoId === pid);
+    const idx = nuevoCarrito.findIndex(i => i.productoId === pid && (i.presentacion || '') === (presentation?.nombre || ''));
     if (idx >= 0) {
-      if (nuevoCarrito[idx].cantidad >= stockAvail) return;
-      nuevoCarrito[idx].cantidad++;
+      if (nuevoCarrito[idx].cantidad + factor > stockAvail) return;
+      nuevoCarrito[idx].cantidad += factor;
       nuevoCarrito[idx].subtotalUSD = nuevoCarrito[idx].cantidad * nuevoCarrito[idx].precioUnitUSD;
     } else {
-      nuevoCarrito.push({ productoId: pid, nombre: p.nombre, precioUnitUSD: p.precioUSD, cantidad: 1, subtotalUSD: p.precioUSD });
+      const qty = p.ventaPorPeso ? 1 : factor;
+      nuevoCarrito.push({ productoId: pid, nombre: lineName, precioUnitUSD: p.ventaPorPeso ? p.precioUSD : unitPrice, cantidad: qty, subtotalUSD: qty * (p.ventaPorPeso ? p.precioUSD : unitPrice), ...(presentation ? { presentacion: presentation.nombre, factorPresentacion: factor } : {}), ...(p.ventaPorPeso ? { cantidadGramos: 1000 } : {}) });
     }
     updateState({ carrito: nuevoCarrito });
     setSearch('');
@@ -871,7 +894,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const nuevo = [...state.carrito];
     const item = nuevo[idx];
     const p = state.productos.find(x => x.id === item.productoId);
-    if (!p) return;
+    if (!p) {
+      const n = item.cantidad + delta;
+      if (n <= 0) nuevo.splice(idx, 1);
+      else { item.cantidad = n; item.subtotalUSD = n * item.precioUnitUSD; }
+      updateState({ carrito: nuevo });
+      setPagos([]);
+      return;
+    }
     setSelectedProductDisplay(p);
     const stockAvail = getStockDisponible(p);
     const n = item.cantidad + delta;
@@ -882,6 +912,39 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
     updateState({ carrito: nuevo });
     setPagos([]);
+  };
+
+  const cambiarGramos = (index: number, gramosInput: string) => {
+    const gramos = Math.max(0, Number(String(gramosInput).replace(',', '.')) || 0);
+    const nuevo = [...state.carrito];
+    const item = nuevo[index];
+    const p = state.productos.find(x => x.id === item.productoId);
+    if (!p?.ventaPorPeso) return;
+    const kg = gramos / 1000;
+    if (kg > getStockDisponible(p)) {
+      toast({ variant: "destructive", title: "Stock insuficiente", description: `Disponible: ${(getStockDisponible(p) * 1000).toLocaleString()} g` });
+      return;
+    }
+    item.cantidadGramos = gramos;
+    item.cantidad = kg;
+    item.subtotalUSD = kg * item.precioUnitUSD;
+    updateState({ carrito: nuevo });
+    setPagos([]);
+  };
+
+  const agregarVentaLibreBS = () => {
+    const raw = prompt("Ingrese el importe de la venta libre en bolívares (Bs):", "");
+    if (raw === null) return;
+    const montoBS = Number(raw.replace(',', '.'));
+    if (!Number.isFinite(montoBS) || montoBS <= 0 || !state.tasa) {
+      toast({ variant: "destructive", title: "Importe inválido", description: "Introduzca un monto en Bs mayor que cero." });
+      return;
+    }
+    const montoUSD = montoBS / state.tasa;
+    const id = `VENTA-LIBRE-${Date.now()}`;
+    updateState({ carrito: [...state.carrito, { productoId: id, nombre: `VENTA LIBRE — Bs ${montoBS.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cantidad: 1, precioUnitUSD: montoUSD, subtotalUSD: montoUSD, ventaLibreBS: true }] });
+    setPagos([]);
+    toast({ title: "Venta libre agregada", description: `Bs ${montoBS.toFixed(2)} · ${Utils.fmtUSD(montoUSD)}` });
   };
 
   const handlePriceChange = (index: number, newPrice: number) => {
@@ -1251,6 +1314,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   ))}
                 </div>
               )}
+            <button type="button" onClick={agregarVentaLibreBS} className="h-10 px-3 rounded-lg bg-brand-gold text-ink text-[10px] font-black uppercase shrink-0 hover:bg-brand-gold-deep">Venta libre Bs</button>
             </div>
 
             <div className="flex items-center gap-2 bg-white px-4 py-1.5 rounded-full border border-brand-gold/30 shadow-sm shrink-0">
@@ -1298,8 +1362,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                     return (
                       <div key={i} className="grid grid-cols-[1fr_80px_70px_35px_80px_80px_80px_35px] gap-1 items-center px-3 py-3 bg-white border-b border-black/5 text-ink">
                         <div className="truncate font-black text-xs uppercase leading-tight">{item.nombre}</div>
-                        <div className="flex items-center justify-center gap-1 bg-surface-soft rounded p-0.5 border border-line/30"><button onClick={() => updateQty(i, -1)} className="text-ink font-black text-sm px-1.5">-</button><span className="w-5 text-center text-xs font-black">{item.cantidad}</span><button onClick={() => updateQty(i, 1)} className="text-ink font-black text-sm px-1.5">+</button></div>
-                        <div className="text-center text-[10px] font-black uppercase">{prod?.cantidad || '-'}</div>
+                        <div className="flex items-center justify-center gap-1 bg-surface-soft rounded p-0.5 border border-line/30">
+                          {prod?.ventaPorPeso ? <input aria-label="Cantidad en gramos" type="number" min="1" step="1" value={item.cantidadGramos ?? Math.round(item.cantidad * 1000)} onChange={e => cambiarGramos(i, e.target.value)} className="w-[64px] text-center text-xs font-black bg-white border border-line rounded px-1 py-1" /> : <><button onClick={() => updateQty(i, -1)} className="text-ink font-black text-sm px-1.5">-</button><span className="w-5 text-center text-xs font-black">{item.factorPresentacion ? (item.cantidad / item.factorPresentacion).toFixed(2).replace(/\.00$/, '') : item.cantidad}</span><button onClick={() => updateQty(i, 1)} className="text-ink font-black text-sm px-1.5">+</button></>}
+                        </div>
+                        <div className="text-center text-[10px] font-black uppercase">{prod?.ventaPorPeso ? 'g' : (prod?.cantidad || '-')}</div>
                         <div className="flex justify-center">
                           <button 
                             onClick={() => prod && setPriceSelectorItem({ index: i, product: prod })}
