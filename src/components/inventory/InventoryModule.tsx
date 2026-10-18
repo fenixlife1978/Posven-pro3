@@ -185,6 +185,9 @@ export function InventoryModule({ state, updateState }: InventoryModuleProps) {
                 const barcode = getProductBarcode(p);
                 const price = getProductPrice(p);
                 const stock = p.stock || 0;
+                const stockLabel = p.ventaPorPeso
+                  ? (() => { const totalGrams = Math.max(0, Math.round(stock * 1000)); const kg = Math.floor(totalGrams / 1000); const grams = totalGrams % 1000; return `${kg} kg${grams ? ` ${grams} g` : ""}`; })()
+                  : String(stock);
                 const minStock = p.stockMinimo || 0;
                 return (
                   <TableRow key={p.id} className="hover:bg-[#1a1a1a] transition-colors border-[#2a2a2a]">
@@ -192,7 +195,7 @@ export function InventoryModule({ state, updateState }: InventoryModuleProps) {
                     <TableCell className="font-semibold text-white">{p.nombre}</TableCell>
                     <TableCell className="text-white/70">{p.categoria}</TableCell>
                     <TableCell className="font-bold text-[#c8952e]">${price.toFixed(2)}</TableCell>
-                    <TableCell className="text-white">{stock}</TableCell>
+                    <TableCell className="text-white">{stockLabel}</TableCell>
                     <TableCell>
                       <Badge variant={stock <= minStock ? "destructive" : "secondary"} className={stock <= minStock ? "bg-red-500/20 text-red-500" : "bg-[#2a2a2a] text-white/70"}>
                         {stock <= minStock ? "Stock Bajo" : "Disponible"}
