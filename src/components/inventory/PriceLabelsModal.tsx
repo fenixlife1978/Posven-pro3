@@ -184,7 +184,7 @@ export function PriceLabelsModal({ productos, state, onClose }: Props) {
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
           <label className="flex items-center gap-2"><input type="checkbox" checked={showPrice} onChange={(e) => setShowPrice(e.target.checked)} /> Mostrar precio US$</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={vatMode === "con"} onChange={(e) => setVatMode(e.target.checked ? "con" : "sin")} /> Con IVA</label>
+          <label className="flex items-center gap-2"><span>Precios a imprimir</span><select className="form-select h-9" value={vatMode} onChange={(e) => setVatMode(e.target.value as VatMode)}><option value="ambos">Con y sin IVA</option><option value="con">Solo con IVA</option><option value="sin">Solo sin IVA</option></select></label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={includeBarcode} onChange={(e) => setIncludeBarcode(e.target.checked)} /> Incluir código de barras (lectura por escáner)</label>
           <span className="text-xs text-ink/60">IVA según la configuración fiscal del producto.</span>
         </div>
