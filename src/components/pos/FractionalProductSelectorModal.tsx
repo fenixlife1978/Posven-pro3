@@ -60,7 +60,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     { id: "presentation" as Mode, label: "Presentaciones", show: presentations.length > 0 },
     { id: "grams" as Mode, label: "Gramos", show: !!product.ventaPorPeso },
     { id: "kg" as Mode, label: "Kilogramos", show: !!product.ventaPorPeso },
-    { id: "ml" as Mode, label: "Mililitros", show: /litro|lts|lt\\b/i.test(product.cantidad || "") || presentations.some(p => /ml|mililitro/i.test(p.nombre) || /ml/i.test(p.unidadContenido || "")) },
+    { id: "ml" as Mode, label: "Mililitros", show: /litro|lts|lt\b/i.test(product.cantidad || "") || presentations.some(p => /ml|mililitro/i.test(p.nombre) || /ml/i.test(p.unidadContenido || "")) },
     { id: "budget" as Mode, label: "Monto en Bs", show: !!product.permiteVentaLibreBS },
   ].filter(x => x.show);
   return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 backdrop-blur-sm p-3 md:p-6">
