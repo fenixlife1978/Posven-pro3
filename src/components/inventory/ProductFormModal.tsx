@@ -189,6 +189,18 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                   <Input className="h-10 font-black text-ink bg-white" value={datos.codigo} readOnly={!!datos.skuCompuestoAutomatico} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="SKU-REP-00001" autoFocus />
                 </div>
                 <div className="space-y-1">
+                  <Label className="text-[10px] font-black uppercase text-ink/50 block">Código de barras original del fabricante</Label>
+                  <Input className="h-10 font-mono text-ink bg-white" value={datos.barcode || ''} onChange={e => setDatos({...datos, barcode: e.target.value.trim()})} placeholder="Escanee aquí o escriba el EAN/UPC" />
+                  <p className="text-[10px] text-ink/50">El SKU y este código de barras identifican el mismo producto.</p>
+                </div>
+                <label className="flex items-start gap-2 text-xs font-bold rounded-lg border border-line p-3">
+                  <input type="checkbox" checked={!!datos.skuAutomatico} disabled={!!datos.skuCompuestoAutomatico} onChange={e => {
+                    const enabled = e.target.checked;
+                    setDatos({...datos, skuAutomatico: enabled, codigo: enabled ? generarSkuGeneral() : (datos.codigo.startsWith('SKU-') ? '' : datos.codigo)});
+                  }} />
+                  <span>Generar SKU automáticamente para este producto. El código de barras original se mantiene por separado.</span>
+                </label>
+                <div className="space-y-1">
                   <Label className="text-[10px] font-black uppercase text-ink/50 block">Nombre del Producto</Label>
                   <Input className="h-10 font-black text-ink uppercase bg-white" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} />
                 </div>
