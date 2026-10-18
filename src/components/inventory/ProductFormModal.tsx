@@ -18,7 +18,7 @@ interface ProductFormModalProps {
 }
 
 export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLists }: ProductFormModalProps) {
-  const [activeTab, setActiveTab] = useState<'general' | 'precios' | 'kit'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'precios' | 'presentaciones' | 'kit'>('general');
   const [datos, setDatos] = useState<any>({
     codigo: producto?.codigo || '',
     nombre: producto?.nombre || '',
@@ -27,6 +27,10 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
     marca: producto?.marca || state.marcas[0] || '',
     costoUSD: producto?.costoUSD?.toString() ?? '0',
     margen: producto?.margen?.toString() ?? '0',
+    modoMarkup: producto?.modoMarkup || 'sobre_venta',
+    ventaPorPeso: producto?.ventaPorPeso || false,
+    permiteVentaLibreBS: producto?.permiteVentaLibreBS || false,
+    presentacionesVenta: producto?.presentacionesVenta?.length ? producto.presentacionesVenta : [{ id: 'base', nombre: producto?.cantidad || 'Unidad', factor: 1, precioUSD: producto?.precioUSD || 0, precioBS: (producto?.precioUSD || 0) * state.tasa }],
     precioUSD: producto?.precioUSD?.toString() ?? '0',
     precioBS: producto ? (producto.precioUSD * state.tasa).toFixed(2) : '0',
     precioMayorUSD: producto?.precioMayorUSD?.toString() ?? '0',
@@ -67,21 +71,24 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
 
     if (field === 'margen') {
       newMargen = val;
-      if (newMargen < 100) {
+      if (datos.modoMarkup === 'sobre_costo') {
+        newUSD = cost * (1 + newMargen / 100);
+        newBS = newUSD * tasa;
+      } else if (newMargen < 100) {
         newUSD = cost / (1 - (newMargen / 100));
         newBS = newUSD * tasa;
       }
     } else if (field === 'precioUSD') {
       newUSD = val;
       if (newUSD > 0) {
-        newMargen = ((newUSD - cost) / newUSD) * 100;
+        newMargen = datos.modoMarkup === 'sobre_costo' ? ((newUSD - cost) / (cost || 1)) * 100 : ((newUSD - cost) / newUSD) * 100;
         newBS = newUSD * tasa;
       }
     } else if (field === 'precioBS') {
       newBS = val;
       if (newBS > 0) {
         newUSD = newBS / tasa;
-        newMargen = ((newUSD - cost) / newUSD) * 100;
+        newMargen = datos.modoMarkup === 'sobre_costo' ? ((newUSD - cost) / (cost || 1)) * 100 : ((newUSD - cost) / newUSD) * 100;
       }
     }
 
@@ -123,7 +130,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
       margen: parseFloat(datos.margen) || 0,
       precioUSD: parseFloat(datos.precioUSD) || 0,
       stock: parseFloat(datos.stock) || 0,
-      stockMinimo: parseFloat(datos.stockMinimo) || 0
+      stockMinimo: parseFloat(datos.stockMinimo) || 0,
+      presentacionesVenta: (datos.presentacionesVenta || []).map((p: any, i: number) => ({ ...p, id: p.id || `pres-${i + 1}`, factor: Math.max(0.000001, Number(p.factor) || 1), precioUSD: Math.max(0, Number(p.precioUSD) || 0), precioBS: Math.max(0, Number(p.precioBS) || 0) }))
     });
   };
 
@@ -140,6 +148,7 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
         <div className="flex bg-surface-soft border-b border-line">
           <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'general' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>General</button>
           <button onClick={() => setActiveTab('precios')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'precios' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Precios</button>
+          <button onClick={() => setActiveTab('presentaciones')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'presentaciones' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Presentaciones</button>
           <button onClick={() => setActiveTab('kit')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'kit' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Kits / Combos</button>
         </div>
 
@@ -223,9 +232,16 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
 
           {activeTab === 'precios' && (
             <div className="space-y-6">
+              <div className="space-y-3">
+                <Label className="text-[10px] font-black uppercase text-ink/60">Motor de cálculo de markup</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button type="button" onClick={() => { const modoMarkup = 'sobre_venta'; const costo = Number(datos.costoUSD) || 0; const margen = Number(datos.margen) || 0; const precioUSD = margen < 100 ? costo / (1 - margen / 100) : Number(datos.precioUSD) || 0; setDatos({...datos, modoMarkup, precioUSD: precioUSD.toFixed(2), precioBS: (precioUSD * state.tasa).toFixed(2)}); }} className={`rounded-lg border p-3 text-left text-xs font-black ${datos.modoMarkup === 'sobre_venta' ? 'border-brand-gold bg-brand-gold-soft' : 'border-line bg-white'}`}>Markup sobre venta (actual)<span className="block text-[10px] font-medium mt-1">Precio = costo ÷ (1 − margen)</span></button>
+                  <button type="button" onClick={() => { const modoMarkup = 'sobre_costo'; const costo = Number(datos.costoUSD) || 0; const margen = Number(datos.margen) || 0; const precioUSD = costo * (1 + margen / 100); setDatos({...datos, modoMarkup, precioUSD: precioUSD.toFixed(2), precioBS: (precioUSD * state.tasa).toFixed(2)}); }} className={`rounded-lg border p-3 text-left text-xs font-black ${datos.modoMarkup === 'sobre_costo' ? 'border-brand-gold bg-brand-gold-soft' : 'border-line bg-white'}`}>Markup sobre costo (nuevo)<span className="block text-[10px] font-medium mt-1">Precio = costo × (1 + markup)</span></button>
+                </div>
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-surface-soft p-5 rounded-2xl border border-line shadow-inner">
                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink/50">Costo ($)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.costoUSD} onChange={e => setDatos({...datos, costoUSD: e.target.value})} /></div>
-                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-brand-gold-deep">Margen %</Label><Input className="h-12 font-black text-lg text-brand-gold-deep bg-white" value={datos.margen} onChange={e => recalcularTridireccional('margen', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-brand-gold-deep">{datos.modoMarkup === 'sobre_costo' ? 'Markup sobre costo %' : 'Margen sobre venta %'}</Label><Input className="h-12 font-black text-lg text-brand-gold-deep bg-white" value={datos.margen} onChange={e => recalcularTridireccional('margen', e.target.value)} /></div>
                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-status-success">Venta ($)</Label><Input className="h-12 font-black text-lg text-status-success bg-white" value={datos.precioUSD} onChange={e => recalcularTridireccional('precioUSD', e.target.value)} /></div>
                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink">Venta (BS)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.precioBS} onChange={e => recalcularTridireccional('precioBS', e.target.value)} /></div>
               </div>
@@ -244,6 +260,31 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                    <Input className="h-11 font-black bg-white" value={datos.precioOfertaUSD} onChange={e => validarDecimal(e.target.value) && setDatos({...datos, precioOfertaUSD: e.target.value})} placeholder="0.00" />
                  </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'presentaciones' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div><h4 className="font-black uppercase text-sm">Presentaciones de venta</h4><p className="text-xs text-ink/60">Cada presentación tiene precio propio y un factor de conversión respecto a la unidad base del inventario.</p></div>
+                <Button type="button" onClick={() => setDatos({...datos, presentacionesVenta: [...(datos.presentacionesVenta || []), { id: `pres-${Date.now()}`, nombre: '', factor: 1, precioUSD: Number(datos.precioUSD) || 0, precioBS: Number(datos.precioBS) || 0 }]})}><PlusCircle className="w-4 h-4 mr-1"/> Añadir</Button>
+              </div>
+              <div className="flex flex-wrap gap-4 p-3 rounded-lg border border-line bg-surface-soft">
+                <label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={!!datos.ventaPorPeso} onChange={e => setDatos({...datos, ventaPorPeso: e.target.checked})}/> Vender por peso (precio base por kg)</label>
+                <label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={!!datos.permiteVentaLibreBS} onChange={e => setDatos({...datos, permiteVentaLibreBS: e.target.checked})}/> Permitir venta libre por monto en Bs</label>
+              </div>
+              <div className="space-y-3">
+                {(datos.presentacionesVenta || []).map((pres: any, i: number) => (
+                  <div key={pres.id || i} className="grid grid-cols-1 sm:grid-cols-[1.2fr_.7fr_.8fr_.8fr_auto] gap-2 p-3 border border-line rounded-xl">
+                    <div><Label className="text-[9px] uppercase">Nombre presentación</Label><Input value={pres.nombre} placeholder="Unidad, paquete, litro, 250 g..." onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,nombre:e.target.value}:x)})}/></div>
+                    <div><Label className="text-[9px] uppercase">Factor base</Label><Input type="number" min="0.000001" step="any" value={pres.factor} onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,factor:Number(e.target.value)||0}:x)})}/></div>
+                    <div><Label className="text-[9px] uppercase">Precio USD</Label><Input type="number" min="0" step="0.01" value={pres.precioUSD} onChange={e => {const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,precioUSD:v,precioBS:Number((v*state.tasa).toFixed(2))}:x)});}}/></div>
+                    <div><Label className="text-[9px] uppercase">Precio Bs</Label><Input type="number" min="0" step="0.01" value={pres.precioBS} onChange={e => {const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,precioBS:v,precioUSD:state.tasa?v/state.tasa:0}:x)});}}/></div>
+                    <div className="flex items-end"><Button type="button" variant="destructive" onClick={() => setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.filter((_:any,j:number)=>j!==i)})}><Trash2 className="w-4 h-4"/></Button></div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-ink/60">Ejemplo: unidad base = litro; presentación “250 ml” usa factor 0,25. Para productos a granel, active “Vender por peso” y registre el precio base por kilogramo.</p>
             </div>
           )}
 
