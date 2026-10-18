@@ -19,6 +19,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
   const [budgetBs, setBudgetBs] = useState("50.00");
   const selected = presentations.find(p => p.id === presentationId) || presentations[0];
   const individualPresentation = presentations.find(p => /unidad individual|unidad suelta|unidad|individual|\bund\b/i.test(p.nombre));
+  const supportsVolume = /ml|mililitro|litro|lts|lt\b|\bl\b/i.test([product.cantidad, product.unit, ...presentations.map(p => `${p.nombre} ${p.unidadMedida || p.unidad || ""} ${p.unidadContenido || ""}`)].join(" "));
   const q = Math.max(0, Number(quantity.replace(",", ".")) || 0);
   const g = Math.max(0, Number(grams.replace(",", ".")) || 0);
   const m = Math.max(0, Number(ml.replace(",", ".")) || 0);
@@ -68,8 +69,8 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     { id: "unit" as Mode, label: "Unidad individual", show: !!individualPresentation },
     { id: "grams" as Mode, label: "Gramos", show: !!product.ventaPorPeso },
     { id: "kg" as Mode, label: "Kilogramos", show: !!product.ventaPorPeso },
-    { id: "ml" as Mode, label: "Mililitros", show: /litro|lts|lt\b/i.test(product.cantidad || "") || presentations.some(p => /ml|mililitro/i.test(p.nombre) || /ml/i.test(p.unidadContenido || "")) },
-    { id: "budget" as Mode, label: "Monto en Bs", show: !!product.permiteVentaLibreBS },
+    { id: "ml" as Mode, label: "Mililitros", show: supportsVolume },
+    { id: "budget" as Mode, label: "Monto en Bs", show: !!product.permiteVentaLibreBS || supportsVolume },
   ].filter(x => x.show);
   return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 backdrop-blur-sm p-3 md:p-6">
     <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-300 bg-white shadow-2xl">
