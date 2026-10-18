@@ -27,6 +27,14 @@ export interface Product {
   precioPromoUSD?: number;
   tipoPrecioPrincipal?: 'estandar' | 'mayor' | 'oferta' | 'promo';
   margen: number;
+  /** sobre_venta conserva el cálculo actual; sobre_costo aplica costo × (1 + markup%). */
+  modoMarkup?: 'sobre_venta' | 'sobre_costo';
+  /** Presentaciones alternativas de venta, con precio y factor de conversión a la unidad base. */
+  presentacionesVenta?: ProductPresentation[];
+  /** Para artículos vendidos por peso: el stock/precio base se expresa en kg. */
+  ventaPorPeso?: boolean;
+  /** Permite registrar ventas libres cuyo importe se introduce directamente en bolívares. */
+  permiteVentaLibreBS?: boolean;
   stock: number;
   stockMinimo: number;
   fechaCreacion: string;
@@ -80,6 +88,14 @@ export interface Product {
   updatedAt?: string;
 }
 
+export interface ProductPresentation {
+  id: string;
+  nombre: string;
+  factor: number;
+  precioUSD: number;
+  precioBS: number;
+}
+
 export interface PriceTier {
   name: string;
   usd: number;
@@ -110,6 +126,10 @@ export interface SaleItem {
   cantidad: number;
   precioUnitUSD: number;
   subtotalUSD: number;
+  presentacion?: string;
+  factorPresentacion?: number;
+  cantidadGramos?: number;
+  ventaLibreBS?: boolean;
 }
 
 export interface PurchaseItem {
