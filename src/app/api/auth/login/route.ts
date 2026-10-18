@@ -32,7 +32,6 @@ export async function POST(request: Request) {
     const response = NextResponse.json({
       user: {
         id: row.id,
-        firebaseUid: row.firebase_uid ?? null,
         username: row.username,
         email: row.email,
         nombre: row.nombre,
