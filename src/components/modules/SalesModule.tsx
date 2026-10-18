@@ -884,7 +884,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     } else {
       nuevoCarrito.push({
         productoId: p.id,
-        nombre: presentation ? `${p.nombre} — ${presentation}` : (selection.cantidadGramos ? `${p.nombre} (${selection.cantidadGramos} g)` : p.nombre),
+        nombre: selection.nombre || (presentation ? `${p.nombre} — ${presentation}` : (selection.cantidadGramos ? `${p.nombre} (${selection.cantidadGramos} g)` : p.nombre)),
         cantidad: selection.cantidad,
         precioUnitUSD: selection.precioUnitUSD,
         subtotalUSD: selection.subtotalUSD,
