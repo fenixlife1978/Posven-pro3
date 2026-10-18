@@ -4,7 +4,7 @@ import { Product, ProductPresentation } from "@/lib/types";
 import { X, Scale, Droplets, Layers, Check } from "lucide-react";
 import { Utils } from "@/lib/db-store";
 
-export type PresentationSaleSelection = { presentacion?: string; factorPresentacion?: number; cantidad: number; precioUnitUSD: number; subtotalUSD: number; cantidadGramos?: number; ventaLibreBS?: boolean };
+export type PresentationSaleSelection = { nombre?: string; presentacion?: string; factorPresentacion?: number; cantidad: number; precioUnitUSD: number; subtotalUSD: number; cantidadGramos?: number; ventaLibreBS?: boolean };
 
 export default function FractionalProductSelectorModal({ product, rate, stock, onClose, onConfirm }: {
   product: Product; rate: number; stock: number; onClose: () => void; onConfirm: (selection: PresentationSaleSelection) => void;
@@ -58,7 +58,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     if (invalid) return;
     onConfirm({
       ...(selectedPresentation && (mode === "presentation" || mode === "unit") ? { presentacion: selectedPresentation.nombre, factorPresentacion: factor } : {}),
-      cantidad: Number(baseQty.toFixed(6)), precioUnitUSD: unitPrice, subtotalUSD: total,
+      nombre: displayName, cantidad: Number(baseQty.toFixed(6)), precioUnitUSD: unitPrice, subtotalUSD: total,
       ...(mode === "grams" ? { cantidadGramos: Math.round(g) } : {}),
       ...(mode === "budget" ? { ventaLibreBS: true } : {}),
     });
