@@ -155,11 +155,12 @@ function terminalSeries(prefix: string, label: string, number: number, width = 6
   return prefix + '-' + label + '-' + String(number).padStart(width, '0');
 }
 
-const CATALOG_CACHE_META_KEY = 'posven_pro_catalog_cache_meta_v2_retail_defaults';
+const CATALOG_CACHE_META_KEY = 'posven_pro_catalog_cache_meta_v3_department_categories';
 
 const CATALOG_FIELDS: Record<string, string> = {
   categorias: 'categorias',
   departamentos: 'departamentos',
+  categoriasPorDepartamento: 'categoriasPorDepartamento',
   marcas: 'marcas',
   presentaciones: 'presentaciones',
   productCategories: 'productCategories',
@@ -243,6 +244,172 @@ export const initialState: AppState = {
     'Snacks Salados', 'Chocolates y Confitería',
     'Detergentes y Lavado', 'Limpieza de Superficies', 'Lavaplatos y Cocina', 'Utensilios y Desechables',
     'Higiene Corporal', 'Higiene Oral', 'Papel e Higiene Femenina', 'Cuidado del Bebé',
+  ],
+  categoriasPorDepartamento: [
+    {
+      "departamento": "Frutas y Verduras",
+      "categoria": "Verduras y Hortalizas"
+    },
+    {
+      "departamento": "Frutas y Verduras",
+      "categoria": "Frutas Frescas"
+    },
+    {
+      "departamento": "Frutas y Verduras",
+      "categoria": "Hierbas y Aromáticas"
+    },
+    {
+      "departamento": "Frutas y Verduras",
+      "categoria": "Tubérculos y Raíces"
+    },
+    {
+      "departamento": "Carnicería y Charcutería",
+      "categoria": "Carne de Res"
+    },
+    {
+      "departamento": "Carnicería y Charcutería",
+      "categoria": "Aves"
+    },
+    {
+      "departamento": "Carnicería y Charcutería",
+      "categoria": "Cerdo"
+    },
+    {
+      "departamento": "Carnicería y Charcutería",
+      "categoria": "Embutidos y Charcutería"
+    },
+    {
+      "departamento": "Carnicería y Charcutería",
+      "categoria": "Pescados y Mariscos"
+    },
+    {
+      "departamento": "Lácteos y Refrigerados",
+      "categoria": "Leche Líquida y Derivados"
+    },
+    {
+      "departamento": "Lácteos y Refrigerados",
+      "categoria": "Quesos"
+    },
+    {
+      "departamento": "Lácteos y Refrigerados",
+      "categoria": "Yogures y Postres"
+    },
+    {
+      "departamento": "Lácteos y Refrigerados",
+      "categoria": "Mantequillas y Margarinas"
+    },
+    {
+      "departamento": "Lácteos y Refrigerados",
+      "categoria": "Huevos"
+    },
+    {
+      "departamento": "Víveres y Abarrotes",
+      "categoria": "Granos y Legumbres"
+    },
+    {
+      "departamento": "Víveres y Abarrotes",
+      "categoria": "Arroz y Cereales"
+    },
+    {
+      "departamento": "Víveres y Abarrotes",
+      "categoria": "Pastas"
+    },
+    {
+      "departamento": "Víveres y Abarrotes",
+      "categoria": "Harinas y Mezclas"
+    },
+    {
+      "departamento": "Víveres y Abarrotes",
+      "categoria": "Aceites y Grasas"
+    },
+    {
+      "departamento": "Víveres y Abarrotes",
+      "categoria": "Salsas y Envasados"
+    },
+    {
+      "departamento": "Condimentos y Especias",
+      "categoria": "Condimentos Secos"
+    },
+    {
+      "departamento": "Condimentos y Especias",
+      "categoria": "Caldos y Sazonadores"
+    },
+    {
+      "departamento": "Condimentos y Especias",
+      "categoria": "Azúcar y Endulzantes"
+    },
+    {
+      "departamento": "Condimentos y Especias",
+      "categoria": "Repostería y Hornear"
+    },
+    {
+      "departamento": "Panadería y Galletas",
+      "categoria": "Pan Fresco y Empacado"
+    },
+    {
+      "departamento": "Panadería y Galletas",
+      "categoria": "Galletas Saladas"
+    },
+    {
+      "departamento": "Panadería y Galletas",
+      "categoria": "Galletas Dulces y Ponqués"
+    },
+    {
+      "departamento": "Bebidas",
+      "categoria": "Bebidas No Alcohólicas"
+    },
+    {
+      "departamento": "Bebidas",
+      "categoria": "Café y Té"
+    },
+    {
+      "departamento": "Bebidas",
+      "categoria": "Cervezas y Maltas"
+    },
+    {
+      "departamento": "Bebidas",
+      "categoria": "Licores y Vinos"
+    },
+    {
+      "departamento": "Snacks y Golosinas",
+      "categoria": "Snacks Salados"
+    },
+    {
+      "departamento": "Snacks y Golosinas",
+      "categoria": "Chocolates y Confitería"
+    },
+    {
+      "departamento": "Cuidado del Hogar y Limpieza",
+      "categoria": "Detergentes y Lavado"
+    },
+    {
+      "departamento": "Cuidado del Hogar y Limpieza",
+      "categoria": "Limpieza de Superficies"
+    },
+    {
+      "departamento": "Cuidado del Hogar y Limpieza",
+      "categoria": "Lavaplatos y Cocina"
+    },
+    {
+      "departamento": "Cuidado del Hogar y Limpieza",
+      "categoria": "Utensilios y Desechables"
+    },
+    {
+      "departamento": "Cuidado Personal e Higiene",
+      "categoria": "Higiene Corporal"
+    },
+    {
+      "departamento": "Cuidado Personal e Higiene",
+      "categoria": "Higiene Oral"
+    },
+    {
+      "departamento": "Cuidado Personal e Higiene",
+      "categoria": "Papel e Higiene Femenina"
+    },
+    {
+      "departamento": "Cuidado Personal e Higiene",
+      "categoria": "Cuidado del Bebé"
+    }
   ],
   marcas: ['Genérica'],
   presentaciones: ['750ml', '1L', 'Unidad', 'Caja'],
