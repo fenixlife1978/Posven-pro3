@@ -1,0 +1,10 @@
+{
+  "placeholderImages": [
+    {
+      "id": "posven-logo",
+      "description": "Logo de PosVEN pro",
+      "imageUrl": "https://picsum.photos/seed/posvenpro/200/80",
+      "imageHint": "posven logo"
+    }
+  ]
+}
