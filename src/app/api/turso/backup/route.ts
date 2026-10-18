@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         action,
-        skipped: ['users','operaciones','auditoriaSistema','legacy_documents','rtdb_productos'],
+        skipped: ['users','operaciones','auditoriaSistema','legacy_documents'],
         note: 'Se conserva el administrador semilla de Turso.',
       });
     }
