@@ -83,14 +83,16 @@
     "files": [
       "main.js",
       "preload.js",
-      "out/**/*",
+      ".next/**/*",
       "public/**/*",
       "package.json",
-      "!**/.next",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/*.d.ts",
-      "!**/node_modules/.bin"
+      "!**/node_modules/.bin",
+      "!**/node_modules/firebase/**/*",
+      "!**/node_modules/@firebase/**/*",
+      "!**/node_modules/firebase-admin/**/*"
     ],
     "asarUnpack": [
       "**/node_modules/node-thermal-printer/**/*",
@@ -128,7 +130,7 @@
       {
         "provider": "github",
         "owner": "fenixlife1978",
-        "repo": "posven-pro"
+        "repo": "Posven-pro3"
       }
     ]
   }
