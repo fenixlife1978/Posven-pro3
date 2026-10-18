@@ -54,6 +54,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { cn } from '@/lib/utils';
 import CashZArqueoModal from '@/components/pos/CashZArqueoModal';
 import ZReportPreview80mm from '@/components/pos/ZReportPreview80mm';
+import FractionalProductSelectorModal, { PresentationSaleSelection } from '@/components/pos/FractionalProductSelectorModal';
 
 // ============================================================
 // UTILIDADES DE NORMALIZACIÓN DE CÉDULA (integradas)
@@ -165,7 +166,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showSaleDetail, setShowSaleDetail] = useState<any | null>(null);
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
+  const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);\n  const [productToConfigureSale, setProductToConfigureSale] = useState<Product | null>(null);
   const [stockEdit, setStockEdit] = useState<Product | null>(null);
   const [stockEditValue, setStockEditValue] = useState('');
   
@@ -846,59 +847,53 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const agregar = (pid: string) => {
     const p = state.productos.find(x => x.id === pid);
     if (!p) return;
-    if (p.permiteVentaLibreBS) {
-      const raw = prompt(`Importe de venta para ${p.nombre} en bolívares (Bs):`, "");
-      if (raw === null) return;
-      const montoBS = Number(raw.replace(',', '.'));
-      if (!Number.isFinite(montoBS) || montoBS <= 0 || !state.tasa) {
-        toast({ variant: "destructive", title: "Importe inválido", description: "Introduzca un monto en Bs mayor que cero." });
-        return;
-      }
-      const montoUSD = montoBS / state.tasa;
-      updateState({ carrito: [...state.carrito, { productoId: `VENTA-LIBRE-${Date.now()}`, nombre: `${p.nombre} — Bs ${montoBS.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cantidad: 1, precioUnitUSD: montoUSD, subtotalUSD: montoUSD, ventaLibreBS: true }] });
-      setSearch('');
-      setPagos([]);
-      toast({ title: "Venta libre agregada", description: `Bs ${montoBS.toFixed(2)} · ${Utils.fmtUSD(montoUSD)}` });
-      return;
-    }
     const stockAvail = getStockDisponible(p);
     if (stockAvail <= 0) {
       toast({ variant: "destructive", title: "Sin Stock" });
       return;
     }
     setSelectedProductDisplay(p);
-    let presentation: any = null;
-    const presentations = (p.presentacionesVenta || []).filter((x: any) => x && x.nombre && Number(x.precioUSD) >= 0);
-    if (presentations.length > 1 && !p.ventaPorPeso) {
-      const options = presentations.map((x: any, i: number) => `${i + 1}. ${x.nombre} — ${Utils.fmtUSD(Number(x.precioUSD) || 0)}`).join('\n');
-      const answer = prompt(`Seleccione presentación para ${p.nombre}:\n${options}\n\nEscriba el número de la presentación:`, '1');
-      if (answer === null) return;
-      const choice = Number(answer);
-      if (!Number.isInteger(choice) || choice < 1 || choice > presentations.length) {
-        toast({ variant: "destructive", title: "Presentación inválida", description: "Seleccione una opción de la lista." });
-        return;
-      }
-      presentation = presentations[choice - 1];
-    }
-    const factor = p.ventaPorPeso ? 1 : Math.max(0.000001, Number(presentation?.factor) || 1);
-    const unitPrice = presentation ? (Number(presentation.precioUSD) || 0) / factor : p.precioUSD;
-    const lineName = presentation ? `${p.nombre} — ${presentation.nombre}` : p.nombre;
-    if (!p.ventaPorPeso && factor > stockAvail) {
-      toast({ variant: "destructive", title: "Stock insuficiente", description: "No hay suficiente existencia para esa presentación." });
+    setProductToConfigureSale(p);
+  };
+
+  const confirmarPresentacionVenta = (selection: PresentationSaleSelection) => {
+    const p = productToConfigureSale;
+    if (!p) return;
+    const stockAvail = getStockDisponible(p);
+    if (selection.cantidad <= 0 || selection.subtotalUSD <= 0) {
+      toast({ variant: "destructive", title: "Cantidad o precio inválido" });
       return;
     }
+    if (selection.cantidad > stockAvail) {
+      toast({ variant: "destructive", title: "Stock insuficiente", description: `Disponible: ${stockAvail} ${p.cantidad || "unidades base"}.` });
+      return;
+    }
+    const presentation = selection.presentacion;
     const nuevoCarrito = [...state.carrito];
-    const idx = nuevoCarrito.findIndex(i => i.productoId === pid && (i.presentacion || '') === (presentation?.nombre || ''));
-    if (idx >= 0) {
-      if (nuevoCarrito[idx].cantidad + factor > stockAvail) return;
-      nuevoCarrito[idx].cantidad += factor;
-      nuevoCarrito[idx].subtotalUSD = nuevoCarrito[idx].cantidad * nuevoCarrito[idx].precioUnitUSD;
+    const idx = nuevoCarrito.findIndex(i => i.productoId === p.id && (i.presentacion || "") === (presentation || ""));
+    if (idx >= 0 && !selection.cantidadGramos) {
+      const nextQty = nuevoCarrito[idx].cantidad + selection.cantidad;
+      if (nextQty > stockAvail) {
+        toast({ variant: "destructive", title: "Stock insuficiente" });
+        return;
+      }
+      nuevoCarrito[idx].cantidad = nextQty;
+      nuevoCarrito[idx].subtotalUSD = nextQty * nuevoCarrito[idx].precioUnitUSD;
+      if (presentation) nuevoCarrito[idx].factorPresentacion = selection.factorPresentacion || nuevoCarrito[idx].factorPresentacion;
     } else {
-      const qty = p.ventaPorPeso ? Math.min(1, stockAvail) : factor;
-      nuevoCarrito.push({ productoId: pid, nombre: lineName, precioUnitUSD: p.ventaPorPeso ? p.precioUSD : unitPrice, cantidad: qty, subtotalUSD: qty * (p.ventaPorPeso ? p.precioUSD : unitPrice), ...(presentation ? { presentacion: presentation.nombre, factorPresentacion: factor } : {}), ...(p.ventaPorPeso ? { cantidadGramos: Math.round(qty * 1000) } : {}) });
+      nuevoCarrito.push({
+        productoId: p.id,
+        nombre: presentation ? `${p.nombre} — ${presentation}` : (selection.cantidadGramos ? `${p.nombre} (${selection.cantidadGramos} g)` : p.nombre),
+        cantidad: selection.cantidad,
+        precioUnitUSD: selection.precioUnitUSD,
+        subtotalUSD: selection.subtotalUSD,
+        ...(presentation ? { presentacion: presentation, factorPresentacion: selection.factorPresentacion || 1 } : {}),
+        ...(selection.cantidadGramos ? { cantidadGramos: selection.cantidadGramos } : {}),
+      });
     }
     updateState({ carrito: nuevoCarrito });
-    setSearch('');
+    setProductToConfigureSale(null);
+    setSearch("");
     setPagos([]);
     searchInputRef.current?.focus();
   };
@@ -2020,6 +2015,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {/* ============================================================ */}
       {/* MODAL DE CRÉDITO - AHORA RECIBE CLIENTES Y DEUDAS PARA MOSTRAR SALDO */}
       {/* ============================================================ */}
+      {productToConfigureSale && (
+        <FractionalProductSelectorModal
+          product={productToConfigureSale}
+          rate={state.tasa}
+          stock={getStockDisponible(productToConfigureSale)}
+          onClose={() => setProductToConfigureSale(null)}
+          onConfirm={confirmarPresentacionVenta}
+        />
+      )}
       <CreditModal
         isOpen={isCreditModalOpen}
         onClose={() => setIsCreditModalOpen(false)}
