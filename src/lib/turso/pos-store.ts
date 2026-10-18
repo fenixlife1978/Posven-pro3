@@ -59,6 +59,173 @@ export const DEFAULT_CATEGORIAS = [
   'Higiene Corporal', 'Higiene Oral', 'Papel e Higiene Femenina', 'Cuidado del Bebé',
 ];
 
+export const DEFAULT_CATEGORIAS_POR_DEPARTAMENTO = [
+  {
+    "departamento": "Frutas y Verduras",
+    "categoria": "Verduras y Hortalizas"
+  },
+  {
+    "departamento": "Frutas y Verduras",
+    "categoria": "Frutas Frescas"
+  },
+  {
+    "departamento": "Frutas y Verduras",
+    "categoria": "Hierbas y Aromáticas"
+  },
+  {
+    "departamento": "Frutas y Verduras",
+    "categoria": "Tubérculos y Raíces"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Carne de Res"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Aves"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Cerdo"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Embutidos y Charcutería"
+  },
+  {
+    "departamento": "Carnicería y Charcutería",
+    "categoria": "Pescados y Mariscos"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Leche Líquida y Derivados"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Quesos"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Yogures y Postres"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Mantequillas y Margarinas"
+  },
+  {
+    "departamento": "Lácteos y Refrigerados",
+    "categoria": "Huevos"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Granos y Legumbres"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Arroz y Cereales"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Pastas"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Harinas y Mezclas"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Aceites y Grasas"
+  },
+  {
+    "departamento": "Víveres y Abarrotes",
+    "categoria": "Salsas y Envasados"
+  },
+  {
+    "departamento": "Condimentos y Especias",
+    "categoria": "Condimentos Secos"
+  },
+  {
+    "departamento": "Condimentos y Especias",
+    "categoria": "Caldos y Sazonadores"
+  },
+  {
+    "departamento": "Condimentos y Especias",
+    "categoria": "Azúcar y Endulzantes"
+  },
+  {
+    "departamento": "Condimentos y Especias",
+    "categoria": "Repostería y Hornear"
+  },
+  {
+    "departamento": "Panadería y Galletas",
+    "categoria": "Pan Fresco y Empacado"
+  },
+  {
+    "departamento": "Panadería y Galletas",
+    "categoria": "Galletas Saladas"
+  },
+  {
+    "departamento": "Panadería y Galletas",
+    "categoria": "Galletas Dulces y Ponqués"
+  },
+  {
+    "departamento": "Bebidas",
+    "categoria": "Bebidas No Alcohólicas"
+  },
+  {
+    "departamento": "Bebidas",
+    "categoria": "Café y Té"
+  },
+  {
+    "departamento": "Bebidas",
+    "categoria": "Cervezas y Maltas"
+  },
+  {
+    "departamento": "Bebidas",
+    "categoria": "Licores y Vinos"
+  },
+  {
+    "departamento": "Snacks y Golosinas",
+    "categoria": "Snacks Salados"
+  },
+  {
+    "departamento": "Snacks y Golosinas",
+    "categoria": "Chocolates y Confitería"
+  },
+  {
+    "departamento": "Cuidado del Hogar y Limpieza",
+    "categoria": "Detergentes y Lavado"
+  },
+  {
+    "departamento": "Cuidado del Hogar y Limpieza",
+    "categoria": "Limpieza de Superficies"
+  },
+  {
+    "departamento": "Cuidado del Hogar y Limpieza",
+    "categoria": "Lavaplatos y Cocina"
+  },
+  {
+    "departamento": "Cuidado del Hogar y Limpieza",
+    "categoria": "Utensilios y Desechables"
+  },
+  {
+    "departamento": "Cuidado Personal e Higiene",
+    "categoria": "Higiene Corporal"
+  },
+  {
+    "departamento": "Cuidado Personal e Higiene",
+    "categoria": "Higiene Oral"
+  },
+  {
+    "departamento": "Cuidado Personal e Higiene",
+    "categoria": "Papel e Higiene Femenina"
+  },
+  {
+    "departamento": "Cuidado Personal e Higiene",
+    "categoria": "Cuidado del Bebé"
+  }
+];
+
 export function assertTursoReady() {
   if (!isTursoConfigured()) throw new Error('Turso no está configurado.');
 }
@@ -273,16 +440,20 @@ export async function patchAppConfig(patch: Record<string, any>): Promise<any> {
 export async function getCatalog(name: string): Promise<any[]> {
   assertTursoReady();
   const catalogName = String(name);
-  const defaults = catalogName === 'departamentos' ? DEFAULT_DEPARTAMENTOS
-    : catalogName === 'categorias' ? DEFAULT_CATEGORIAS : null;
+  const defaults: any[] | null = catalogName === 'departamentos' ? DEFAULT_DEPARTAMENTOS
+    : catalogName === 'categorias' ? DEFAULT_CATEGORIAS
+    : catalogName === 'categoriasPorDepartamento' ? DEFAULT_CATEGORIAS_POR_DEPARTAMENTO : null;
   const result = await tursoExecute({ sql: 'SELECT lista_json FROM catalogos WHERE nombre=? LIMIT 1', args: [catalogName] });
   let current: any[] = [];
   if (result.rows.length) {
     try { const parsed = JSON.parse(String(result.rows[0].lista_json || '[]')); current = Array.isArray(parsed) ? parsed : []; } catch {}
   }
   if (!defaults) return current;
-  const seen = new Set(current.map(item => String(item).trim().toLocaleLowerCase('es')));
-  const merged = [...current, ...defaults.filter(item => !seen.has(item.toLocaleLowerCase('es')))];
+  const keyOf = (item: any) => catalogName === 'categoriasPorDepartamento'
+    ? String(item?.departamento || '').trim().toLocaleLowerCase('es') + '::' + String(item?.categoria || '').trim().toLocaleLowerCase('es')
+    : String(item).trim().toLocaleLowerCase('es');
+  const seen = new Set(current.map(keyOf));
+  const merged = [...current, ...defaults.filter(item => !seen.has(keyOf(item)))];
   if (!result.rows.length || merged.length !== current.length) {
     await tursoExecute({
       sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP',
