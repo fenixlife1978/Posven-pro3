@@ -132,7 +132,9 @@ export async function ensureSeedAdmin() {
   });
   if (activeAdmins.rows.length) return;
 
-  // Reuse the reserved seed username if present, preserving its existing password.
+  // The seed account is only reset when no active administrator exists.
+  // This repairs stale/incompatible hashes after a reset or failed first setup.
+  const seedPassword = process.env.POSVEN_SEED_ADMIN_PASSWORD || 'admin123';
   const existingSeed = await tursoExecute({
     sql: `SELECT id FROM users WHERE lower(username)='admin' LIMIT 1`,
   });
@@ -141,17 +143,15 @@ export async function ensureSeedAdmin() {
     await tursoExecute({
       sql: `UPDATE users
         SET rol='administrador', acceso_bloqueado=0, is_seed_admin=1,
-            email=COALESCE(email, 'admin@posven.local'), nombre=COALESCE(NULLIF(nombre,''),'ADMINISTRADOR')
+            email=COALESCE(email, 'admin@posven.local'),
+            nombre=COALESCE(NULLIF(nombre,''),'ADMINISTRADOR'),
+            password_hash=?
         WHERE id=?`,
-      args: [String(existingSeed.rows[0].id)],
+      args: [hashPassword(seedPassword), String(existingSeed.rows[0].id)],
       wantRows: false,
     });
     return;
   }
-
-  // Set POSVEN_SEED_ADMIN_PASSWORD in the external .env to override the
-  // first-install password. The default preserves a recoverable fresh install.
-  const seedPassword = process.env.POSVEN_SEED_ADMIN_PASSWORD || 'admin123';
   try {
     await createUser({
       username: 'admin',
