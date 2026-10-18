@@ -713,7 +713,7 @@ function assertTerminalAccess(user: { rol: string; id: string }, terminal: any) 
 }
 
 export async function patchTerminalTransaction(params: {
-  user: { rol: string; id: string; firebaseUid?: string | null };
+  user: { rol: string; id: string };
   terminalId: string;
   patch: Record<string, any>;
 }) {
