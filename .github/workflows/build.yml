@@ -1,0 +1,135 @@
+name: Build/Release PosVEN Pro
+
+on:
+  # Disparar en CADA push a cualquier branch (no solo main), para que las
+  # feature branches también generen artefactos .exe de prueba.
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+  # Disparar también cuando se abre/actualiza un PR, para validar el build.
+  pull_request:
+    branches:
+      - main
+      - master
+  # Disparar manualmente desde la UI de GitHub.
+  workflow_dispatch:
+
+# Cancela builds en cola cuando hay un push nuevo (ahorra minutos de CI).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          # Desactiva el postinstall de electron-builder install-app-deps;
+          # electron-builder gestionará los binarios al empaquetar.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-${{ runner.arch }}-34.5.8
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build Next.js
+        run: npm run build
+        env:
+          TURSO_MIGRATION_BUILD: ${{ github.ref == 'refs/heads/turso-migration' && '1' || '0' }}
+
+      - name: Verify Next.js output
+        if: github.ref != 'refs/heads/turso-migration'
+        shell: pwsh
+        run: |
+          echo "=== Verificando bundle Next.js estático ==="
+          if (Test-Path "out/index.html") {
+            Write-Host "✅ out/index.html encontrado"
+          } else {
+            Write-Host "❌ ERROR: out/index.html NO encontrado"
+            exit 1
+          }
+          $chunks = Get-ChildItem -Path "out/_next" -Recurse -Filter "*.js" -ErrorAction SilentlyContinue
+          if ($chunks.Count -gt 0) {
+            Write-Host "✅ Chunks JS encontrados: $($chunks.Count) archivos"
+          } else {
+            Write-Host "❌ ERROR: no se encontraron chunks JS en out/_next"
+            exit 1
+          }
+
+      - name: Build Electron installer
+        shell: pwsh
+        run: |
+          # Solo publica en GitHub Releases cuando es push a main/master o tag.
+          # Para PRs y feature branches, solo sube el .exe como artefacto.
+          $publish = "never"
+          if ("${{ github.event_name }}" -ne "pull_request" -and "${{ github.ref }}" -notlike "refs/heads/fix/*" -and "${{ github.ref }}" -notlike "refs/heads/feature/*") {
+            $publish = "always"
+            Write-Host "ℹ️  main/master/tag: publicación completa con release"
+          } else {
+            Write-Host "ℹ️  PR/feature branch: solo artefacto, no release"
+          }
+
+          # GitHub/Electron puede responder HTTP 5xx temporalmente al descargar
+          # el runtime. Reintentar sin cambiar versión ni configuración.
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "🔧 electron-builder intento $attempt de 3"
+            npx electron-builder --win --publish $publish
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ electron-builder completado"
+              exit 0
+            }
+            if ($attempt -lt 3) {
+              Write-Host "⚠️  Falló electron-builder. Reintentando en 15 segundos..."
+              Start-Sleep -Seconds 15
+            }
+          }
+          Write-Host "❌ electron-builder falló después de 3 intentos"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Verify installer exists
+        shell: pwsh
+        run: |
+          echo "=== Verificando instalador generado ==="
+          Get-ChildItem -Path dist -Recurse -Include *.exe,*.yml | ForEach-Object {
+            Write-Host "📦 $($_.FullName) ($([math]::Round($_.Length/1MB, 2)) MB)"
+          }
+          $found = Get-ChildItem -Path dist -Recurse -Include *.exe -ErrorAction SilentlyContinue
+          if (-not $found -or $found.Count -eq 0) {
+            Write-Host "❌ ERROR: no se generó ningún instalador"
+            exit 1
+          }
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PosVEN-Pro-Windows-Installer
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
