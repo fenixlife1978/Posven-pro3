@@ -385,7 +385,9 @@ export async function createSaleTransaction(params: {
     }
 
     const products = new Map<string, any>();
-    const productIds = [...new Set(cart.map(i => String(i.productoId || '')).filter(Boolean))];
+    // Las líneas de venta libre por monto en Bs no representan artículos de inventario
+    // y, por tanto, no deben exigir un producto persistido ni generar movimientos de stock.
+    const productIds = [...new Set(cart.filter((i: any) => !i.ventaLibreBS).map(i => String(i.productoId || '')).filter(Boolean))];
     for (const pid of productIds) {
       const product = rowFromDb((await tx.execute(txSelect('productos', pid))).rows[0]);
       if (!product) throw new Error('Un producto de la venta ya no existe en Turso.');
@@ -479,10 +481,11 @@ export async function createSaleTransaction(params: {
 
     const deductions = new Map<string, { qty: number; references: string[] }>();
     for (const item of cart) {
-      const p = products.get(String(item.productoId));
-      if (!p) throw new Error('Producto no encontrado.');
       const qty = Number(item.cantidad) || 0;
       if (qty <= 0) throw new Error('La venta contiene una cantidad inválida.');
+      if (item.ventaLibreBS) continue;
+      const p = products.get(String(item.productoId));
+      if (!p) throw new Error('Producto no encontrado.');
       if (p.isKit && p.kitType === 'stock_componentes' && Array.isArray(p.kitItems)) {
         for (const ki of p.kitItems) {
           const id = String(ki.productoId);
