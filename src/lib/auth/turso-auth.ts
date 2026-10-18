@@ -118,33 +118,57 @@ export async function createUser(input: {
   return findUser(username);
 }
 
+/**
+ * Ensure the database is recoverable when it has no active administrator.
+ * This is called before credential lookup on login, so first install and a
+ * deliberate Turso data reset both bootstrap on the first login attempt.
+ * Never create a backdoor seed account while another active administrator exists.
+ */
 export async function ensureSeedAdmin() {
   await ensureTursoSchema();
-  const result = await tursoExecute({
-    sql: `SELECT id FROM users WHERE username='admin' AND is_seed_admin=1 LIMIT 1`,
-  });
-  if (result.rows.length) return;
 
-  const existing = await tursoExecute({
-    sql: `SELECT id FROM users WHERE username='admin' LIMIT 1`,
+  const activeAdmins = await tursoExecute({
+    sql: `SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 LIMIT 1`,
+  });
+  if (activeAdmins.rows.length) return;
+
+  // Reuse the reserved seed username if present, preserving its existing password.
+  const existingSeed = await tursoExecute({
+    sql: `SELECT id FROM users WHERE lower(username)='admin' LIMIT 1`,
   });
 
-  if (existing.rows.length) {
+  if (existingSeed.rows.length) {
     await tursoExecute({
-      sql: `UPDATE users SET rol='administrador', is_seed_admin=1, email=COALESCE(email, 'admin@posven.local') WHERE username='admin'`,
+      sql: `UPDATE users
+        SET rol='administrador', acceso_bloqueado=0, is_seed_admin=1,
+            email=COALESCE(email, 'admin@posven.local'), nombre=COALESCE(NULLIF(nombre,''),'ADMINISTRADOR')
+        WHERE id=?`,
+      args: [String(existingSeed.rows[0].id)],
       wantRows: false,
     });
     return;
   }
 
-  await createUser({
-    username: 'admin',
-    email: 'admin@posven.local',
-    nombre: 'ADMINISTRADOR',
-    password: 'admin123',
-    rol: 'administrador',
-    isSeedAdmin: true,
-  });
+  // Set POSVEN_SEED_ADMIN_PASSWORD in the external .env to override the
+  // first-install password. The default preserves a recoverable fresh install.
+  const seedPassword = process.env.POSVEN_SEED_ADMIN_PASSWORD || 'admin123';
+  try {
+    await createUser({
+      username: 'admin',
+      email: 'admin@posven.local',
+      nombre: 'ADMINISTRADOR',
+      password: seedPassword,
+      rol: 'administrador',
+      isSeedAdmin: true,
+    });
+  } catch (error) {
+    // Two first-login requests may race. If the other request created the
+    // seed account, treat that as success; otherwise preserve the real error.
+    const winner = await tursoExecute({
+      sql: `SELECT id FROM users WHERE lower(username)='admin' AND is_seed_admin=1 LIMIT 1`,
+    });
+    if (!winner.rows.length) throw error;
+  }
 }
 
 export async function createSession(userId: string) {
