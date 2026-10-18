@@ -1014,8 +1014,14 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const totalPagadoUSD = pagos.reduce((s, p) => s + p.montoUSD, 0);
   const saldoRestanteUSD = Math.max(0, subtotalUSD - totalPagadoUSD);
 
-  const matches = search.trim().length > 0 
-    ? state.productos.filter(p => p.activo && ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').toLowerCase().includes(search.toLowerCase()))).slice(0, 8)
+  const matches = search.trim().length > 0
+    ? state.productos.filter(p => p.activo && ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').toLowerCase().includes(search.toLowerCase())))
+        .sort((a, b) => {
+          const term = search.trim().toLowerCase();
+          const aExact = [a.codigo, a.barcode].some(v => String(v || '').trim().toLowerCase() === term) ? 0 : 1;
+          const bExact = [b.codigo, b.barcode].some(v => String(v || '').trim().toLowerCase() === term) ? 0 : 1;
+          return aExact - bExact;
+        }).slice(0, 8)
     : [];
 
   const filteredClients = useMemo(() => {
