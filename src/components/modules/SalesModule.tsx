@@ -854,7 +854,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setSelectedProductDisplay(p);
     let presentation: any = null;
     const presentations = (p.presentacionesVenta || []).filter((x: any) => x && x.nombre && Number(x.precioUSD) >= 0);
-    if (presentations.length > 1) {
+    if (presentations.length > 1 && !p.ventaPorPeso) {
       const options = presentations.map((x: any, i: number) => `${i + 1}. ${x.nombre} — ${Utils.fmtUSD(Number(x.precioUSD) || 0)}`).join('\n');
       const answer = prompt(`Seleccione presentación para ${p.nombre}:\n${options}\n\nEscriba el número de la presentación:`, '1');
       if (answer === null) return;
@@ -864,10 +864,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         return;
       }
       presentation = presentations[choice - 1];
-    } else if (presentations.length === 1 && presentations[0].nombre !== p.cantidad) {
-      presentation = presentations[0];
     }
-    const factor = Math.max(0.000001, Number(presentation?.factor) || 1);
+    const factor = p.ventaPorPeso ? 1 : Math.max(0.000001, Number(presentation?.factor) || 1);
     const unitPrice = presentation ? (Number(presentation.precioUSD) || 0) / factor : p.precioUSD;
     const lineName = presentation ? `${p.nombre} — ${presentation.nombre}` : p.nombre;
     if (factor > stockAvail) {
