@@ -1,6 +1,5 @@
 -- POSVEN PRO / Turso (SQLite/libSQL)
--- Esquema base de migración desde Firestore/RTDB.
--- Regla: conservar siempre el ID original de Firestore y el payload JSON completo.
+-- Esquema operativo POSVEN sobre Turso (libSQL/SQLite).
 
 PRAGMA foreign_keys = ON;
 
@@ -19,27 +18,12 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   acceso_bloqueado INTEGER NOT NULL DEFAULT 0,
   is_seed_admin INTEGER NOT NULL DEFAULT 0,
-  firebase_uid TEXT,
   fecha_creacion TEXT,
   data_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid) WHERE firebase_uid IS NOT NULL;
-
--- Para usuarios migrados desde Firebase, id = firebase UID siempre que no exista conflicto.
--- Así terminales, ventas y demás históricos que ya guardan ese UID continúan
--- apuntando al mismo usuario sin reescribir registros históricos.
-CREATE TABLE IF NOT EXISTS user_identity_map (
-  source TEXT NOT NULL,
-  legacy_user_id TEXT NOT NULL,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  firebase_uid TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (source, legacy_user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_user_identity_map_user ON user_identity_map(user_id);
 
 -- El administrador semilla se crea también por código de inicialización/reset.
 -- La contraseña se almacena como hash, nunca como texto plano.
@@ -148,7 +132,7 @@ CREATE TABLE IF NOT EXISTS compras (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Idempotencia: reemplaza la colección Firestore "operaciones".
+-- Registro de idempotencia para operaciones transaccionales.
 CREATE TABLE IF NOT EXISTS operaciones (
   id TEXT PRIMARY KEY,
   prefijo TEXT NOT NULL,
@@ -172,7 +156,7 @@ CREATE TABLE IF NOT EXISTS auditoria_sistema (
 CREATE INDEX IF NOT EXISTS idx_auditoria_terminal_fecha ON auditoria_sistema(terminal_id, fecha);
 CREATE INDEX IF NOT EXISTS idx_auditoria_usuario_fecha ON auditoria_sistema(usuario_id, fecha);
 
--- Documentos legacy que existan en Firestore y no formen parte del flujo actual.
+-- Documentos históricos conservados para auditoría.
 CREATE TABLE IF NOT EXISTS legacy_documents (
   path TEXT PRIMARY KEY,
   data_json TEXT NOT NULL DEFAULT '{}',
@@ -180,7 +164,7 @@ CREATE TABLE IF NOT EXISTS legacy_documents (
   imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Sesiones propias de POSVEN; no depende de Firebase Authentication.
+-- Sesiones propias de POSVEN.
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
