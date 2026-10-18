@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
-import JsBarcode from "jsbarcode";
+import React, { useMemo, useState } from "react";
+const JsBarcode: any = require("jsbarcode");
 import { jsPDF } from "jspdf";
 import { Product, AppState } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,6 @@ export function PriceLabelsModal({ productos, state, onClose }: Props) {
   const [vatMode, setVatMode] = useState<VatMode>("ambos");
   const [includeBarcode, setIncludeBarcode] = useState(true);
   const [paper, setPaper] = useState<"estante" | "pequena">("estante");
-  const printRef = useRef<HTMLDivElement>(null);
   const filtered = useMemo(() => productos.filter(p => p.activo && (p.nombre.toLowerCase().includes(query.toLowerCase()) || p.codigo.toLowerCase().includes(query.toLowerCase()))), [productos, query]);
   const picked = productos.filter(p => selected[p.id] && p.activo);
   const copies = picked.flatMap(p => Array.from({ length: Math.max(1, Math.min(500, Number(quantity[p.id]) || 1)) }, () => p));
