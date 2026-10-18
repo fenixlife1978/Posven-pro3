@@ -177,7 +177,7 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
       'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
       'devoluciones','anulaciones','terminales','libro_diario','reportes_z','caja',
       'compras','operaciones','auditoria_sistema','legacy_documents','migration_runs',
-      'catalogos','app_config','user_identity_map','sessions'
+      'catalogos','app_config','sessions'
     ];
     for (const name of tables) {
       await tx.execute({ sql: 'DELETE FROM ' + name, args: [], wantRows: false });
