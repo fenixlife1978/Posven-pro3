@@ -166,7 +166,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [showSaleDetail, setShowSaleDetail] = useState<any | null>(null);
   const [lastProcessedSale, setLastProcessedSale] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);\n  const [productToConfigureSale, setProductToConfigureSale] = useState<Product | null>(null);
+  const [selectedProductDisplay, setSelectedProductDisplay] = useState<Product | null>(null);
+  const [productToConfigureSale, setProductToConfigureSale] = useState<Product | null>(null);
   const [stockEdit, setStockEdit] = useState<Product | null>(null);
   const [stockEditValue, setStockEditValue] = useState('');
   
