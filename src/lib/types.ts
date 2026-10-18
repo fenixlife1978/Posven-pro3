@@ -2,7 +2,6 @@ export interface User {
   uid: string;
   /** ID del terminal/caja asignado en Turso; es la identidad operativa del cajero. */
   terminalId?: string | null;
-  firebaseUid?: string | null;
   isSeedAdmin?: boolean;
   nombre: string;
   email: string;
