@@ -155,7 +155,7 @@ function terminalSeries(prefix: string, label: string, number: number, width = 6
   return prefix + '-' + label + '-' + String(number).padStart(width, '0');
 }
 
-const CATALOG_CACHE_META_KEY = 'posven_pro_catalog_cache_meta_v1';
+const CATALOG_CACHE_META_KEY = 'posven_pro_catalog_cache_meta_v2_retail_defaults';
 
 const CATALOG_FIELDS: Record<string, string> = {
   categorias: 'categorias',
