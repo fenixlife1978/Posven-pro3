@@ -2,11 +2,8 @@ import { tursoBatch, tursoExecute } from '@/lib/turso/client';
 
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS app_config (id TEXT PRIMARY KEY, data_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
-  `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, email TEXT, nombre TEXT NOT NULL, rol TEXT NOT NULL CHECK (rol IN ('administrador','cajero')), password_hash TEXT NOT NULL, acceso_bloqueado INTEGER NOT NULL DEFAULT 0, is_seed_admin INTEGER NOT NULL DEFAULT 0, firebase_uid TEXT, fecha_creacion TEXT, data_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, email TEXT, nombre TEXT NOT NULL, rol TEXT NOT NULL CHECK (rol IN ('administrador','cajero')), password_hash TEXT NOT NULL, acceso_bloqueado INTEGER NOT NULL DEFAULT 0, is_seed_admin INTEGER NOT NULL DEFAULT 0, fecha_creacion TEXT, data_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid) WHERE firebase_uid IS NOT NULL`,
-  `CREATE TABLE IF NOT EXISTS user_identity_map (source TEXT NOT NULL, legacy_user_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, firebase_uid TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (source, legacy_user_id))`,
-  `CREATE INDEX IF NOT EXISTS idx_user_identity_map_user ON user_identity_map(user_id)`,
   `CREATE TABLE IF NOT EXISTS catalogos (nombre TEXT PRIMARY KEY, lista_json TEXT NOT NULL DEFAULT '[]', data_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS productos (id TEXT PRIMARY KEY, data_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS movimientos (id TEXT PRIMARY KEY, data_json TEXT NOT NULL DEFAULT '{}', fecha TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
