@@ -902,7 +902,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
     setSelectedProductDisplay(p);
     const stockAvail = getStockDisponible(p);
-    const n = item.cantidad + delta;
+    const n = item.cantidad + delta * (item.factorPresentacion || 1);
     if (n <= 0) nuevo.splice(idx, 1);
     else if (n <= stockAvail) {
       item.cantidad = n;
@@ -1376,7 +1376,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <div className="text-right text-xs font-black">{Utils.fmtUSD(item.precioUnitUSD)}</div>
                         <div className="text-right text-xs font-black">{Utils.fmtBS(item.precioUnitUSD * state.tasa)}</div>
                         <div className="text-right text-sm font-black">{Utils.fmtUSD(item.subtotalUSD)}</div>
-                        <div className="flex justify-center"><button onClick={() => updateQty(i, -item.cantidad)} className="text-ink/20 hover:text-red-600"><Trash2 className="w-4 h-4"/></button></div>
+                        <div className="flex justify-center"><button onClick={() => { const next = state.carrito.filter((_, index) => index !== i); updateState({ carrito: next }); setPagos([]); }} className="text-ink/20 hover:text-red-600" aria-label="Quitar producto del carrito"><Trash2 className="w-4 h-4"/></button></div>
                       </div>
                     );
                   })}
