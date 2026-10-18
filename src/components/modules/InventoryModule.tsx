@@ -26,7 +26,8 @@ import {
   LayoutGrid,
   Monitor,
   Eye,
-  ShieldAlert
+  ShieldAlert,
+  Tags
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,6 +48,7 @@ import {
   exportarPDFDevoluciones
 } from '@/lib/pdf-generator';
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
+import { PriceLabelsModal } from '@/components/inventory/PriceLabelsModal';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
@@ -87,6 +89,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
   const [showConteoFisico, setShowConteoFisico] = useState(false);
+  const [showPriceLabels, setShowPriceLabels] = useState(false);
 
   // ✅ CORRECCIÓN: Limpiar departamentos y categorías para evitar duplicados
   const cleanDepartamentos = useMemo(() => {
@@ -185,7 +188,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
               <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => generarPDFInventarioSimple(prods, state.empresa)}>
                 <FileText className="w-4 h-4" /> PDF Simple
               </Button>
-              <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => setShowConteoFisico(true)}>
+              <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => setShowPriceLabels(true)}>
+                <Tags className="w-4 h-4" /> Habladores
+              </Button>
+              <Button variant="secondary" className="flex-1 md:flex-none h-11 font-black uppercase text-[10px]" onClick={() => setShowConteoFisico(true)>
                 <Boxes className="w-4 h-4" /> Conteo Físico
               </Button>
               <Button className="flex-1 md:flex-none h-11 bg-brand-gold hover:bg-brand-gold-deep text-ink font-black uppercase text-[10px] shadow-lg" onClick={() => setShowProducto('nuevo')}>
@@ -336,6 +342,8 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
           }}
         />
       )}
+
+      {showPriceLabels && <PriceLabelsModal productos={(state.productos || []).filter(p => p.activo)} state={state} onClose={() => setShowPriceLabels(false)} />}
 
       {showConteoFisico && (
         <ModalConteoFisico
