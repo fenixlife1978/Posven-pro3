@@ -883,7 +883,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const factor = p.ventaPorPeso ? 1 : Math.max(0.000001, Number(presentation?.factor) || 1);
     const unitPrice = presentation ? (Number(presentation.precioUSD) || 0) / factor : p.precioUSD;
     const lineName = presentation ? `${p.nombre} — ${presentation.nombre}` : p.nombre;
-    if (factor > stockAvail) {
+    if (!p.ventaPorPeso && factor > stockAvail) {
       toast({ variant: "destructive", title: "Stock insuficiente", description: "No hay suficiente existencia para esa presentación." });
       return;
     }
@@ -894,8 +894,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       nuevoCarrito[idx].cantidad += factor;
       nuevoCarrito[idx].subtotalUSD = nuevoCarrito[idx].cantidad * nuevoCarrito[idx].precioUnitUSD;
     } else {
-      const qty = p.ventaPorPeso ? 1 : factor;
-      nuevoCarrito.push({ productoId: pid, nombre: lineName, precioUnitUSD: p.ventaPorPeso ? p.precioUSD : unitPrice, cantidad: qty, subtotalUSD: qty * (p.ventaPorPeso ? p.precioUSD : unitPrice), ...(presentation ? { presentacion: presentation.nombre, factorPresentacion: factor } : {}), ...(p.ventaPorPeso ? { cantidadGramos: 1000 } : {}) });
+      const qty = p.ventaPorPeso ? Math.min(1, stockAvail) : factor;
+      nuevoCarrito.push({ productoId: pid, nombre: lineName, precioUnitUSD: p.ventaPorPeso ? p.precioUSD : unitPrice, cantidad: qty, subtotalUSD: qty * (p.ventaPorPeso ? p.precioUSD : unitPrice), ...(presentation ? { presentacion: presentation.nombre, factorPresentacion: factor } : {}), ...(p.ventaPorPeso ? { cantidadGramos: Math.round(qty * 1000) } : {}) });
     }
     updateState({ carrito: nuevoCarrito });
     setSearch('');
