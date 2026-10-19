@@ -18,6 +18,14 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
   const [ml, setMl] = useState("250");
   const [budgetBs, setBudgetBs] = useState("50.00");
   const selected = presentations.find(p => p.id === presentationId) || presentations[0];
+  // La presentación base debe tomar siempre el precio de venta vigente del producto;
+  // nunca un valor antiguo guardado en la fila de presentación base.
+  const isBasePresentation = (p?: ProductPresentation) => !!p && (
+    p.id === "base" || /^(unidad|unit|base)$/i.test(String(p.nombre || "").trim())
+  );
+  const selectedSalePrice = selected
+    ? (isBasePresentation(selected) ? Number(product.precioUSD) || 0 : Number(selected.precioUSD) || 0)
+    : Number(product.precioUSD) || 0;
   const individualPresentation = presentations.find(p => /unidad individual|unidad suelta|unidad|individual|\bund\b/i.test(p.nombre));
   const supportsVolume = /ml|mililitro|litro|lts|lt\b|\bl\b/i.test([product.cantidad, product.unit, ...presentations.map(p => `${p.nombre} ${p.unidadMedida || p.unidad || ""} ${p.unidadContenido || ""}`)].join(" "));
   const q = Math.max(0, Number(quantity.replace(",", ".")) || 0);
@@ -32,7 +40,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
   if (mode === "presentation" && selected) {
     selectedPresentation = selected;
     baseQty = factor * Math.max(1, q);
-    total = Number(selected.precioUSD) * Math.max(1, q);
+    total = selectedSalePrice * Math.max(1, q);
     unitPrice = total / baseQty;
     displayName = `${product.nombre} — ${selected.nombre}`;
   } else if (mode === "unit" && individualPresentation) {
@@ -81,7 +89,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
       <div className="max-h-[72vh] space-y-4 overflow-y-auto p-5">
         <div className="flex flex-wrap gap-1.5 border-b pb-3">{modes.map(item=><button key={item.id} type="button" onClick={()=>setMode(item.id)} className={`rounded-md px-3 py-1.5 text-xs font-bold ${mode===item.id?"bg-[#1b4e8c] text-white":"bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>{item.label}</button>)}</div>
         {mode==="unit" && <label className="block text-xs font-bold">Cantidad de unidades individuales<input type="number" min="1" step="1" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3"/><span className="mt-1 block text-slate-500">Precio por unidad: {Utils.fmtUSD(individualPresentation?.precioUSD || 0)}</span></label>}
-        {mode==="presentation" && <div className="space-y-3"><label className="block text-xs font-bold text-slate-700">Presentación disponible</label><div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{presentations.map(p=><button key={p.id} type="button" onClick={()=>setPresentationId(p.id)} className={`rounded-lg border p-3 text-left ${presentationId===p.id?"border-[#1b4e8c] bg-blue-50 ring-1 ring-[#1b4e8c]":"border-slate-200 hover:border-slate-400"}`}><span className="block text-sm font-bold">{p.nombre}</span><span className="block text-xs text-slate-500">{p.contenido ? `${p.contenido} ${p.unidadContenido || ""}` : `Factor inventario: ${p.factor}`}</span><span className="mt-1 block text-base font-black text-[#1b4e8c]">{Utils.fmtUSD(Number(p.precioUSD)||0)}</span>{p.codigoBarras&&<span className="block text-[10px] text-slate-400">Cód. {p.codigoBarras}</span>}</button>)}</div><label className="block text-xs font-bold">Cantidad de presentaciones<input type="number" min="1" step="1" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3"/></label></div>}
+        {mode==="presentation" && <div className="space-y-3"><label className="block text-xs font-bold text-slate-700">Presentación disponible</label><div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{presentations.map(p=><button key={p.id} type="button" onClick={()=>setPresentationId(p.id)} className={`rounded-lg border p-3 text-left ${presentationId===p.id?"border-[#1b4e8c] bg-blue-50 ring-1 ring-[#1b4e8c]":"border-slate-200 hover:border-slate-400"}`}><span className="block text-sm font-bold">{p.nombre}</span><span className="block text-xs text-slate-500">{p.contenido ? `${p.contenido} ${p.unidadContenido || ""}` : `Factor inventario: ${p.factor}`}</span><span className="mt-1 block text-base font-black text-[#1b4e8c]">{Utils.fmtUSD(isBasePresentation(p) ? (Number(product.precioUSD)||0) : (Number(p.precioUSD)||0))}</span>{p.codigoBarras&&<span className="block text-[10px] text-slate-400">Cód. {p.codigoBarras}</span>}</button>)}</div><label className="block text-xs font-bold">Cantidad de presentaciones<input type="number" min="1" step="1" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3"/></label></div>}
         {mode==="grams"&&<div className="space-y-2"><label className="flex items-center gap-2 text-xs font-bold"><Scale className="h-4 w-4"/> Peso a vender (gramos)</label><input type="number" min="1" max={Math.floor(stock*1000)} step="1" value={grams} onChange={e=>setGrams(e.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/><div className="flex flex-wrap gap-2">{[100,250,500,750,1000].map(v=><button key={v} type="button" onClick={()=>setGrams(String(v))} className="rounded-md border px-2 py-1 text-xs">{v} g</button>)}</div><p className="text-xs text-slate-500">Precio base: {Utils.fmtUSD(product.precioUSD)} / kg. Puedes indicar 350 g o 0.350 kg.</p></div>}
         {mode==="kg"&&<label className="block text-xs font-bold">Cantidad en kilogramos<input type="number" min="0.001" max={stock} step="0.001" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/></label>}
         {mode==="ml"&&<div className="space-y-2"><label className="flex items-center gap-2 text-xs font-bold"><Droplets className="h-4 w-4"/> Volumen a vender (ml)</label><input type="number" min="1" step="1" value={ml} onChange={e=>setMl(e.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/><div className="flex flex-wrap gap-2">{[100,250,500,750,1000].map(v=><button key={v} type="button" onClick={()=>setMl(String(v))} className="rounded-md border px-2 py-1 text-xs">{v} ml</button>)}</div><p className="text-xs text-slate-500">Precio base: {Utils.fmtUSD(product.precioUSD)} / litro</p></div>}
