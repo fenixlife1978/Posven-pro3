@@ -130,6 +130,42 @@ export default function LicoreriaPOS() {
 
     const timerSafety = setTimeout(() => setLoading(false), 8000);
 
+    const restoreOfflineCashier = (): boolean => {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.onLine) return false;
+        const raw = localStorage.getItem('posven_offline_session_v1');
+        if (!raw) return false;
+        const saved = JSON.parse(raw);
+        if (saved?.role !== 'cajero' || !saved?.terminalId || !saved?.userId) return false;
+        const cachedState = Store.get();
+        const terminal = (cachedState.terminales || []).find((t: Terminal) => String(t.id) === String(saved.terminalId));
+        // Solo se permite recuperar offline una caja previamente abierta.
+        // Una caja cerrada no puede abrirse ni generar un nuevo turno sin Turso.
+        if (!terminal || terminal.isCashOpen !== true) return false;
+        const profile = {
+          uid: String(saved.userId),
+          id: String(saved.userId),
+          email: String(saved.email || ''),
+          nombre: String(saved.nombre || 'Cajero'),
+          rol: 'cajero',
+          terminalId: String(terminal.id),
+          accesoBloqueado: false,
+        };
+        setUserRole('cajero');
+        setUserProfile(profile);
+        setUser(profile);
+        setState({ ...cachedState, user: profile, isAuthenticated: true } as AppState);
+        setShowApertura(false);
+        setActiveTab('ventas');
+        setIsOnline(false);
+        setLoading(false);
+        return true;
+      } catch (error) {
+        console.warn('[POS] No se pudo recuperar la sesión offline:', error);
+        return false;
+      }
+    };
+
     const initializeFromTurso = async () => {
       try {
         const response = await fetch('/api/auth/session', { cache: 'no-store' });
@@ -176,6 +212,18 @@ export default function LicoreriaPOS() {
             setUserProfile(profileWithTerminal);
             setUser({ uid: legacyUid, email: currentUser.email, ...currentUser, terminalId: String(myTerm.id) });
             setState(prev => ({ ...prev, user: profileWithTerminal, isAuthenticated: true } as AppState));
+            try {
+              localStorage.setItem('posven_offline_session_v1', JSON.stringify({
+                userId: String(currentUser.id),
+                email: String(currentUser.email || ''),
+                nombre: String(currentUser.nombre || currentUser.name || 'Cajero'),
+                role: 'cajero',
+                terminalId: String(myTerm.id),
+                savedAt: new Date().toISOString(),
+              }));
+            } catch (error) {
+              console.warn('[POS] No se pudo guardar la identidad de continuidad offline:', error);
+            }
 
             if (myTerm.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
 
@@ -213,7 +261,10 @@ export default function LicoreriaPOS() {
           router.push('/login');
           return;
         }
-      } catch {}
+        if (restoreOfflineCashier()) return;
+      } catch {
+        if (restoreOfflineCashier()) return;
+      }
 
 
     };
