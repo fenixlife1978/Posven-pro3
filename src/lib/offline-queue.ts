@@ -24,10 +24,19 @@ function load(): OfflineOperation[] {
   } catch { return []; }
 }
 
-function save(items: OfflineOperation[]) {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(items)); } catch (e) { console.error('[offline-queue] No se pudo guardar la cola:', e); }
+function save(items: OfflineOperation[]): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const serialized = JSON.stringify(items);
+    localStorage.setItem(QUEUE_KEY, serialized);
+    // Verificamos la escritura antes de confirmar una operación offline al POS.
+    if (localStorage.getItem(QUEUE_KEY) !== serialized) return false;
+  } catch (e) {
+    console.error('[offline-queue] No se pudo guardar la cola:', e);
+    return false;
+  }
   listeners.forEach(fn => { try { fn(items); } catch {} });
+  return true;
 }
 
 export function getOfflineQueue(): OfflineOperation[] { return load(); }
@@ -38,7 +47,9 @@ export function enqueueOfflineOperation(type: string, payload: any, operationId:
   const existing = items.find(x => x.operationId === operationId && x.status !== 'conflict');
   if (existing) return existing;
   const item: OfflineOperation = { operationId, type, payload, createdAt: new Date().toISOString(), status: 'pending', attempts: 0 };
-  save([...items, item]);
+  if (!save([...items, item])) {
+    throw new Error('No se pudo guardar la operación pendiente en el almacenamiento local. La venta no se ha registrado; conserva el carrito e inténtalo de nuevo.');
+  }
   return item;
 }
 
