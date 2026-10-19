@@ -182,7 +182,7 @@ function categoriesForDepartment(departamento: string, associations?: Array<{ de
 }
 
 function normalizeUnit(value: unknown): string {
-  return String(value || '').trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[.\\s_-]+/g, '');
+  return String(value || '').trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.\s_-]+/g, '');
 }
 
 function presentationFactorFromContent(content: unknown, contentUnit: unknown, baseUnit: unknown): number | null {
