@@ -381,6 +381,9 @@ export default function LicoreriaPOS() {
       setLoading(true);
       try {
         if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(POSVEN_TAB_SESSION_KEY);
+        // Un cierre de sesión explícito invalida también la continuidad offline
+        // para impedir que el siguiente usuario herede la caja autenticada.
+        try { localStorage.removeItem('posven_offline_session_v1'); } catch {}
         await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
         router.push('/login');
       } catch (e) {
