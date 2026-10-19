@@ -9,10 +9,16 @@ export type PresentationSaleSelection = { nombre?: string; presentacion?: string
 export default function FractionalProductSelectorModal({ product, rate, stock, onClose, onConfirm }: {
   product: Product; rate: number; stock: number; onClose: () => void; onConfirm: (selection: PresentationSaleSelection) => void;
 }) {
-  const presentations = useMemo(() => (product.presentacionesVenta || []).filter(p => p && p.nombre && Number(p.precioUSD) >= 0), [product.presentacionesVenta]);
+  const presentations = useMemo(() => {
+    const configured = (product.presentacionesVenta || []).filter(p => p && p.nombre && Number(p.precioUSD) >= 0);
+    // La unidad base se representa con el precio principal del producto; no requiere
+    // una presentación comercial "Individual" duplicada en el formulario.
+    const base: ProductPresentation = { id: "base", nombre: String(product.cantidad || "Unidad"), factor: 1, precioUSD: Number(product.precioUSD) || 0, precioBS: (Number(product.precioUSD) || 0) * rate };
+    return [base, ...configured.filter(p => p.id !== "base" && !/^(unidad individual|unidad suelta|individual)$/i.test(String(p.nombre || "").trim()))];
+  }, [product.presentacionesVenta, product.cantidad, product.precioUSD, rate]);
   type Mode = "presentation" | "unit" | "grams" | "kg" | "ml" | "budget";
   const [mode, setMode] = useState<Mode>(product.ventaPorPeso ? "grams" : "presentation");
-  const [presentationId, setPresentationId] = useState(presentations[0]?.id || "");
+  const [presentationId, setPresentationId] = useState("base");
   const [quantity, setQuantity] = useState("1");
   const [grams, setGrams] = useState("500");
   const [ml, setMl] = useState("250");
@@ -46,7 +52,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
   } else if (mode === "unit" && individualPresentation) {
     selectedPresentation = individualPresentation;
     baseQty = factor * Math.max(1, q);
-    total = Number(individualPresentation.precioUSD) * Math.max(1, q);
+    total = (Number(product.precioUSD) || 0) * Math.max(1, q);
     unitPrice = total / baseQty;
     displayName = `${product.nombre} — ${individualPresentation.nombre}`;
   } else if (mode === "grams") {
@@ -77,7 +83,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
   };
   const modes = [
     { id: "presentation" as Mode, label: "Presentaciones", show: presentations.length > 0 },
-    { id: "unit" as Mode, label: "Unidad individual", show: !!individualPresentation },
+    
     { id: "grams" as Mode, label: "Gramos", show: !!product.ventaPorPeso },
     { id: "kg" as Mode, label: "Kilogramos", show: !!product.ventaPorPeso },
     { id: "ml" as Mode, label: "Mililitros", show: supportsVolume },
@@ -88,7 +94,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
       <header className="flex items-center justify-between bg-[#1b4e8c] px-5 py-3.5 text-white"><div className="flex items-center gap-2"><Layers className="h-5 w-5 text-blue-200"/><div><h2 className="text-base font-bold">{product.nombre}</h2><p className="text-xs text-blue-200">Selecciona presentación, peso o fracción a despachar</p></div></div><button type="button" onClick={onClose} aria-label="Cerrar"><X className="h-5 w-5"/></button></header>
       <div className="max-h-[72vh] space-y-4 overflow-y-auto p-5">
         <div className="flex flex-wrap gap-1.5 border-b pb-3">{modes.map(item=><button key={item.id} type="button" onClick={()=>setMode(item.id)} className={`rounded-md px-3 py-1.5 text-xs font-bold ${mode===item.id?"bg-[#1b4e8c] text-white":"bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>{item.label}</button>)}</div>
-        {mode==="unit" && <label className="block text-xs font-bold">Cantidad de unidades individuales<input type="number" min="1" step="1" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3"/><span className="mt-1 block text-slate-500">Precio por unidad: {Utils.fmtUSD(individualPresentation?.precioUSD || 0)}</span></label>}
+        
         {mode==="presentation" && <div className="space-y-3"><label className="block text-xs font-bold text-slate-700">Presentación disponible</label><div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{presentations.map(p=><button key={p.id} type="button" onClick={()=>setPresentationId(p.id)} className={`rounded-lg border p-3 text-left ${presentationId===p.id?"border-[#1b4e8c] bg-blue-50 ring-1 ring-[#1b4e8c]":"border-slate-200 hover:border-slate-400"}`}><span className="block text-sm font-bold">{p.nombre}</span><span className="block text-xs text-slate-500">{p.contenido ? `${p.contenido} ${p.unidadContenido || ""}` : `Factor inventario: ${p.factor}`}</span><span className="mt-1 block text-base font-black text-[#1b4e8c]">{Utils.fmtUSD(isBasePresentation(p) ? (Number(product.precioUSD)||0) : (Number(p.precioUSD)||0))}</span>{p.codigoBarras&&<span className="block text-[10px] text-slate-400">Cód. {p.codigoBarras}</span>}</button>)}</div><label className="block text-xs font-bold">Cantidad de presentaciones<input type="number" min="1" step="1" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3"/></label></div>}
         {mode==="grams"&&<div className="space-y-2"><label className="flex items-center gap-2 text-xs font-bold"><Scale className="h-4 w-4"/> Peso a vender (gramos)</label><input type="number" min="1" max={Math.floor(stock*1000)} step="1" value={grams} onChange={e=>setGrams(e.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/><div className="flex flex-wrap gap-2">{[100,250,500,750,1000].map(v=><button key={v} type="button" onClick={()=>setGrams(String(v))} className="rounded-md border px-2 py-1 text-xs">{v} g</button>)}</div><p className="text-xs text-slate-500">Precio base: {Utils.fmtUSD(product.precioUSD)} / kg. Puedes indicar 350 g o 0.350 kg.</p></div>}
         {mode==="kg"&&<label className="block text-xs font-bold">Cantidad en kilogramos<input type="number" min="0.001" max={stock} step="0.001" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/></label>}
