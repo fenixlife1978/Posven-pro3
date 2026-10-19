@@ -251,6 +251,39 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       : null;
   }, [state.terminales, (state as any).user]);
 
+  // Borrador de carrito duradero por caja: sobrevive recargas, cierres inesperados
+  // y cortes eléctricos. Cada terminal conserva su propio borrador.
+  const cartDraftTerminalRef = useRef<string | null>(null);
+  useEffect(() => {
+    const terminalId = String(currentTerminal?.id || '').trim();
+    if (!terminalId || typeof window === 'undefined') return;
+    const key = 'posven_cart_draft_v1_' + terminalId;
+    if (cartDraftTerminalRef.current !== terminalId) {
+      cartDraftTerminalRef.current = terminalId;
+      if (!state.carrito?.length) {
+        try {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const draft = JSON.parse(raw);
+            if (Array.isArray(draft) && draft.every(item => item && typeof item.productoId === 'string' && Number.isFinite(Number(item.cantidad)) && Number.isFinite(Number(item.precioUnitUSD)))) {
+              updateState({ carrito: draft });
+            }
+          }
+        } catch (error) {
+          console.warn('[POS] No se pudo recuperar el borrador del carrito:', error);
+        }
+        return;
+      }
+    }
+    try {
+      if (state.carrito?.length) localStorage.setItem(key, JSON.stringify(state.carrito));
+      else localStorage.removeItem(key);
+    } catch (error) {
+      console.error('[POS] No se pudo guardar el borrador del carrito:', error);
+      toast({ variant: 'destructive', title: 'No se pudo respaldar el carrito', description: 'No cierres ni recargues esta pantalla hasta resolver el almacenamiento local.' });
+    }
+  }, [currentTerminal?.id, state.carrito, updateState]);
+
   const histVentas = useMemo(() => {
     const tc = Utils.getTerminalCash(currentTerminal);
     const desde = tc.fechaUltimoZ || '';
@@ -1069,6 +1102,18 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         cajeroId: (state as any).user?.id || (state as any).user?.uid
       });
 
+      if (result?.queuedOffline) {
+        // La cola local ya guardó la operación completa con un ID idempotente.
+        // Se libera el carrito visible para evitar reintentos duplicados; no se
+        // imprime factura ni se muestra la operación como confirmada por Turso.
+        if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
+        setPagos([]);
+        setCliente('Consumidor final');
+        setSelectedProductDisplay(null);
+        updateState({ carrito: [] });
+        toast({ title: 'Venta guardada pendiente de sincronización', description: 'La operación quedó almacenada en este equipo. No se emitió factura definitiva; al recuperar internet, Turso validará stock y registrará la venta.' });
+        return;
+      }
       if (!result?.sale) throw new Error('La venta no pudo confirmarse en la base de datos.');
 
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
@@ -1245,6 +1290,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         }
       });
 
+      if (result?.queuedOffline) {
+        if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
+        setPagos([]);
+        setIsCreditModalOpen(false);
+        setSelectedClient(null);
+        updateState({ carrito: [] });
+        toast({ title: 'Venta a crédito guardada pendiente', description: 'La solicitud quedó en la cola local. La deuda y la factura solo existirán después de que Turso confirme la sincronización.' });
+        return;
+      }
       if (!result?.sale || !result?.debt) throw new Error('La venta a crédito no pudo confirmarse en Turso.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
 
