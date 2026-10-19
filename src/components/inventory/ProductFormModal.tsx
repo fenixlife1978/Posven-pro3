@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppState, Product, KitItem } from '@/lib/types';
 import { Utils, Store } from '@/lib/db-store';
-import { X, Box, PlusCircle, MinusCircle, Search, Trash2 } from 'lucide-react';
+import { X, Box, PlusCircle, MinusCircle, Search, Trash2, ScanBarcode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -631,7 +631,7 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                       <div className="space-y-1"><Label>Nombre Presentación</Label><Input value={pres.nombre||''} placeholder="Caja x 12 un" onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,nombre:e.target.value}:p)})}/></div>
                       <div className="space-y-1"><Label>Unidades (Factor)</Label><Input type="number" min="0.000001" step="any" value={pres.factor??1} onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,factor:Number(e.target.value)||0}:p)})}/></div>
                       <div className="space-y-1"><Label>Precio Presentación (USD)</Label><Input type="number" min="0" step="0.01" value={pres.precioUSD??0} onChange={e=>{const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,precioUSD:v,precioBS:Number((v*state.tasa).toFixed(2))}:p)});}}/></div>
-                      <div className="space-y-1"><Label>EAN / Código de Barras</Label><div className="flex gap-2"><Input value={pres.codigoBarras||''} placeholder="759000..." onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,codigoBarras:e.target.value}:p)})}/><Button type="button" variant="outline" title="Escanear código de barras" onClick={()=>{const el=document.querySelector(`[data-presentation-barcode="${i}"]`) as HTMLInputElement|null;el?.focus();}}><ScanBarcode className="w-4 h-4"/></Button></div></div>
+                      <div className="space-y-1"><Label>EAN / Código de Barras</Label><div className="flex gap-2"><Input data-presentation-barcode={i} value={pres.codigoBarras||''} placeholder="759000..." onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,codigoBarras:e.target.value}:p)})}/><Button type="button" variant="outline" title="Escanear código de barras" onClick={()=>{const el=document.querySelector(`[data-presentation-barcode="${i}"]`) as HTMLInputElement|null;el?.focus();}}><ScanBarcode className="w-4 h-4"/></Button></div></div>
                     </div>
                   </div>})}
                 </div>
