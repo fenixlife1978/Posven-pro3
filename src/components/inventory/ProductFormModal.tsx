@@ -243,6 +243,10 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
     ventaPorPeso: producto?.ventaPorPeso || false,
     permiteVentaLibreBS: producto?.permiteVentaLibreBS || false,
     presentacionesVenta: producto?.presentacionesVenta?.length ? producto.presentacionesVenta : [{ id: 'base', nombre: producto?.cantidad || 'Unidad', factor: 1, precioUSD: producto?.precioUSD || 0, precioBS: (producto?.precioUSD || 0) * state.tasa }],
+    presentacionPrincipal: (producto as any)?.presentacionPrincipal || producto?.cantidad || 'Unidad',
+    contenidoUnitario: (producto as any)?.contenidoUnitario ?? 1,
+    unidadContenidoPrincipal: (producto as any)?.unidadContenidoPrincipal || producto?.cantidad || 'Unidad',
+    modalidadesVenta: (producto as any)?.modalidadesVenta || { original: true, unidad: true, fraccionada: false, tragos: false, peso: !!producto?.ventaPorPeso },
     precioUSD: producto?.precioUSD?.toString() ?? '0',
     precioBS: producto ? (producto.precioUSD * state.tasa).toFixed(2) : '0',
     precioMayorUSD: producto?.precioMayorUSD?.toString() ?? '0',
@@ -580,31 +584,57 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
           )}
 
           {activeTab === 'presentaciones' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div><h4 className="font-black uppercase text-sm">Presentaciones de venta</h4><p className="text-xs text-ink/60">Cada presentación tiene unidad, contenido, código de barras opcional, precio propio y factor de conversión al stock base, igual que BODEGA.</p></div>
-                <Button type="button" onClick={() => setDatos({...datos, presentacionesVenta: [...(datos.presentacionesVenta || []), { id: `pres-${Date.now()}`, nombre: '', factor: 1, precioUSD: Number(datos.precioUSD) || 0, precioBS: Number(datos.precioBS) || 0 }]})}><PlusCircle className="w-4 h-4 mr-1"/> Añadir</Button>
-              </div>
-              <div className="flex flex-wrap gap-4 p-3 rounded-lg border border-line bg-surface-soft">
-                <label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={!!datos.ventaPorPeso} onChange={e => setDatos({...datos, ventaPorPeso: e.target.checked})}/> Vender por peso (precio base por kg)</label>
-                <label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={!!datos.permiteVentaLibreBS} onChange={e => setDatos({...datos, permiteVentaLibreBS: e.target.checked})}/> Permitir venta libre por monto en Bs</label>
-              </div>
-              <div className="space-y-3">
-                {(datos.presentacionesVenta || []).map((pres: any, i: number) => (
-                  <div key={pres.id || i} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3 border border-line rounded-xl">
-                    <div><Label className="text-[9px] uppercase">Nombre presentación</Label><Input value={pres.nombre} placeholder="Caja 12 uds, Unidad, Bolsa 500 g..." onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,nombre:e.target.value}:x)})}/></div>
-                    <div><Label className="text-[9px] uppercase">Unidad de venta</Label><Input value={pres.unidadMedida || pres.unidad || ''} placeholder="UND, PQTE, CAJA, KG, GMS, LTS, ML" onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,unidadMedida:e.target.value,unidad:e.target.value}:x)})}/></div>
-                    <div><Label className="text-[9px] uppercase">Contenido numérico</Label><Input type="number" min="0" step="any" value={pres.contenido ?? ''} placeholder="12, 500, 1..." onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>{ if(j!==i)return x; const contenido=e.target.value===''?undefined:Number(e.target.value); const factor= presentationFactorFromContent(contenido, x.unidadContenido, datos.cantidad); return {...x,contenido,...(factor!==null?{factor}:{})}; })})}/></div>
-                    <div><Label className="text-[9px] uppercase">Unidad del contenido</Label><Input value={pres.unidadContenido || ''} placeholder="uds, g, kg, ml, lts" onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>{ if(j!==i)return x; const unidadContenido=e.target.value; const factor=presentationFactorFromContent(x.contenido, unidadContenido, datos.cantidad); return {...x,unidadContenido,...(factor!==null?{factor}:{})}; })})}/></div>
-                    <div><Label className="text-[9px] uppercase">Factor base inventario</Label><Input type="number" min="0.000001" step="any" value={pres.factor} onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,factor:Number(e.target.value)||0}:x)})}/></div>
-                    <div><Label className="text-[9px] uppercase">Código de barras presentación</Label><Input value={pres.codigoBarras || ''} placeholder="EAN/UPC opcional" onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,codigoBarras:e.target.value}:x)})}/></div>
-                    <div><Label className="text-[9px] uppercase">Precio USD</Label><Input type="number" min="0" step="0.01" value={pres.precioUSD} onChange={e => {const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,precioUSD:v,precioBS:Number((v*state.tasa).toFixed(2))}:x)});}}/></div>
-                    <div><Label className="text-[9px] uppercase">Precio Bs</Label><Input type="number" min="0" step="0.01" value={pres.precioBS} onChange={e => {const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,precioBS:v,precioUSD:state.tasa?v/state.tasa:0}:x)});}}/></div>
-                    <div className="flex items-end"><Button type="button" variant="destructive" onClick={() => setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.filter((_:any,j:number)=>j!==i)})}><Trash2 className="w-4 h-4"/></Button></div>
+            <div className="space-y-6">
+              <section className="rounded-2xl border border-line bg-surface-soft p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="font-black text-base">Presentación Principal y Conversión</h4>
+                  <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-900">Unidades & Empaque</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1"><Label>Presentación Principal *</Label>
+                    <select className="form-select h-11 w-full bg-white" value={datos.presentacionPrincipal} onChange={e => setDatos({...datos,presentacionPrincipal:e.target.value,presentacionesVenta:(datos.presentacionesVenta||[]).map((p:any,i:number)=>i===0?{...p,nombre:e.target.value}:p)})}>
+                      {[...new Set([datos.presentacionPrincipal,'Unidad','Caja','Paquete','Bolsa','Bulto','Botella','Lata','Sobre','Saco','Rollo','Galón','Frasco'])].filter(Boolean).map((p:any)=><option key={p} value={p}>{p}</option>)}
+                    </select>
                   </div>
-                ))}
-              </div>
-              <p className="text-[11px] text-ink/60">Ejemplo: unidad base = litro; presentación “250 ml” usa factor 0,25. Para productos a granel, active “Vender por peso” y registre el precio base por kilogramo.</p>
+                  <div className="space-y-1"><Label>Contenido Unitario *</Label><Input type="number" min="0.000001" step="any" value={datos.contenidoUnitario} onChange={e=>{const contenidoUnitario=Number(e.target.value)||0;setDatos({...datos,contenidoUnitario,presentacionesVenta:(datos.presentacionesVenta||[]).map((p:any,i:number)=>i===0?{...p,contenido:contenidoUnitario,unidadContenido:datos.unidadContenidoPrincipal}:p)});}} /></div>
+                  <div className="space-y-1"><Label>Unidad Base *</Label><Input value={datos.cantidad} readOnly className="bg-white" /></div>
+                  <div className="space-y-1"><Label>Unidad del contenido</Label><select className="form-select h-11 w-full bg-white" value={datos.unidadContenidoPrincipal} onChange={e=>{const unidadContenidoPrincipal=e.target.value;const factor=presentationFactorFromContent(datos.contenidoUnitario,unidadContenidoPrincipal,datos.cantidad);setDatos({...datos,unidadContenidoPrincipal,presentacionesVenta:(datos.presentacionesVenta||[]).map((p:any,i:number)=>i===0?{...p,unidadContenido:unidadContenidoPrincipal,...(factor!==null?{factor}: {})}:p)});}}>{[...new Set([datos.unidadContenidoPrincipal,'Unidad','und','g','kg','mg','ml','Lts','L'])].filter(Boolean).map((u:any)=><option key={u} value={u}>{u}</option>)}</select></div>
+                  <div className="space-y-1 sm:col-span-2"><Label>Factor de Conversión *</Label><Input type="number" min="0.000001" step="any" value={datos.presentacionesVenta?.[0]?.factor ?? 1} onChange={e=>setDatos({...datos,presentacionesVenta:(datos.presentacionesVenta||[]).map((p:any,i:number)=>i===0?{...p,factor:Number(e.target.value)||0}:p)})} className="font-bold text-indigo-700 bg-white" /><p className="text-xs text-ink/60">Cantidad de unidades base que contiene una presentación principal. Ej.: caja de 12 unidades = factor 12; envase de 250 ml con base litro = factor 0,25.</p></div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-amber-50 to-indigo-50 p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3"><h4 className="font-black">Modalidades de Venta Permitidas (Casillas de Verificación)</h4><span className="text-xs text-ink/60">Caja POS & Tienda Online</span></div>
+                <div className="grid grid-cols-1 gap-3">
+                  {[
+                    ['original','📦 Presentación Original','Permite despachar el empaque cerrado completo (Caja, Paquete, Bulto).'],
+                    ['unidad','🏷️ Venta por Unidad','Permite vender unidades individuales sueltas extraídas del empaque.'],
+                    ['fraccionada','🪙 Fraccionada (Monto Libre)','El cliente indica cuántos Bs. desea y el sistema despacha el equivalente.'],
+                    ['tragos','🍷 Tragos / Copas / Shots','Ideal para venta por servicio o copa.'],
+                    ['peso','⚖️ Control por Contenido / Balanza (Kg)','Para productos pesados en balanza digital.']
+                  ].map(([key,label,description]:any)=><label key={key} className="flex items-start gap-3 rounded-2xl border border-line bg-white p-4 cursor-pointer"><input type="checkbox" className="mt-1 h-5 w-5" checked={!!datos.modalidadesVenta?.[key]} onChange={e=>setDatos({...datos,modalidadesVenta:{...(datos.modalidadesVenta||{}),[key]:e.target.checked},ventaPorPeso:key==='peso'?e.target.checked:datos.ventaPorPeso,permiteVentaLibreBS:key==='fraccionada'?e.target.checked:datos.permiteVentaLibreBS})}/><span><strong className="block text-sm">{label}</strong><span className="text-xs text-ink/60">{description}</span></span></label>)}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-line bg-surface-soft p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3"><div><h4 className="font-black">Presentaciones Comerciales y Empaques Adicionales ({Math.max(0,(datos.presentacionesVenta||[]).length-1)})</h4><p className="text-xs text-ink/60">Cada empaque puede tener su propio factor, código de barras y precio de venta.</p></div><Button type="button" onClick={()=>setDatos({...datos,presentacionesVenta:[...(datos.presentacionesVenta||[]),{id:`pres-${Date.now()}`,nombre:'',factor:1,precioUSD:Number(datos.precioUSD)||0,precioBS:Number(datos.precioBS)||0}]})}><PlusCircle className="w-4 h-4 mr-1"/> Añadir presentación</Button></div>
+                <div className="space-y-4">
+                  {(datos.presentacionesVenta||[]).slice(1).map((pres:any,index:number)=>{const i=index+1;return <div key={pres.id||i} className="rounded-xl border border-line bg-white p-4 space-y-3">
+                    <div className="flex items-center justify-between"><strong className="text-sm">Presentación adicional {index+1}</strong><Button type="button" variant="destructive" onClick={()=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.filter((_:any,j:number)=>j!==i)})}><Trash2 className="w-4 h-4"/></Button></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1"><Label>Nombre Presentación</Label><Input value={pres.nombre||''} placeholder="Caja x 12 un" onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,nombre:e.target.value}:p)})}/></div>
+                      <div className="space-y-1"><Label>Unidades (Factor)</Label><Input type="number" min="0.000001" step="any" value={pres.factor} onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,factor:Number(e.target.value)||0}:p)})}/></div>
+                      <div className="space-y-1"><Label>Unidad de venta</Label><Input value={pres.unidadMedida||pres.unidad||''} placeholder="Caja, paquete, bulto..." onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,unidadMedida:e.target.value,unidad:e.target.value}:p)})}/></div>
+                      <div className="space-y-1"><Label>Contenido</Label><Input type="number" min="0" step="any" value={pres.contenido??''} placeholder="12, 500, 1..." onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>{if(j!==i)return p;const contenido=e.target.value===''?undefined:Number(e.target.value);const factor=presentationFactorFromContent(contenido,p.unidadContenido,datos.cantidad);return {...p,contenido,...(factor!==null?{factor}:{})};})})}/></div>
+                      <div className="space-y-1"><Label>Unidad del contenido</Label><Input value={pres.unidadContenido||''} placeholder="und, g, kg, ml, Lts" onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>{if(j!==i)return p;const unidadContenido=e.target.value;const factor=presentationFactorFromContent(p.contenido,unidadContenido,datos.cantidad);return {...p,unidadContenido,...(factor!==null?{factor}:{})};})})}/></div>
+                      <div className="space-y-1"><Label>Factor base inventario</Label><Input type="number" min="0.000001" step="any" value={pres.factor} onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,factor:Number(e.target.value)||0}:p)})}/></div>
+                      <div className="space-y-1"><Label>Código de barras</Label><Input value={pres.codigoBarras||''} placeholder="EAN/UPC opcional" onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,codigoBarras:e.target.value}:p)})}/></div>
+                      <div className="space-y-1"><Label>Precio USD</Label><Input type="number" min="0" step="0.01" value={pres.precioUSD??0} onChange={e=>{const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,precioUSD:v,precioBS:Number((v*state.tasa).toFixed(2))}:p)});}}/></div>
+                      <div className="space-y-1"><Label>Precio Bs</Label><Input type="number" min="0" step="0.01" value={pres.precioBS??0} onChange={e=>{const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,precioBS:v,precioUSD:state.tasa?v/state.tasa:0}:p)});}}/></div>
+                    </div>
+                  </div>})}
+                </div>
+              </section>
             </div>
           )}
 
