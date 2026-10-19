@@ -1911,6 +1911,15 @@ export const Store = {
       throw new Error('Las ventas solo pueden registrarse desde el cliente mediante Turso.');
     }
 
+    // Si no hay conexión, persistimos la intención completa en la cola local
+    // antes de devolver el control al POS. No se presenta como venta confirmada:
+    // Turso validará stock, correlativo y efectos contables al sincronizar.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false && !params.fromOfflineQueue) {
+      const operationId = String(params.operationId || ('VENTA-POS-' + Store.uid()));
+      enqueueOfflineOperation('VENTA', { ...params, operationId, fromOfflineQueue: true }, operationId);
+      return { queuedOffline: true, operationId };
+    }
+
     const result = await tryTursoOperation('sale', params);
     if (!result?.sale) {
       throw new Error('Turso no confirmó el registro de la venta.');
