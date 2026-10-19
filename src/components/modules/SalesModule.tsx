@@ -1381,7 +1381,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         <div className="flex items-center justify-center gap-1 bg-surface-soft rounded p-0.5 border border-line/30">
                           {prod?.ventaPorPeso ? <input aria-label="Cantidad en gramos" type="number" min="1" step="1" value={item.cantidadGramos ?? Math.round(item.cantidad * 1000)} onChange={e => cambiarGramos(i, e.target.value)} className="w-[64px] text-center text-xs font-black bg-white border border-line rounded px-1 py-1" /> : <><button onClick={() => updateQty(i, -1)} className="text-ink font-black text-sm px-1.5">-</button><span className="w-5 text-center text-xs font-black">{item.factorPresentacion ? (item.cantidad / item.factorPresentacion).toFixed(2).replace(/\.00$/, '') : item.cantidad}</span><button onClick={() => updateQty(i, 1)} className="text-ink font-black text-sm px-1.5">+</button></>}
                         </div>
-                        <div className="text-center text-[10px] font-black uppercase">{prod?.ventaPorPeso ? 'g' : (prod?.cantidad || '-')}</div>
+                        <div className="text-center text-[10px] font-black uppercase">{prod?.ventaPorPeso ? 'g' : (item.presentacion || prod?.cantidad || '-')}</div>
                         <div className="flex justify-center">
                           <button 
                             onClick={() => prod && setPriceSelectorItem({ index: i, product: prod })}
