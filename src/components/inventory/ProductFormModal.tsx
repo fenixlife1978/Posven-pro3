@@ -181,6 +181,39 @@ function categoriesForDepartment(departamento: string, associations?: Array<{ de
   return [...new Set(source.filter(item => String(item.departamento).trim() === String(departamento).trim()).map(item => String(item.categoria).trim()).filter(Boolean))];
 }
 
+function normalizeUnit(value: unknown): string {
+  return String(value || '').trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[.\\s_-]+/g, '');
+}
+
+function presentationFactorFromContent(content: unknown, contentUnit: unknown, baseUnit: unknown): number | null {
+  const quantity = Number(content);
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+  const unit = normalizeUnit(contentUnit);
+  const base = normalizeUnit(baseUnit);
+  if (!unit || !base) return null;
+  const weight: Record<string, number> = {
+    g: 0.001, gr: 0.001, gramo: 0.001, gramos: 0.001, gm: 0.001, gms: 0.001,
+    kg: 1, kilo: 1, kilos: 1, kilogramo: 1, kilogramos: 1,
+    mg: 0.000001, miligramo: 0.000001, miligramos: 0.000001,
+    ml: 0.001, mililitro: 0.001, mililitros: 0.001,
+    l: 1, lt: 1, lts: 1, litro: 1, litros: 1,
+    und: 1, unidad: 1, unidades: 1, uds: 1, ud: 1, pza: 1, pzas: 1, pieza: 1, piezas: 1
+  };
+  const baseAliases: Record<string, string> = {
+    gr: 'g', gramo: 'g', gramos: 'g', gm: 'g', gms: 'g',
+    kilo: 'kg', kilos: 'kg', kilogramo: 'kg', kilogramos: 'kg',
+    miligramo: 'mg', miligramos: 'mg',
+    mililitro: 'ml', mililitros: 'ml',
+    l: 'lt', lts: 'lt', litro: 'lt', litros: 'lt',
+    unidad: 'und', unidades: 'und', uds: 'und', ud: 'und', pza: 'und', pzas: 'und', pieza: 'und', piezas: 'und'
+  };
+  const normalizedUnit = baseAliases[unit] || unit;
+  const normalizedBase = baseAliases[base] || base;
+  if (normalizedUnit === normalizedBase) return quantity;
+  if (weight[unit] !== undefined && weight[base] !== undefined) return quantity * weight[unit] / weight[base];
+  return null;
+}
+
 function skuToken(value: string): string {
   const words = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().match(/[A-Z0-9]+/g) || [];
   const significant = words.filter(word => !['Y', 'E', 'DE', 'DEL', 'LA', 'LAS', 'EL', 'LOS'].includes(word));
@@ -454,13 +487,13 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
 
                    <div className="space-y-1 col-span-2">
                      <div className="flex justify-between items-center mb-1">
-                       <Label className="text-[10px] font-black uppercase text-ink/50">U. de Medida</Label>
+                       <Label className="text-[10px] font-black uppercase text-ink/50">Unidad de Medida Base</Label>
                        <div className="flex gap-1">
                          <button onClick={() => handleAddListItem('presentaciones')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
                          <button onClick={() => handleRemoveListItem('presentaciones', datos.cantidad)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
                        </div>
                      </div>
-                     <select className="form-select h-10 text-xs font-bold bg-white" value={datos.cantidad} onChange={e => setDatos({...datos, cantidad: e.target.value})}>
+                     <select className="form-select h-10 text-xs font-bold bg-white" value={datos.cantidad} onChange={e => { const cantidad=e.target.value; setDatos((prev:any)=>({...prev,cantidad,presentacionesVenta:(prev.presentacionesVenta||[]).map((pres:any)=>{const factor=presentationFactorFromContent(pres.contenido,pres.unidadContenido,cantidad);return factor!==null?{...pres,factor}:pres;})})); }}>
                        {(state.presentaciones || []).map((p: string) => <option key={p} value={p}>{p}</option>)}
                      </select>
                    </div>
@@ -561,8 +594,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                   <div key={pres.id || i} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3 border border-line rounded-xl">
                     <div><Label className="text-[9px] uppercase">Nombre presentación</Label><Input value={pres.nombre} placeholder="Caja 12 uds, Unidad, Bolsa 500 g..." onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,nombre:e.target.value}:x)})}/></div>
                     <div><Label className="text-[9px] uppercase">Unidad de venta</Label><Input value={pres.unidadMedida || pres.unidad || ''} placeholder="UND, PQTE, CAJA, KG, GMS, LTS, ML" onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,unidadMedida:e.target.value,unidad:e.target.value}:x)})}/></div>
-                    <div><Label className="text-[9px] uppercase">Contenido numérico</Label><Input type="number" min="0" step="any" value={pres.contenido ?? ''} placeholder="12, 500, 1..." onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,contenido:e.target.value===''?undefined:Number(e.target.value)}:x)})}/></div>
-                    <div><Label className="text-[9px] uppercase">Unidad del contenido</Label><Input value={pres.unidadContenido || ''} placeholder="uds, g, kg, ml, lts" onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,unidadContenido:e.target.value}:x)})}/></div>
+                    <div><Label className="text-[9px] uppercase">Contenido numérico</Label><Input type="number" min="0" step="any" value={pres.contenido ?? ''} placeholder="12, 500, 1..." onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>{ if(j!==i)return x; const contenido=e.target.value===''?undefined:Number(e.target.value); const factor= presentationFactorFromContent(contenido, x.unidadContenido, datos.cantidad); return {...x,contenido,...(factor!==null?{factor}:{})}; })})}/></div>
+                    <div><Label className="text-[9px] uppercase">Unidad del contenido</Label><Input value={pres.unidadContenido || ''} placeholder="uds, g, kg, ml, lts" onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>{ if(j!==i)return x; const unidadContenido=e.target.value; const factor=presentationFactorFromContent(x.contenido, unidadContenido, datos.cantidad); return {...x,unidadContenido,...(factor!==null?{factor}:{})}; })})}/></div>
                     <div><Label className="text-[9px] uppercase">Factor base inventario</Label><Input type="number" min="0.000001" step="any" value={pres.factor} onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,factor:Number(e.target.value)||0}:x)})}/></div>
                     <div><Label className="text-[9px] uppercase">Código de barras presentación</Label><Input value={pres.codigoBarras || ''} placeholder="EAN/UPC opcional" onChange={e => setDatos({...datos, presentacionesVenta: datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,codigoBarras:e.target.value}:x)})}/></div>
                     <div><Label className="text-[9px] uppercase">Precio USD</Label><Input type="number" min="0" step="0.01" value={pres.precioUSD} onChange={e => {const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((x:any,j:number)=>j===i?{...x,precioUSD:v,precioBS:Number((v*state.tasa).toFixed(2))}:x)});}}/></div>
