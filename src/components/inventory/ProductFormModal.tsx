@@ -584,54 +584,24 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
           )}
 
           {activeTab === 'presentaciones' && (
-            <div className="space-y-6">
-              <section className="rounded-2xl border border-line bg-surface-soft p-5 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="font-black text-base">Presentación Principal y Conversión</h4>
-                  <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-900">Unidades & Empaque</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1"><Label>Presentación Principal *</Label>
-                    <select className="form-select h-11 w-full bg-white" value={datos.presentacionPrincipal} onChange={e => setDatos({...datos,presentacionPrincipal:e.target.value,presentacionesVenta:(datos.presentacionesVenta||[]).map((p:any,i:number)=>i===0?{...p,nombre:e.target.value}:p)})}>
-                      {[...new Set([datos.presentacionPrincipal,'Unidad','Caja','Paquete','Bolsa','Bulto','Botella','Lata','Sobre','Saco','Rollo','Galón','Frasco'])].filter(Boolean).map((p:any)=><option key={p} value={p}>{p}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1"><Label>Contenido Unitario *</Label><Input type="number" min="0.000001" step="any" value={datos.contenidoUnitario} onChange={e=>{const contenidoUnitario=Number(e.target.value)||0;setDatos({...datos,contenidoUnitario,presentacionesVenta:(datos.presentacionesVenta||[]).map((p:any,i:number)=>i===0?{...p,contenido:contenidoUnitario,unidadContenido:datos.unidadContenidoPrincipal}:p)});}} /></div>
-                  <div className="space-y-1"><Label>Unidad Base *</Label><Input value={datos.cantidad} readOnly className="bg-white" /></div>
-                  <div className="space-y-1"><Label>Unidad del contenido</Label><select className="form-select h-11 w-full bg-white" value={datos.unidadContenidoPrincipal} onChange={e=>{const unidadContenidoPrincipal=e.target.value;const factor=presentationFactorFromContent(datos.contenidoUnitario,unidadContenidoPrincipal,datos.cantidad);setDatos({...datos,unidadContenidoPrincipal,presentacionesVenta:(datos.presentacionesVenta||[]).map((p:any,i:number)=>i===0?{...p,unidadContenido:unidadContenidoPrincipal,...(factor!==null?{factor}: {})}:p)});}}>{[...new Set([datos.unidadContenidoPrincipal,'Unidad','und','g','kg','mg','ml','Lts','L'])].filter(Boolean).map((u:any)=><option key={u} value={u}>{u}</option>)}</select></div>
-                  <div className="space-y-1 sm:col-span-2"><Label>Factor de Conversión *</Label><Input type="number" min="0.000001" step="any" value={datos.presentacionesVenta?.[0]?.factor ?? 1} onChange={e=>setDatos({...datos,presentacionesVenta:(datos.presentacionesVenta||[]).map((p:any,i:number)=>i===0?{...p,factor:Number(e.target.value)||0}:p)})} className="font-bold text-indigo-700 bg-white" /><p className="text-xs text-ink/60">Cantidad de unidades base que contiene una presentación principal. Ej.: caja de 12 unidades = factor 12; envase de 250 ml con base litro = factor 0,25.</p></div>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-amber-50 to-indigo-50 p-5 space-y-4">
-                <div className="flex items-center justify-between gap-3"><h4 className="font-black">Modalidades de Venta Permitidas (Casillas de Verificación)</h4><span className="text-xs text-ink/60">Caja POS & Tienda Online</span></div>
-                <div className="grid grid-cols-1 gap-3">
-                  {[
-                    ['original','📦 Presentación Original','Permite despachar el empaque cerrado completo (Caja, Paquete, Bulto).'],
-                    ['unidad','🏷️ Venta por Unidad','Permite vender unidades individuales sueltas extraídas del empaque.'],
-                    ['fraccionada','🪙 Fraccionada (Monto Libre)','El cliente indica cuántos Bs. desea y el sistema despacha el equivalente.'],
-                    ['tragos','🍷 Tragos / Copas / Shots','Ideal para venta por servicio o copa.'],
-                    ['peso','⚖️ Control por Contenido / Balanza (Kg)','Para productos pesados en balanza digital.']
-                  ].map(([key,label,description]:any)=><label key={key} className="flex items-start gap-3 rounded-2xl border border-line bg-white p-4 cursor-pointer"><input type="checkbox" className="mt-1 h-5 w-5" checked={!!datos.modalidadesVenta?.[key]} onChange={e=>setDatos({...datos,modalidadesVenta:{...(datos.modalidadesVenta||{}),[key]:e.target.checked},ventaPorPeso:key==='peso'?e.target.checked:datos.ventaPorPeso,permiteVentaLibreBS:key==='fraccionada'?e.target.checked:datos.permiteVentaLibreBS})}/><span><strong className="block text-sm">{label}</strong><span className="text-xs text-ink/60">{description}</span></span></label>)}
-                </div>
-              </section>
-
+            <div className="space-y-5">
               <section className="rounded-2xl border border-line bg-surface-soft p-5 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
                     <h4 className="font-black">Presentaciones Comerciales y Empaques Adicionales ({Math.max(0,(datos.presentacionesVenta||[]).length-1)})</h4>
-                    <p className="text-xs text-ink/60">Venta por mayor o bultos</p>
+                    <p className="text-xs text-ink/60">Venta por mayor o bultos. La unidad base se define en Información General y el precio base en Costos y Precios.</p>
                   </div>
-                  <Button type="button" onClick={()=>setDatos({...datos,presentacionesVenta:[...(datos.presentacionesVenta||[]),{id:`pres-${Date.now()}`,nombre:'',factor:1,precioUSD:0,precioBS:0,codigoBarras:''}]})}><PlusCircle className="w-4 h-4 mr-1"/> Agregar Presentación</Button>
+                  <Button type="button" onClick={()=>setDatos({...datos,presentacionesVenta:[...(datos.presentacionesVenta||[]),{id:`pres-${Date.now()}`,nombre:'',unidadMedida:'Caja',factor:1,precioUSD:0,precioBS:0,codigoBarras:''}]})}><PlusCircle className="w-4 h-4 mr-1"/> Agregar Presentación</Button>
                 </div>
                 <div className="space-y-3">
                   {(datos.presentacionesVenta||[]).slice(1).map((pres:any,index:number)=>{const i=index+1;return <div key={pres.id||i} className="rounded-xl border border-line bg-white p-4 space-y-3">
                     <div className="flex items-center justify-between gap-2"><span className="text-sm font-bold">Presentación {index+1}</span><Button type="button" variant="destructive" onClick={()=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.filter((_:any,j:number)=>j!==i)})}><Trash2 className="w-4 h-4"/></Button></div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1"><Label>Nombre Presentación</Label><Input value={pres.nombre||''} placeholder="Caja x 12 un" onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,nombre:e.target.value}:p)})}/></div>
-                      <div className="space-y-1"><Label>Unidades (Factor)</Label><Input type="number" min="0.000001" step="any" value={pres.factor??1} onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,factor:Number(e.target.value)||0}:p)})}/></div>
-                      <div className="space-y-1"><Label>Precio Presentación (USD)</Label><Input type="number" min="0" step="0.01" value={pres.precioUSD??0} onChange={e=>{const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,precioUSD:v,precioBS:Number((v*state.tasa).toFixed(2))}:p)});}}/></div>
-                      <div className="space-y-1"><Label>EAN / Código de Barras</Label><div className="flex gap-2"><Input data-presentation-barcode={i} value={pres.codigoBarras||''} placeholder="759000..." onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,codigoBarras:e.target.value}:p)})}/><Button type="button" variant="outline" title="Escanear código de barras" onClick={()=>{const el=document.querySelector(`[data-presentation-barcode="${i}"]`) as HTMLInputElement|null;el?.focus();}}><ScanBarcode className="w-4 h-4"/></Button></div></div>
+                      <div className="space-y-1"><Label>Tipo de empaque o presentación</Label><Input value={pres.nombre||''} placeholder="Caja x 12 un" onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,nombre:e.target.value}:p)})}/></div>
+                      <div className="space-y-1"><Label>Unidad de Medida</Label><Input value={pres.unidadMedida||pres.unidad||''} placeholder="Caja, paquete, bulto..." onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,unidadMedida:e.target.value,unidad:e.target.value}:p)})}/></div>
+                      <div className="space-y-1"><Label>Factor de Conversión (unidades base)</Label><Input type="number" min="0.000001" step="any" value={pres.factor??1} onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,factor:Number(e.target.value)||0}:p)})}/></div>
+                      <div className="space-y-1"><Label>Precio de Venta (USD)</Label><Input type="number" min="0" step="0.01" value={pres.precioUSD??0} onChange={e=>{const v=Number(e.target.value)||0;setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,precioUSD:v,precioBS:Number((v*state.tasa).toFixed(2))}:p)});}}/></div>
+                      <div className="space-y-1 sm:col-span-2"><Label>EAN / Código de Barras</Label><div className="flex gap-2"><Input data-presentation-barcode={i} value={pres.codigoBarras||''} placeholder="759000..." onChange={e=>setDatos({...datos,presentacionesVenta:datos.presentacionesVenta.map((p:any,j:number)=>j===i?{...p,codigoBarras:e.target.value}:p)})}/><Button type="button" variant="outline" title="Enfocar código de barras para lectura" onClick={()=>{const el=document.querySelector(`[data-presentation-barcode="${i}"]`) as HTMLInputElement|null;el?.focus();}}><ScanBarcode className="w-4 h-4"/></Button></div></div>
                     </div>
                   </div>})}
                 </div>
