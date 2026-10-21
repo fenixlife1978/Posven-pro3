@@ -157,6 +157,12 @@ export async function POST(request: Request) {
       if (operation === 'debtPayment' && String(body.collection || 'cxc') !== 'cxc') {
         throw new Error('El cajero solo puede cobrar cuentas por cobrar de su propia caja.');
       }
+      if (operation === 'recordsSync' && ['movimientos', 'libroDiario'].includes(String(body.table || '')) && Array.isArray(body.records)) {
+        body.records = body.records.map((record: any) => ({ ...record, terminalId: assignedTerminalId }));
+      }
+      if (operation === 'terminalPatch' && body.patch && typeof body.patch === 'object') {
+        body.patch = { ...body.patch, terminalId: assignedTerminalId };
+      }
       if (terminalOperations.has(operation)) {
         if (body.terminalId && String(body.terminalId) !== assignedTerminalId) {
           throw new Error('No tienes permiso para operar con otra caja.');
