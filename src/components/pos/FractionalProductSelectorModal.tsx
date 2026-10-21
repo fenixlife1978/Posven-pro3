@@ -103,7 +103,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     { id: "grams" as Mode, label: "Gramos", show: !!product.ventaPorPeso },
     { id: "kg" as Mode, label: "Kilogramos", show: !!product.ventaPorPeso },
     { id: "ml" as Mode, label: "Mililitros", show: supportsVolume },
-    { id: "budget" as Mode, label: "Monto en Bs", show: !!product.permiteVentaLibreBS || supportsVolume },
+    { id: "budget" as Mode, label: "Monto en Bs", show: !!product.permiteVentaLibreBS },
   ].filter(x => x.show);
   return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 backdrop-blur-sm p-3 md:p-6">
     <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-300 bg-white shadow-2xl">
