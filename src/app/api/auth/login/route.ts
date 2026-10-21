@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/auth/turso-auth';
 import { isTursoConfigured } from '@/lib/turso/client';
+import { ensureDemoSeedData } from '@/lib/turso/pos-store';
 
 export const runtime = 'nodejs';
 
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
     }
 
     await ensureSeedAdmin();
+    await ensureDemoSeedData();
 
     const row = await getUserWithSecret(identifier);
     if (!row || Number(row.acceso_bloqueado || 0) === 1 || !verifyPassword(password, String(row.password_hash))) {
