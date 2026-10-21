@@ -106,7 +106,7 @@ export async function GET(request: Request) {
     const message = String(error?.message || error);
     const status = message.includes('no está configurado') ? 503
       : message.includes('No autenticado') ? 401
-      : message.includes('No tienes permiso') || message.includes('no tiene una caja asignada') ? 403 : 400;
+      : message.includes('No tienes permiso') || message.includes('no tiene una caja asignada') || message.includes('requiere permisos de administrador') || message.includes('solo puede cobrar') ? 403 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
@@ -149,6 +149,34 @@ export async function POST(request: Request) {
     assertTursoReady();
     const user = await requireUser(request);
     const body = await request.json();
+    const operation = String(body?.operation || '');
+    if (user.rol === 'cajero') {
+      const assignedTerminalId = String(user.terminalId || '');
+      if (!assignedTerminalId) throw new Error('Tu usuario cajero no tiene una caja asignada. Solicita al administrador que la asigne en Gestión de Usuarios.');
+      const terminalOperations = new Set([
+        'sale', 'inventory', 'inventoryStockSync', 'debtPayment', 'cashMovement',
+        'globalCustomerPayment', 'customerDebt', 'returnOrCancellation', 'zClosure',
+      ]);
+      if (['terminalUpsert', 'terminalDelete', 'globalProviderPayment', 'supplierDebt', 'createPurchase', 'deletePurchase', 'repairReturnInventoryAndCxc', 'factoryReset', 'productSync', 'upsert', 'catalogPatch'].includes(operation)) {
+        throw new Error('Esta operación requiere permisos de administrador.');
+      }
+      if (operation === 'debtPayment' && String(body.collection || 'cxc') !== 'cxc') {
+        throw new Error('El cajero solo puede cobrar cuentas por cobrar de su propia caja.');
+      }
+      if (terminalOperations.has(operation)) {
+        if (body.terminalId && String(body.terminalId) !== assignedTerminalId) {
+          throw new Error('No tienes permiso para operar con otra caja.');
+        }
+        body.terminalId = assignedTerminalId;
+        if (body.movement && typeof body.movement === 'object') body.movement = { ...body.movement, terminalId: assignedTerminalId };
+        if (body.debt && typeof body.debt === 'object') body.debt = { ...body.debt, terminalId: assignedTerminalId };
+        if (body.journal && typeof body.journal === 'object' && !Array.isArray(body.journal)) body.journal = { ...body.journal, terminalId: assignedTerminalId };
+        if (Array.isArray(body.journal)) body.journal = body.journal.map((entry: any) => ({ ...entry, terminalId: assignedTerminalId }));
+      }
+      if (operation === 'terminalPatch' && String(body.terminalId || '') !== assignedTerminalId) {
+        throw new Error('No tienes permiso para modificar otra caja.');
+      }
+    }
     const demoModule = demoModuleForOperation(body);
     if (demoModule) await consumeDemoAction(demoModule);
 
