@@ -14,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="antialiased min-h-screen bg-background text-foreground">
+      <body className={process.env.POSVEN_DEMO_MODE === '1' ? 'antialiased min-h-screen bg-background text-foreground pt-12' : 'antialiased min-h-screen bg-background text-foreground'}>
         {process.env.POSVEN_DEMO_MODE === '1' ? (
           <div role="status" className="fixed inset-x-0 top-0 z-[9999] border-b-2 border-amber-400 bg-slate-950 px-3 py-2 text-center text-xs font-semibold tracking-wide text-white shadow-lg sm:text-sm">
             POSVEN PRO · DEMO — Versión de demostración con límite de 10 acciones por módulo. Adquiere la versión completa para uso sin límites.
