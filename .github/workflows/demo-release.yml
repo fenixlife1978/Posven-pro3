@@ -103,14 +103,6 @@ jobs:
           Copy-Item $found.FullName 'release-assets/POSVEN-PRO-DEMO-Setup-2.6.1.exe' -Force
           Write-Host "Instalador DEMO: $((Get-Item 'release-assets/POSVEN-PRO-DEMO-Setup-2.6.1.exe').Length) bytes"
 
-      - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: POSVEN-PRO-2.6.1-Installers
-          path: release-assets/*.exe
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Publish both installers to GitHub Release v2.6.1
         shell: pwsh
         env:
