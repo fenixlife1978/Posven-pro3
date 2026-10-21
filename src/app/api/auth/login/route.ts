@@ -38,6 +38,7 @@ export async function POST(request: Request) {
         email: row.email,
         nombre: row.nombre,
         rol: row.rol,
+        terminalId: (() => { try { return JSON.parse(String(row.data_json || '{}')).terminalId || null; } catch { return null; } })(),
       },
       sessionId: session.id,
     });
