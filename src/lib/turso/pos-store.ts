@@ -1370,6 +1370,7 @@ export async function processReturnOrCancellationTransaction(params:any){
 
     const sale = rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]);
     if(!sale) throw new Error('La venta ya no existe en Turso.');
+    if (terminalId && String(sale.terminalId || '') !== String(terminalId)) throw new Error('La venta no pertenece a la caja asignada.');
     if(operationType==='ANULACION' && String(sale.estado||'')==='anulada')
       throw new Error('La factura ya fue anulada.');
 
