@@ -198,6 +198,7 @@ function chooseNetworkConfig() {
     const finish = (config) => {
       if (settled) return;
       settled = true;
+      ipcMain.removeListener('network-config-selected', onNetworkConfigSelected);
       if (config) {
         fs.mkdirSync(app.getPath('userData'), { recursive: true });
         fs.writeFileSync(networkConfigPath(), JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600 });
@@ -205,7 +206,7 @@ function chooseNetworkConfig() {
       resolve(config || null);
       if (!setup.isDestroyed()) setup.close();
     };
-    ipcMain.once('network-config-selected', (_event, config) => {
+    const onNetworkConfigSelected = (_event, config) => {
       if (!config || !['server', 'client', 'standalone'].includes(config.mode)) return finish(null);
       if (config.mode === 'client') {
         config.host = String(config.host || '').trim();
@@ -217,7 +218,8 @@ function chooseNetworkConfig() {
         config.port = 47821;
       }
       finish(config);
-    });
+    };
+    ipcMain.on('network-config-selected', onNetworkConfigSelected);
     setup.on('closed', () => { if (!settled) finish(null); });
     setup.loadFile(path.join(__dirname, 'network-setup.html')).catch(error => finish(null));
   });
