@@ -129,7 +129,9 @@ function createWindow(serverPort) {
 
   if (!isDev) {
     mainWindow.setMenu(null);
-    autoUpdater.checkForUpdatesAndNotify().catch(err => console.error('Update error:', err));
+    if (process.env.POSVEN_DEMO_BUILD !== '1') {
+      autoUpdater.checkForUpdatesAndNotify().catch(err => console.error('Update error:', err));
+    }
   }
 
   mainWindow.on('closed', () => {
