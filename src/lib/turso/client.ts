@@ -34,6 +34,9 @@ function getDatabase(): Database.Database {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   database = new Database(dbPath);
   database.pragma('journal_mode = WAL');
+  // FULL sincroniza cada COMMIT con el sistema de archivos para mejorar la
+  // recuperación ante corte eléctrico o apagado inesperado.
+  database.pragma('synchronous = FULL');
   database.pragma('foreign_keys = ON');
   database.pragma('busy_timeout = 10000');
   return database;
