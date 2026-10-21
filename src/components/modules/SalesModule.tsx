@@ -923,7 +923,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         precioUnitUSD: selection.precioUnitUSD,
         subtotalUSD: selection.subtotalUSD,
         ...(presentation ? { presentacion: presentation, factorPresentacion: selection.factorPresentacion || 1 } : {}),
-        ...(selection.cantidadGramos ? { cantidadGramos: selection.cantidadGramos } : {}),\n        ...(selection.cantidadMililitros ? { cantidadMililitros: selection.cantidadMililitros } : {}),
+        ...(selection.cantidadGramos ? { cantidadGramos: selection.cantidadGramos } : {}),
+        ...(selection.cantidadMililitros ? { cantidadMililitros: selection.cantidadMililitros } : {}),
       });
     }
     updateState({ carrito: nuevoCarrito });
