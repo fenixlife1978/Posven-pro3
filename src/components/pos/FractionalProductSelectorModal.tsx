@@ -4,7 +4,7 @@ import { Product, ProductPresentation } from "@/lib/types";
 import { X, Scale, Droplets, Layers, Check } from "lucide-react";
 import { Utils } from "@/lib/db-store";
 
-export type PresentationSaleSelection = { nombre?: string; presentacion?: string; factorPresentacion?: number; cantidad: number; precioUnitUSD: number; subtotalUSD: number; cantidadGramos?: number; ventaLibreBS?: boolean };
+export type PresentationSaleSelection = { nombre?: string; presentacion?: string; factorPresentacion?: number; cantidad: number; precioUnitUSD: number; subtotalUSD: number; cantidadGramos?: number; cantidadMililitros?: number; ventaLibreBS?: boolean };
 
 export default function FractionalProductSelectorModal({ product, rate, stock, onClose, onConfirm }: {
   product: Product; rate: number; stock: number; onClose: () => void; onConfirm: (selection: PresentationSaleSelection) => void;
