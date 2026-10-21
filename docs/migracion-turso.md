@@ -1,36 +1,23 @@
-# POSVEN-PRO3: arquitectura Turso
+# Sustitución de base remota por SQLite local
 
-## Fuente de verdad
+Este proyecto pasa a una arquitectura de escritorio sin base de datos en la nube.
 
-Turso es la única base de datos operativa para usuarios, sesiones, inventario, ventas, compras, caja, cuentas por cobrar, cuentas por pagar, movimientos y reportes Z. El almacenamiento local solo puede utilizarse como caché de interfaz y nunca como autoridad para confirmar operaciones.
+- La única fuente operativa debe ser SQLite local.
+- El archivo de base de datos se define por la variable interna `POSVEN_SQLITE_PATH`, configurada por Electron dentro del directorio de datos del usuario.
+- No se deben solicitar ni almacenar `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `TURSO_API_TOKEN` ni credenciales Firebase.
+- Los nombres históricos de módulos y rutas pueden mantenerse temporalmente por compatibilidad del código, pero no pueden abrir conexiones remotas.
+- La persistencia de ventas, inventario, usuarios, cuentas por cobrar/pagar, movimientos, cajas y cierres debe ejecutarse transaccionalmente en el archivo SQLite local.
+- El instalador debe iniciar el servidor Next.js embebido en localhost y apuntar la interfaz a ese servidor; no debe depender de una web alojada.
 
-## Autenticación
+## Validaciones obligatorias antes de publicar
 
-- Login propio contra las API de la aplicación.
-- Contraseñas almacenadas como hash scrypt.
-- Sesiones con vencimiento y revocación en Turso.
-- Roles admitidos: administrador y cajero.
-- Las API deben rechazar operaciones críticas cuando Turso no esté disponible; no se permite un respaldo operativo local.
+1. Instalar en una máquina Windows limpia sin credenciales ni conexión a internet.
+2. Crear el administrador inicial y verificar el hash de contraseña.
+3. Crear/editar productos, incluidos los vendidos por kg y por litro.
+4. Registrar ventas, pagos, devoluciones, movimientos y cierres X/Z.
+5. Cerrar y volver a abrir la aplicación; confirmar que todos los datos siguen en SQLite.
+6. Comprobar que una caída de internet no bloquea ninguna operación local.
+7. Comprobar que no hay llamadas operativas a dominios externos ni variables de entorno de Turso/Firebase.
+8. Probar restauración de una copia de seguridad.
 
-## Variables del servidor
-
-- `TURSO_DATABASE_URL`: URL de la base de datos Turso.
-- `TURSO_AUTH_TOKEN`: token de acceso a Turso.
-- `SESSION_SECRET`: secreto de sesión si el despliegue lo requiere.
-- `POSVEN_SEED_ADMIN_PASSWORD`: contraseña inicial opcional para el administrador semilla cuando no existe ningún administrador activo. Si se omite, se usa `admin123`; cámbiala antes de instalar siempre que sea posible.
-
-Estas variables se configuran en el entorno seguro del servidor y no se incluyen en el código del cliente ni en el instalador de Windows.
-
-## Compilación de escritorio
-
-GitHub Actions compila exclusivamente en `windows-latest`. La compilación debe conservar el runtime de Next.js que sirve las API; un export estático no es suficiente para una aplicación que utiliza rutas `/api/*`.
-
-## Reglas de seguridad y consistencia
-
-1. Cada operación crítica debe validar permisos en servidor.
-2. Ventas, inventario, caja y deudas deben modificarse en transacciones Turso cuando corresponda.
-3. No confirmar una operación si la respuesta del servidor no acredita su persistencia.
-4. No incluir credenciales de base de datos en el instalador.
-5. Verificar login, creación de usuarios, caja, venta, compra, Corte Z y reimpresión antes de declarar una versión lista.
-6. Antes de validar credenciales, el login comprueba si hay un administrador activo en Turso. Si no lo hay, recupera o crea el usuario semilla `admin` (correo `admin@posven.local`). Si ya hay un administrador activo, no crea una cuenta adicional.
-7. La reinstalación de la aplicación no elimina datos de Turso. Si se reinicia intencionalmente la tabla de usuarios, el administrador semilla se recrea en el siguiente intento de inicio de sesión; define `POSVEN_SEED_ADMIN_PASSWORD` en el `.env` externo para no usar la contraseña predeterminada.
+Este documento describe el objetivo de arquitectura; las validaciones anteriores deben pasar antes de declarar una versión de producción lista.
