@@ -29,6 +29,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
   `CREATE TABLE IF NOT EXISTS migration_runs (id TEXT PRIMARY KEY, source TEXT NOT NULL, backup_version INTEGER, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, counts_json TEXT NOT NULL DEFAULT '{}', notes TEXT)`,
+  `CREATE TABLE IF NOT EXISTS demo_action_counts (module TEXT PRIMARY KEY, actions INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 ];
 
 let initialized = false;
@@ -44,7 +45,7 @@ async function initialize() {
     'cxc', 'cxp', 'clientes', 'proveedores', 'devoluciones', 'anulaciones',
     'terminales', 'libro_diario', 'reportes_z', 'caja', 'compras',
     'operaciones', 'auditoria_sistema', 'legacy_documents', 'sessions',
-    'migration_runs',
+    'migration_runs', 'demo_action_counts',
   ];
   const verify = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table'" });
   const names = new Set(verify.rows.map((row: any) => String(row.name)));
