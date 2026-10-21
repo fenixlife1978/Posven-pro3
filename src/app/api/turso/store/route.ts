@@ -2,6 +2,7 @@ import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
 import { NextResponse } from 'next/server';
 import {
   assertTursoReady,
+  consumeDemoAction,
   getRecord,
   listRecords,
   countRecords,
@@ -82,11 +83,46 @@ export async function GET(request: Request) {
   }
 }
 
+function demoModuleForOperation(body: any): string | null {
+  const operation = String(body?.operation || '');
+  const tableName = String(body?.table || '');
+  const map: Record<string, string> = {
+    configPatch: 'configuracion', catalogPatch: 'configuracion',
+    factoryReset: 'administracion', productSync: 'inventario',
+    inventoryStockSync: 'inventario', inventory: 'inventario',
+    sale: 'ventas', terminalPatch: 'cajas', terminalUpsert: 'cajas',
+    terminalDelete: 'cajas', debtPayment: 'cuentas-por-cobrar',
+    cashMovement: 'caja', globalProviderPayment: 'cuentas-por-pagar',
+    globalCustomerPayment: 'cuentas-por-cobrar', customerDebt: 'cuentas-por-cobrar',
+    supplierDebt: 'cuentas-por-pagar', reverseDebtPayment: 'cuentas-por-cobrar',
+    createPurchase: 'compras', deletePurchase: 'compras',
+    deleteCustomerDebt: 'cuentas-por-cobrar', deleteCustomerAndDebts: 'clientes',
+    returnOrCancellation: 'devoluciones', repairReturnInventoryAndCxc: 'devoluciones',
+    zClosure: 'caja',
+  };
+  if (operation === 'recordsSync') {
+    if (tableName === 'clientes') return 'clientes';
+    if (tableName === 'proveedores') return 'proveedores';
+    if (tableName === 'movimientos' || tableName === 'libroDiario') return 'caja';
+  }
+  if (operation === 'upsert') {
+    if (tableName === 'productos') return 'inventario';
+    if (tableName === 'clientes') return 'clientes';
+    if (tableName === 'proveedores') return 'proveedores';
+    if (tableName === 'ventas') return 'ventas';
+    if (tableName === 'cxc') return 'cuentas-por-cobrar';
+    if (tableName === 'cxp' || tableName === 'compras') return 'cuentas-por-pagar';
+  }
+  return map[operation] || null;
+}
+
 export async function POST(request: Request) {
   try {
     assertTursoReady();
     const user = await requireUser(request);
     const body = await request.json();
+    const demoModule = demoModuleForOperation(body);
+    if (demoModule) await consumeDemoAction(demoModule);
 
     switch (String(body?.operation || '')) {
       case 'configPatch': {
@@ -225,7 +261,8 @@ export async function POST(request: Request) {
     const message = String(error?.message || error);
     const status = message.includes('no está configurado') ? 503
       : message.includes('No autenticado') ? 401
-      : message.includes('Se requiere administrador') ? 403 : 400;
+      : message.includes('Se requiere administrador') ? 403
+      : message.includes('DEMO_LIMIT:') ? 429 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
