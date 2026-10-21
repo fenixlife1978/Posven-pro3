@@ -169,7 +169,10 @@ export async function POST(request: Request) {
         }
         body.terminalId = assignedTerminalId;
         if (body.movement && typeof body.movement === 'object') body.movement = { ...body.movement, terminalId: assignedTerminalId };
+        if (Array.isArray(body.movements)) body.movements = body.movements.map((movement: any) => ({ ...movement, terminalId: assignedTerminalId }));
         if (body.debt && typeof body.debt === 'object') body.debt = { ...body.debt, terminalId: assignedTerminalId };
+        if (body.operationDoc && typeof body.operationDoc === 'object') body.operationDoc = { ...body.operationDoc, terminalId: assignedTerminalId };
+        if (body.report && typeof body.report === 'object') body.report = { ...body.report, terminalId: assignedTerminalId };
         if (body.journal && typeof body.journal === 'object' && !Array.isArray(body.journal)) body.journal = { ...body.journal, terminalId: assignedTerminalId };
         if (Array.isArray(body.journal)) body.journal = body.journal.map((entry: any) => ({ ...entry, terminalId: assignedTerminalId }));
       }
