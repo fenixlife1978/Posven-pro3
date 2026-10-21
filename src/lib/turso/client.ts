@@ -47,7 +47,7 @@ export function isTursoConfigured(): boolean {
 function executeUnlocked(statement: TursoStatement) {
   const db = getDatabase();
   const prepared = db.prepare(statement.sql);
-  const args = statement.args || [];
+  const args = (statement.args || []) as any[];
   if (prepared.reader && statement.wantRows !== false) {
     const rows = prepared.all(...args) as Record<string, unknown>[];
     const cols = prepared.columns().map(column => ({ name: column.name, decltype: column.type || null }));
