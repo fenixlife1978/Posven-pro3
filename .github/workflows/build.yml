@@ -65,7 +65,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Falló la compilación del instalador Demo: $LASTEXITCODE" }
           $demo = Get-ChildItem -Path dist -Filter '*Setup*.exe' | Select-Object -First 1
           if (-not $demo) { throw 'No se generó el instalador .exe del Demo.' }
-          Copy-Item $demo.FullName 'release-artifacts/PosVEN-Pro3-Demo-Setup-2.6.1.exe' -Force
+          Copy-Item $demo.FullName 'release-artifacts/POSVEN-PRO-DEMO-Setup-2.6.1.exe' -Force
 
       - name: Build Complete installer (no demo data or limits)
         shell: pwsh
@@ -75,7 +75,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Falló la compilación del instalador completo: $LASTEXITCODE" }
           $complete = Get-ChildItem -Path dist -Filter '*Setup*.exe' | Where-Object { $_.Name -notlike '*Demo*' } | Select-Object -First 1
           if (-not $complete) { throw 'No se generó el instalador .exe completo.' }
-          Copy-Item $complete.FullName 'release-artifacts/PosVEN-Pro3-Setup-2.6.1.exe' -Force
+          Copy-Item $complete.FullName 'release-artifacts/POSVEN-PRO-Setup-2.6.1.exe' -Force
 
       - name: Verify both installers
         shell: pwsh
@@ -83,8 +83,8 @@ jobs:
           $files = Get-ChildItem -Path release-artifacts -Filter '*.exe'
           if ($files.Count -ne 2) { throw "Se esperaban dos instaladores y se encontraron $($files.Count)." }
           $files | ForEach-Object { Write-Host "$($_.Name) — $([math]::Round($_.Length / 1MB, 2)) MB" }
-          if ((Get-Item 'release-artifacts/PosVEN-Pro3-Demo-Setup-2.6.1.exe').Length -lt 1MB) { throw 'El artefacto Demo parece incompleto.' }
-          if ((Get-Item 'release-artifacts/PosVEN-Pro3-Setup-2.6.1.exe').Length -lt 1MB) { throw 'El artefacto completo parece incompleto.' }
+          if ((Get-Item 'release-artifacts/POSVEN-PRO-DEMO-Setup-2.6.1.exe').Length -lt 1MB) { throw 'El artefacto Demo parece incompleto.' }
+          if ((Get-Item 'release-artifacts/POSVEN-PRO-Setup-2.6.1.exe').Length -lt 1MB) { throw 'El artefacto completo parece incompleto.' }
 
       - name: Upload both installers as workflow artifacts
         uses: actions/upload-artifact@v4
@@ -94,16 +94,29 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Update existing v2.6.1 release with verified SQLite-local installers
+        if: github.ref == 'refs/heads/sqlite-local-fraccionados' && contains(github.event.head_commit.message, '[publish-v2.6.1]')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH repos/fenixlife1978/Posven-pro3/git/refs/tags/v2.6.1 -f sha=$env:GITHUB_SHA -F force=true
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo actualizar el tag v2.6.1 al commit SQLite local.' }
+          gh release upload v2.6.1 release-artifacts/POSVEN-PRO-DEMO-Setup-2.6.1.exe release-artifacts/POSVEN-PRO-Setup-2.6.1.exe --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudieron reemplazar los dos instaladores del release v2.6.1.' }
+          gh release edit v2.6.1 --title 'POSVEN-PRO 2.6.1 - SQLite local' --notes 'POSVEN-PRO 2.6.1 para Windows. Instalador completo: SQLite local persistente, modo servidor/cliente en red local y aislamiento de datos por caja asignada. Instalador DEMO: datos ficticios aislados, cintillo comercial permanente y máximo de 10 acciones por módulo. Los dos instaladores se reconstruyeron desde el commit SQLite local.'
+          if ($LASTEXITCODE -ne 0) { throw 'Los instaladores se subieron, pero no se pudo actualizar la descripción del release.' }
+
       - name: Publish both installers to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: PosVEN Pro 2.6.1
           body: |
-            PosVEN Pro 2.6.1 para Windows.
+            POSVEN-PRO 2.6.1 para Windows.
 
-            - PosVEN-Pro3-Setup-2.6.1.exe: instalador completo con SQLite local.
-            - PosVEN-Pro3-Demo-Setup-2.6.1.exe: edición Demo aislada con límite de 10 acciones por módulo.
+            - POSVEN-PRO-Setup-2.6.1.exe: instalador completo con SQLite local.
+            - POSVEN-PRO-DEMO-Setup-2.6.1.exe: edición Demo aislada con límite de 10 acciones por módulo.
           files: release-artifacts/*.exe
           fail_on_unmatched_files: true
           generate_release_notes: true
