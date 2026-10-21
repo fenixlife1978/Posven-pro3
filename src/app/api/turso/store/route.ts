@@ -1,5 +1,5 @@
 import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
-import { withDemoLimit } from '@/lib/demo-limits';
+import { assertDemoOpen, withDemoLimit } from '@/lib/demo-limits';
 import { NextResponse } from 'next/server';
 import {
   assertTursoReady,
@@ -88,6 +88,7 @@ export async function POST(request: Request) {
     assertTursoReady();
     const user = await requireUser(request);
     const body = await request.json();
+    await assertDemoOpen();
 
     switch (String(body?.operation || '')) {
       case 'configPatch': {
