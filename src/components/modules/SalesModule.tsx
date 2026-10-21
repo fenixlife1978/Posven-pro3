@@ -239,6 +239,27 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (view !== 'credits') setCreditSearch('');
   }, [view]);
 
+  // Releer el saldo real desde Turso tras cada cobro/abono; el estado local
+  // de la pestaña Consultar Créditos nunca debe quedar mostrando importes viejos.
+  const refreshCreditDebts = async () => {
+    const pageSize = 2000;
+    const allRecords: any[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const response = await fetch(
+        '/api/turso/store?table=cxc&limit=' + pageSize + '&offset=' + offset,
+        { credentials: 'include', cache: 'no-store' }
+      );
+      const body: any = await response.json();
+      if (!response.ok || body?.ok === false) {
+        throw new Error(String(body?.error || 'No se pudo actualizar el saldo de créditos desde Turso.'));
+      }
+      const page = Array.isArray(body?.records) ? body.records : [];
+      allRecords.push(...page);
+      if (page.length < pageSize) break;
+    }
+    setCreditDebts(allRecords as Debt[]);
+  };
+
   const currentTerminal = useMemo(() => {
     const appUser: any = (state as any).user || null;
     const explicitTerminalId = String(appUser?.terminalId || '').trim();
@@ -787,6 +808,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setLastProcessedSale(ticketPagoGlobal);
       setShowReceiptModal(true);
 
+      // Actualizar de inmediato todos los saldos/facturas del cliente en Consultar Créditos.
+      await refreshCreditDebts();
       toast({ title: 'Pago Global registrado', description: `Aplicado: ${Utils.fmtUSD(aplicadoUSD)} · ${Utils.fmtBS(aplicadoBS)}` });
       setGlobalCreditCustomer(null);
     } catch (err: any) {
@@ -1177,9 +1200,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       if (resultadoPago.sale?.payments?.length) {
         saleFinal.payments = resultadoPago.sale.payments.map((p: any) => ({ ...p }));
       }
-      setLastProcessedSale(saleFinal); 
-      setShowReceiptModal(true); 
+      setLastProcessedSale(saleFinal);
+      setShowReceiptModal(true);
       setShowAbonoModal(null);
+      // Refrescar desde Turso: saldo pendiente, estado y abonos de la factura.
+      await refreshCreditDebts();
     } finally {
       setIsProcessing(false);
     }
