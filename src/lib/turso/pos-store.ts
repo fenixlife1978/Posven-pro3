@@ -227,7 +227,7 @@ export const DEFAULT_CATEGORIAS_POR_DEPARTAMENTO = [
 ];
 
 export function assertTursoReady() {
-  if (!isTursoConfigured()) throw new Error('Turso no está configurado.');
+  if (!isTursoConfigured()) throw new Error('La base de datos SQLite local no está disponible.');
 }
 
 function clean(value: any): any {
