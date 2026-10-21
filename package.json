@@ -94,7 +94,8 @@
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/*.d.ts",
       "!**/node_modules/.bin",
-      "next.config.ts"
+      "next.config.ts",
+      "DEMO_BUILD"
     ],
     "asarUnpack": [
       "**/node_modules/node-thermal-printer/**/*",
