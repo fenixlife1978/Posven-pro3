@@ -1,6 +1,25 @@
 name: Build and publish POSVEN-PRO DEMO
 
 on:
+  push:
+    branches:
+      - demo-limitada
+    paths:
+      - '.github/workflows/demo-release.yml'
+      - 'src/lib/demo-limits.ts'
+      - 'src/app/api/demo/status/route.ts'
+      - 'src/components/demo/DemoNotice.tsx'
+      - 'src/app/api/turso/store/route.ts'
+      - 'src/lib/turso/schema-init.ts'
+      - 'src/app/layout.tsx'
+      - 'src/lib/turso/client.ts'
+      - 'src/lib/auth/turso-auth.ts'
+      - 'main.js'
+      - 'next.config.ts'
+      - 'package.json'
+      - 'src/components/inventory/ProductFormModal.tsx'
+      - 'src/components/pos/FractionalProductSelectorModal.tsx'
+      - 'src/components/modules/SalesModule.tsx'
   workflow_dispatch:
 
 permissions:
@@ -72,7 +91,7 @@ jobs:
           gh auth status
           gh release view DEMO --repo fenixlife1978/Posven-pro3 *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create DEMO --repo fenixlife1978/Posven-pro3 --target demo-limitada --title "DEMO" --notes "POSVEN-PRO DEMO para evaluación. Incluye datos ficticios y límite de 10 ventas, 10 compras y 10 nuevos ítems. Al agotarse un cupo, la edición queda bloqueada y muestra la invitación a adquirir la versión completa. No usar para operaciones reales."
+            gh release create DEMO --repo fenixlife1978/Posven-pro3 --target demo-limitada --title "DEMO" --notes "POSVEN-PRO DEMO para evaluación. Incluye datos ficticios y límite de 10 ventas, 10 compras y 10 nuevos ítems. Al agotarse un cupo, la edición queda bloqueada y muestra la invitación a adquirir la versión completa. Acceso inicial: usuario admin, contraseña admin123. Cambia las credenciales antes de cualquier uso comercial; esta DEMO es solo evaluación. No usar para operaciones reales."
             if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el Release DEMO.' }
           }
           gh release upload DEMO dist/POSVEN-PRO-DEMO-Setup.exe --repo fenixlife1978/Posven-pro3 --clobber
