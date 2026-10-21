@@ -225,6 +225,12 @@ function chooseNetworkConfig() {
 
 app.whenReady().then(async () => {
   try {
+    if (app.isPackaged) {
+      const packageMetadata = require(path.join(app.getAppPath(), 'package.json'));
+      const demoMode = packageMetadata.posvenDemoMode === true;
+      process.env.POSVEN_DEMO_MODE = demoMode ? '1' : '0';
+      if (demoMode) app.setPath('userData', path.join(app.getPath('appData'), 'PosVEN Pro Demo'));
+    }
     if (!app.isPackaged) {
       createWindow('http://localhost:9002');
       return;
