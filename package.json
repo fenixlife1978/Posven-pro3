@@ -13,7 +13,7 @@
     "electron:dev": "electron .",
     "electron:build": "npm run build && electron-builder",
     "electron:publish": "npm run build && electron-builder --publish always",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node -e \"if (!process.env.VERCEL) require('child_process').execSync('electron-builder install-app-deps', {stdio:'inherit'})\""
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.28.0",
