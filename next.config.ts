@@ -1,11 +1,11 @@
 import type { NextConfig } from 'next';
 
-const isTursoServerBuild = process.env.TURSO_MIGRATION_BUILD === '1' || Boolean(process.env.VERCEL);
+const isDesktopServerBuild = process.env.POSVEN_DESKTOP_BUILD === '1' || Boolean(process.env.VERCEL);
 
 const nextConfig: NextConfig = {
-  output: isTursoServerBuild ? undefined : 'export',
+  output: isDesktopServerBuild ? undefined : 'export',
   trailingSlash: true,
-  distDir: isTursoServerBuild ? '.next' : 'out',
+  distDir: isDesktopServerBuild ? '.next' : 'out',
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
   images: {
