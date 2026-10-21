@@ -52,6 +52,36 @@ async function initialize() {
   if (missing.length) {
     throw new Error('Esquema Turso incompleto. Faltan tablas: ' + missing.join(', '));
   }
+  if (process.env.POSVEN_DEMO_BUILD === '1') {
+    const existing = await tursoExecute({ sql: 'SELECT COUNT(*) AS total FROM productos' });
+    if (Number(existing.rows[0]?.total || 0) === 0) {
+      const now = new Date().toISOString();
+      const products = [
+        { id:'DEMO-P-0001', codigo:'750100000001', nombre:'Arroz Premium 1 kg (DEMO)', categoria:'Arroz y Cereales', departamento:'Víveres y Abarrotes', cantidad:'Unidad', marca:'Marca Ficticia', costoUSD:1.10, precioUSD:1.55, margen:29, stock:35, stockMinimo:5, fechaCreacion:now, activo:true, aplicaIVA:false },
+        { id:'DEMO-P-0002', codigo:'750100000002', nombre:'Harina de Maíz 1 kg (DEMO)', categoria:'Harinas y Mezclas', departamento:'Víveres y Abarrotes', cantidad:'Unidad', marca:'Marca Ficticia', costoUSD:0.80, precioUSD:1.20, margen:33, stock:28, stockMinimo:5, fechaCreacion:now, activo:true, aplicaIVA:false },
+        { id:'DEMO-P-0003', codigo:'750100000003', nombre:'Aceite Vegetal 1 L (DEMO)', categoria:'Aceites y Grasas', departamento:'Víveres y Abarrotes', cantidad:'Unidad', marca:'Marca Ficticia', costoUSD:1.60, precioUSD:2.10, margen:24, stock:18, stockMinimo:4, fechaCreacion:now, activo:true, aplicaIVA:false },
+        { id:'DEMO-P-0004', codigo:'750100000004', nombre:'Queso Blanco por kg (DEMO)', categoria:'Quesos', departamento:'Lácteos y Refrigerados', cantidad:'Kilogramo', marca:'Lácteos Ficticios', costoUSD:4.20, precioUSD:5.50, margen:24, stock:12, stockMinimo:2, fechaCreacion:now, activo:true, ventaPorPeso:true, aplicaIVA:false },
+        { id:'DEMO-P-0005', codigo:'750100000005', nombre:'Detergente a granel por L (DEMO)', categoria:'Detergentes y Lavado', departamento:'Cuidado del Hogar y Limpieza', cantidad:'Litro', marca:'Limpieza Ficticia', costoUSD:1.30, precioUSD:1.90, margen:31, stock:20, stockMinimo:3, fechaCreacion:now, activo:true, ventaPorVolumen:true, aplicaIVA:false },
+        { id:'DEMO-P-0006', codigo:'750100000006', nombre:'Agua Mineral 1.5 L (DEMO)', categoria:'Bebidas No Alcohólicas', departamento:'Bebidas', cantidad:'Unidad', marca:'Agua Ficticia', costoUSD:0.35, precioUSD:0.65, margen:46, stock:42, stockMinimo:8, fechaCreacion:now, activo:true, aplicaIVA:false },
+        { id:'DEMO-P-0007', codigo:'750100000007', nombre:'Galletas Dulces (DEMO)', categoria:'Galletas Dulces y Ponqués', departamento:'Panadería y Galletas', cantidad:'Unidad', marca:'Marca Ficticia', costoUSD:0.45, precioUSD:0.75, margen:40, stock:25, stockMinimo:5, fechaCreacion:now, activo:true, aplicaIVA:false },
+        { id:'DEMO-P-0008', codigo:'750100000008', nombre:'Tomate por kg (DEMO)', categoria:'Verduras y Hortalizas', departamento:'Frutas y Verduras', cantidad:'Kilogramo', marca:'Huerto Ficticio', costoUSD:1.00, precioUSD:1.60, margen:37, stock:16, stockMinimo:3, fechaCreacion:now, activo:true, ventaPorPeso:true, aplicaIVA:false }
+      ];
+      const statements: any[] = products.map(product => ({ sql:'INSERT INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)', args:[product.id, JSON.stringify(product)], wantRows:false }));
+      const customers = [
+        { id:'DEMO-CLI-001', name:'Cliente Demostración Uno', cedula:'V-00000001', phone:'0000-000001', address:'Dirección ficticia', debt:0 },
+        { id:'DEMO-CLI-002', name:'Cliente Demostración Dos', cedula:'V-00000002', phone:'0000-000002', address:'Dirección ficticia', debt:12.5 }
+      ];
+      for (const customer of customers) statements.push({ sql:'INSERT INTO clientes(id,data_json,fecha,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)', args:[customer.id,JSON.stringify(customer),now], wantRows:false });
+      const supplier = { id:'DEMO-PROV-001', name:'Distribuidora Ficticia DEMO', rif:'J-00000000-0', phone:'0000-000000', address:'Dirección ficticia', debt:0 };
+      statements.push({ sql:'INSERT INTO proveedores(id,data_json,fecha,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)', args:[supplier.id,JSON.stringify(supplier),now], wantRows:false });
+      const sampleSale = { id:'DEMO-V-00001', fecha:now, cliente:'Cliente Demostración Uno', items:[{productoId:'DEMO-P-0001',nombre:'Arroz Premium 1 kg (DEMO)',cantidad:2,precioUnitUSD:1.55,subtotalUSD:3.10}], subtotalUSD:3.10, descuentoUSD:0, totalUSD:3.10, totalBS:113.15, metodoPago:'Efectivo', estado:'Completada (DEMO)', tasa:36.5, terminalId:'DEMO-CAJA-01' };
+      statements.push({ sql:'INSERT INTO ventas(id,data_json,fecha,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)', args:[sampleSale.id,JSON.stringify(sampleSale),now], wantRows:false });
+      const samplePurchase = { id:'DEMO-C-00001', fecha:now, proveedor:'Distribuidora Ficticia DEMO', numeroFactura:'DEMO-FACT-0001', condicion:'contado', montoUSD:16, pagadoUSD:16, saldoUSD:0, items:[{productoId:'DEMO-P-0001',nombre:'Arroz Premium 1 kg (DEMO)',cantidad:10,costoUnitarioUSD:1.1,subtotalUSD:11}], terminalId:'DEMO-CAJA-01' };
+      statements.push({ sql:'INSERT INTO compras(id,data_json,fecha,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)', args:[samplePurchase.id,JSON.stringify(samplePurchase),now], wantRows:false });
+      statements.push({ sql:'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO NOTHING', args:['general',JSON.stringify({isInitialized:true,ultimoZ:0,proximoRecibo:2,tasa:36.5,empresa:{nombre:'COMERCIO DE DEMOSTRACIÓN — DATOS FICTICIOS',rif:'J-00000000-0',direccion:'Dirección de ejemplo, no real',telefono:'0000-000000'}})], wantRows:false });
+      await tursoBatch(statements);
+    }
+  }
   initialized = true;
 }
 
