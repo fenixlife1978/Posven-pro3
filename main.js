@@ -165,6 +165,12 @@ async function startLocalNextServer() {
 
 app.whenReady().then(async () => {
   try {
+    const isDemoEdition = app.isPackaged && fs.existsSync(path.join(app.getAppPath(), 'DEMO_BUILD'));
+    process.env.POSVEN_DEMO_BUILD = isDemoEdition ? '1' : '0';
+    if (isDemoEdition) {
+      app.setName('PosVEN Pro DEMO');
+      app.setPath('userData', path.join(app.getPath('appData'), 'PosVEN-Pro-Demo'));
+    }
     if (app.isPackaged) {
       const port = await startLocalNextServer();
       createWindow(port);
