@@ -1094,6 +1094,9 @@ export async function applyDebtPaymentTransaction(params: {
     if (check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
     const debt = rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
     if (!debt) throw new Error('La deuda ya no existe.');
+    if (collection === 'cxc' && terminalForOperation && String(debt.terminalId || '') !== String(terminalForOperation)) {
+      throw new Error('La cuenta por cobrar no pertenece a la caja asignada.');
+    }
 
     // Las deudas iniciales creadas desde Administración no tienen venta/factura
     // asociada. El cobro individual del POS debe tratarlas como una CxC válida
@@ -1195,12 +1198,18 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       // embebida en el campo cliente. El cobro debe localizar ambas formas.
       const candidates = customerCedula
         ? await tx.execute({
-            sql:"SELECT id,data_json FROM cxc WHERE (json_extract(data_json,'$.cliente')=? OR json_extract(data_json,'$.cliente')=?) ORDER BY COALESCE(fecha,'') ASC,id ASC",
-            args:[String(customerName || ''), String(customerName || '')+' ['+String(customerCedula)+']']
+            sql: terminalForOperation
+              ? "SELECT id,data_json FROM cxc WHERE (json_extract(data_json,'$.cliente')=? OR json_extract(data_json,'$.cliente')=?) AND json_extract(data_json,'$.terminalId')=? ORDER BY COALESCE(fecha,'') ASC,id ASC"
+              : "SELECT id,data_json FROM cxc WHERE (json_extract(data_json,'$.cliente')=? OR json_extract(data_json,'$.cliente')=?) ORDER BY COALESCE(fecha,'') ASC,id ASC",
+            args: terminalForOperation
+              ? [String(customerName || ''), String(customerName || '')+' ['+String(customerCedula)+']', String(terminalForOperation)]
+              : [String(customerName || ''), String(customerName || '')+' ['+String(customerCedula)+']']
           })
         : await tx.execute({
-            sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente')=? ORDER BY COALESCE(fecha,'') ASC,id ASC",
-            args:[String(customerName || '')]
+            sql: terminalForOperation
+              ? "SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente')=? AND json_extract(data_json,'$.terminalId')=? ORDER BY COALESCE(fecha,'') ASC,id ASC"
+              : "SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente')=? ORDER BY COALESCE(fecha,'') ASC,id ASC",
+            args: terminalForOperation ? [String(customerName || ''), String(terminalForOperation)] : [String(customerName || '')]
           });
       docs = candidates.rows.map(rowFromDb);
     } else {
