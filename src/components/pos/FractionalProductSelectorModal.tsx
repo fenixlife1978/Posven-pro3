@@ -72,6 +72,22 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
   const invalidStock = baseQty > stock;
   const stockVolumeLabel = (() => { const totalMl = Math.max(0, Math.round(stock * 1000)); const liters = Math.floor(totalMl / 1000); const remainderMl = totalMl % 1000; return `${liters} Lts${remainderMl ? ` ${remainderMl} ml` : ""}`; })();
   const invalid = baseQty <= 0 || total <= 0 || ((mode === "budget") && (rate <= 0 || budget <= 0)) || invalidStock;
+  const budgetEquivalentLabel = (() => {
+    if (mode !== "budget" || baseQty <= 0) return "";
+    if (product.ventaPorPeso) {
+      const totalGrams = Math.round(baseQty * 1000);
+      const kg = Math.floor(totalGrams / 1000);
+      const gramsLeft = totalGrams % 1000;
+      return `${kg ? `${kg} kg${gramsLeft ? ` ${gramsLeft} g` : ""}` : `${totalGrams} g`}`;
+    }
+    if (supportsVolume) {
+      const totalMl = Math.round(baseQty * 1000);
+      const liters = Math.floor(totalMl / 1000);
+      const mlLeft = totalMl % 1000;
+      return `${liters ? `${liters} Lts${mlLeft ? ` ${mlLeft} ml` : ""}` : `${totalMl} ml`}`;
+    }
+    return `${baseQty.toLocaleString("es-VE", { maximumFractionDigits: 3 })} ${product.cantidad || "unidades"}`;
+  })();
   const confirm = () => {
     if (invalid) return;
     onConfirm({
@@ -99,7 +115,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
         {mode==="grams"&&<div className="space-y-2"><label className="flex items-center gap-2 text-xs font-bold"><Scale className="h-4 w-4"/> Peso a vender (gramos)</label><input type="number" min="1" max={Math.floor(stock*1000)} step="1" value={grams} onChange={e=>setGrams(e.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/><div className="flex flex-wrap gap-2">{[100,250,500,750,1000].map(v=><button key={v} type="button" onClick={()=>setGrams(String(v))} className="rounded-md border px-2 py-1 text-xs">{v} g</button>)}</div><p className="text-xs text-slate-500">Precio base: {Utils.fmtUSD(product.precioUSD)} / kg. Puedes indicar 350 g o 0.350 kg.</p></div>}
         {mode==="kg"&&<label className="block text-xs font-bold">Cantidad en kilogramos<input type="number" min="0.001" max={stock} step="0.001" value={quantity} onChange={e=>setQuantity(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/></label>}
         {mode==="ml"&&<div className="space-y-2"><label className="flex items-center gap-2 text-xs font-bold"><Droplets className="h-4 w-4"/> Volumen a vender (ml)</label><input type="number" min="1" step="1" value={ml} onChange={e=>setMl(e.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/><div className="flex flex-wrap gap-2">{[100,250,500,750,1000].map(v=><button key={v} type="button" onClick={()=>setMl(String(v))} className="rounded-md border px-2 py-1 text-xs">{v} ml</button>)}</div><p className="text-xs text-slate-500">Precio base: {Utils.fmtUSD(product.precioUSD)} / litro</p></div>}
-        {mode==="budget"&&<div className="space-y-2"><label className="block text-xs font-bold">Importe a despachar en bolívares (Bs)</label><input type="number" min="0.01" step="0.01" value={budgetBs} onChange={e=>setBudgetBs(e.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/><p className="text-xs text-slate-500">Tasa aplicada: {Utils.fmtBS(rate)} Bs/USD</p></div>}
+        {mode==="budget"&&<div className="space-y-2"><label className="block text-xs font-bold">Importe a despachar en bolívares (Bs)</label><input type="number" min="0.01" step="0.01" value={budgetBs} onChange={e=>setBudgetBs(e.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-lg font-bold"/><p className="text-xs text-slate-500">Tasa aplicada: {Utils.fmtBS(rate)} Bs/USD</p><div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm"><span className="font-bold text-blue-900">Cantidad equivalente a despachar: </span><span className="font-black text-blue-900">{budgetEquivalentLabel || "—"}</span><p className="mt-1 text-xs text-blue-800">El sistema descontará esta cantidad del inventario al confirmar la venta.</p></div></div>}
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between text-xs text-slate-500"><span>Stock disponible</span><strong>{product.ventaPorPeso ? (() => { const totalGrams = Math.max(0, Math.round(stock * 1000)); const kg = Math.floor(totalGrams / 1000); const gramsLeft = totalGrams % 1000; return `${kg} kg${gramsLeft ? ` ${gramsLeft} g` : ""}`; })() : supportsVolume ? stockVolumeLabel : `${stock} ${product.cantidad || "unidades base"}`}</strong></div><div className="mt-3 flex items-center justify-between"><span className="text-sm font-bold">Total estimado</span><strong className="text-xl font-black text-[#1b4e8c]">{Utils.fmtUSD(total)}</strong></div><div className="mt-1 flex items-center justify-between text-sm"><span>Equivalente Bs</span><strong>{Utils.fmtBS(total*rate)}</strong></div>{invalidStock&&<p className="mt-2 text-xs font-bold text-red-600">No hay suficiente existencia para esta presentación.</p>}{(mode==="grams"||mode==="kg")&&baseQty>stock&&<p className="mt-2 text-xs font-bold text-red-600">La cantidad supera el stock disponible.</p>}</div>
       </div>
       <footer className="flex justify-end gap-2 border-t bg-slate-50 p-4"><button type="button" onClick={onClose} className="rounded-lg border px-4 py-2 text-xs font-bold text-slate-600">Cancelar</button><button type="button" disabled={invalid} onClick={confirm} className="flex items-center gap-2 rounded-lg bg-[#1b4e8c] px-5 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Check className="h-4 w-4"/>Añadir al carrito</button></footer>
