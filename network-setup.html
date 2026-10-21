@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Configurar cajas | PosVEN Pro</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:26px;font:14px system-ui,Segoe UI,sans-serif;color:#182230;background:#f4f5f7}
+h1{font-size:23px;margin:0 0 6px}p{color:#586577;line-height:1.45}
+.option{display:block;width:100%;text-align:left;padding:14px;margin:10px 0;border:1px solid #cbd2dc;border-radius:10px;background:white;color:#172033;cursor:pointer}
+.option strong{display:block;font-size:15px;margin-bottom:4px}.option span{color:#596779}
+.field{display:none;margin-top:10px}.field input{width:100%;padding:11px;border:1px solid #cbd2dc;border-radius:8px;font-size:15px}
+.primary{width:100%;padding:12px;border:0;border-radius:8px;background:#163b70;color:white;font-weight:700;cursor:pointer}.hint{font-size:12px;margin-top:8px}
+</style></head>
+<body>
+<h1>Configurar las cajas</h1>
+<p>Selecciona cómo funcionará este ordenador. Para compartir ventas e inventario, conecta todas las cajas al mismo servidor.</p>
+<button class="option" onclick="choose('server')"><strong>Servidor local</strong><span>Este equipo guarda SQLite y comparte la base de datos con las cajas clientes.</span></button>
+<button class="option" onclick="showClient()"><strong>Caja cliente</strong><span>Conecta esta caja al servidor de la red local.</span></button>
+<button class="option" onclick="choose('standalone')"><strong>Caja independiente</strong><span>Usa una base SQLite propia, sin compartir datos con otras cajas.</span></button>
+<div id="client" class="field"><label for="host">IP o nombre del servidor</label><input id="host" placeholder="Ej. 192.168.1.25" autocomplete="off"><p class="hint">Puerto predeterminado: 47821. Escribe solo la IP o el nombre del equipo.</p><button class="primary" onclick="submitClient()">Conectar como cliente</button></div>
+<script>
+function choose(mode){window.electronAPI.chooseNetwork({mode:mode})}
+function showClient(){document.getElementById('client').style.display='block';document.getElementById('host').focus()}
+function submitClient(){var host=document.getElementById('host').value.trim().replace(/^https?:\/\//,'').replace(/\/$/,'');if(!host||/[\s/]/.test(host)){alert('Introduce una IP o nombre de servidor válido.');return}window.electronAPI.chooseNetwork({mode:'client',host:host,port:47821})}
+</script></body></html>
