@@ -31,6 +31,16 @@ export async function getDemoUsage() {
   });
 }
 
+export async function assertDemoOpen() {
+  if (!enabled()) return;
+  await tursoInteractiveTransaction(async tx => {
+    await init(tx);
+    const result = await tx.execute({ sql: 'SELECT action, used FROM demo_usage', wantRows: true });
+    const exhausted = ((result.rows || []) as Array<{action: DemoAction; used: number}>).find(row => Number(row.used || 0) >= DEMO_LIMIT);
+    if (exhausted) throw new Error('DEMO bloqueada: se agotó el cupo de ' + ACTION_LABEL[exhausted.action] + '. Adquiere POSVEN-PRO completo para continuar sin límites.');
+  });
+}
+
 export async function withDemoLimit<T>(action: DemoAction, work: () => Promise<T>, amount = 1): Promise<T> {
   if (!enabled()) return work();
   if (!Number.isInteger(amount) || amount < 1) throw new Error('Cantidad de acciones DEMO no válida.');
