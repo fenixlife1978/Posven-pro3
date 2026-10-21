@@ -14,12 +14,14 @@ interface UserProfile {
   uid: string;
   accesoBloqueado?: boolean;
   isSeedAdmin?: boolean;
+  terminalId?: string | null;
 }
 
-const emptyForm = { username: '', nombre: '', email: '', password: '', rol: 'cajero' as 'administrador' | 'cajero' };
+const emptyForm = { username: '', nombre: '', email: '', password: '', rol: 'cajero' as 'administrador' | 'cajero', terminalId: '' };
 
 export default function UsersModule() {
   const [usuarios, setUsuarios] = useState<UserProfile[]>([]);
+  const [cajas, setCajas] = useState<Array<{ id: string; nombre: string }>>([]);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -37,7 +39,16 @@ export default function UsersModule() {
     throw new Error(data.error || 'Turso no está disponible.');
   };
 
+  const cargarCajas = async () => {
+    const response = await fetch('/api/turso/store?table=terminales&limit=1000', { cache: 'no-store' }).catch(() => null);
+    if (response?.ok) {
+      const data = await response.json();
+      setCajas((data.records || []).map((terminal: any) => ({ id: String(terminal.id), nombre: String(terminal.nombre || terminal.id) })));
+    }
+  };
+
   useEffect(() => {
+    cargarCajas().catch(() => {});
     cargarUsuarios().catch(error => {
       console.error('Error cargando usuarios:', error);
       toast({ title: 'No se pudieron cargar los usuarios', description: String(error?.message || error), variant: 'destructive' });
@@ -55,6 +66,10 @@ export default function UsersModule() {
       alert('Por favor complete todos los campos requeridos.');
       return;
     }
+    if (formData.rol === 'cajero' && !formData.terminalId) {
+      alert('Asigna una caja al cajero para separar sus ventas, movimientos y cierres.');
+      return;
+    }
     if (!editingId && !formData.username.trim()) {
       alert('El usuario de ingreso es obligatorio.');
       return;
@@ -66,7 +81,7 @@ export default function UsersModule() {
         const response = await fetch('/api/users/' + encodeURIComponent(editingId), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nombre: formData.nombre.trim(), rol: formData.rol })
+          body: JSON.stringify({ nombre: formData.nombre.trim(), rol: formData.rol, terminalId: formData.terminalId })
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || 'No se pudo actualizar el usuario.');
@@ -79,7 +94,8 @@ export default function UsersModule() {
             email: formData.email.trim(),
             nombre: formData.nombre.trim().toUpperCase(),
             password: formData.password,
-            rol: formData.rol
+            rol: formData.rol,
+            terminalId: formData.terminalId
           })
         });
         const data = await response.json().catch(() => ({}));
@@ -88,7 +104,7 @@ export default function UsersModule() {
 
       toast({
         title: editingId ? 'Perfil actualizado' : 'Usuario creado',
-        description: 'Los datos quedaron guardados en Turso.'
+        description: 'Los datos quedaron guardados en SQLite local.'
       });
       closeModal();
       await cargarUsuarios();
@@ -107,7 +123,8 @@ export default function UsersModule() {
       nombre: u.nombre,
       email: u.email,
       password: '',
-      rol: u.rol
+      rol: u.rol,
+      terminalId: u.terminalId || ''
     });
     setShowModal(true);
   };
@@ -267,11 +284,21 @@ export default function UsersModule() {
 
               <div className="form-group">
                 <label className="text-ink text-[10px] font-black uppercase block mb-1">Permisos</label>
-                <select className="form-select h-11 font-black uppercase text-xs" value={formData.rol} onChange={e => setFormData({...formData, rol: e.target.value as any})}>
+                <select className="form-select h-11 font-black uppercase text-xs" value={formData.rol} onChange={e => setFormData({...formData, rol: e.target.value as any, terminalId: e.target.value === 'administrador' ? '' : formData.terminalId})}>
                   <option value="cajero">Cajero / Operador</option>
                   <option value="administrador">Administrador</option>
                 </select>
               </div>
+              {formData.rol === 'cajero' && (
+                <div className="form-group">
+                  <label className="text-ink text-[10px] font-black uppercase block mb-1">Caja asignada (obligatorio)</label>
+                  <select className="form-select h-11 font-black text-xs" value={formData.terminalId} onChange={e => setFormData({...formData, terminalId: e.target.value})}>
+                    <option value="">Selecciona una caja...</option>
+                    {cajas.map(caja => <option key={caja.id} value={caja.id}>{caja.nombre} · {caja.id}</option>)}
+                  </select>
+                  {cajas.length === 0 && <p className="text-xs text-status-danger mt-2">No hay cajas registradas. Primero crea o activa una caja en Configuración.</p>}
+                </div>
+              )}
 
               <button onClick={handleSave} disabled={loading} className="btn btn-primary w-full h-14 font-black uppercase text-sm mt-4 shadow-xl">
                 <Save className="w-4 h-4" /> {loading ? 'PROCESANDO...' : (editingId ? 'ACTUALIZAR DATOS' : 'CREAR USUARIO')}
