@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
+import DemoNotice from '@/components/demo/DemoNotice';
 
 export const metadata: Metadata = {
   title: 'PosVEN pro - Soluciones Profesionales',
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="es">
       <body className="antialiased min-h-screen bg-background text-foreground">
         {children}
+        <DemoNotice />
         <Toaster />
       </body>
     </html>
