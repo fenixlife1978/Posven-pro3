@@ -1,4 +1,4 @@
-name: Build Windows EXE (Local SQLite only)
+name: Build Windows EXE (Local SQLite - Demo + Complete)
 
 on:
   push:
@@ -14,12 +14,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: \${{ github.workflow }}-\${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-windows:
-    name: Build Windows installer
+    name: Build Demo and Complete Windows installers
     runs-on: windows-latest
     permissions:
       contents: write
@@ -38,43 +38,76 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
+      - name: Verify release version
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($version -ne '2.6.1') { throw "Se esperaba la versión 2.6.1; package.json tiene $version" }
+          New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
+
       - name: Build Next.js desktop server for local SQLite
         run: npm run build
         env:
           POSVEN_DESKTOP_BUILD: '1'
+          POSVEN_DEMO_MODE: '0'
 
       - name: Verify Next.js server build
         shell: pwsh
         run: |
           if (-not (Test-Path '.next/BUILD_ID')) {
-            throw 'No se generó .next/BUILD_ID; el build de Next.js no está listo para ejecutar las API locales de SQLite.'
+            throw 'No se generó .next/BUILD_ID; el build no está listo para ejecutar las API locales de SQLite.'
           }
-          Write-Host 'Build de Next.js verificado para Windows/SQLite local.'
 
-      - name: Build Windows installer
+      - name: Build Demo installer (isolated data + 10 actions per module)
         shell: pwsh
         run: |
-          $publish = 'never'
-          $isRelease = ($env:GITHUB_REF -like 'refs/tags/v*') -or ($env:GITHUB_REF -eq 'refs/heads/main') -or ($env:GITHUB_REF -eq 'refs/heads/master')
-          if ($isRelease -and $env:GITHUB_EVENT_NAME -ne 'pull_request') { $publish = 'always' }
-          Write-Host "electron-builder --win --publish $publish"
-          npx electron-builder --win --publish $publish
-          if ($LASTEXITCODE -ne 0) { throw "electron-builder falló con código $LASTEXITCODE" }
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          node -e "const fs=require('fs');const p=require('./package.json');p.build.productName='PosVEN Pro Demo';p.build.appId='com.posven.pro.demo';p.build.extraMetadata={...(p.build.extraMetadata||{}),posvenDemoMode:true};fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          npx electron-builder --win --publish never
+          if ($LASTEXITCODE -ne 0) { throw "Falló la compilación del instalador Demo: $LASTEXITCODE" }
+          $demo = Get-ChildItem -Path dist -Filter '*Setup*.exe' | Select-Object -First 1
+          if (-not $demo) { throw 'No se generó el instalador .exe del Demo.' }
+          Copy-Item $demo.FullName 'release-artifacts/PosVEN-Pro3-Demo-Setup-2.6.1.exe' -Force
 
-      - name: Verify installer
+      - name: Build Complete installer (no demo data or limits)
         shell: pwsh
         run: |
-          $found = Get-ChildItem -Path dist -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue
-          if (-not $found -or $found.Count -eq 0) { throw 'No se generó ningún instalador .exe.' }
-          $found | ForEach-Object { Write-Host "Instalador: $($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
+          node -e "const fs=require('fs');const p=require('./package.json');p.build.productName='PosVEN Pro';p.build.appId='com.posven.pro';p.build.extraMetadata={...(p.build.extraMetadata||{}),posvenDemoMode:false};fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          npx electron-builder --win --publish never
+          if ($LASTEXITCODE -ne 0) { throw "Falló la compilación del instalador completo: $LASTEXITCODE" }
+          $complete = Get-ChildItem -Path dist -Filter '*Setup*.exe' | Where-Object { $_.Name -notlike '*Demo*' } | Select-Object -First 1
+          if (-not $complete) { throw 'No se generó el instalador .exe completo.' }
+          Copy-Item $complete.FullName 'release-artifacts/PosVEN-Pro3-Setup-2.6.1.exe' -Force
 
-      - name: Upload Windows installer
+      - name: Verify both installers
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path release-artifacts -Filter '*.exe'
+          if ($files.Count -ne 2) { throw "Se esperaban dos instaladores y se encontraron $($files.Count)." }
+          $files | ForEach-Object { Write-Host "$($_.Name) — $([math]::Round($_.Length / 1MB, 2)) MB" }
+          if ((Get-Item 'release-artifacts/PosVEN-Pro3-Demo-Setup-2.6.1.exe').Length -lt 1MB) { throw 'El artefacto Demo parece incompleto.' }
+          if ((Get-Item 'release-artifacts/PosVEN-Pro3-Setup-2.6.1.exe').Length -lt 1MB) { throw 'El artefacto completo parece incompleto.' }
+
+      - name: Upload both installers as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: PosVEN-Pro3-Windows-Installer
-          path: dist/*.exe
+          name: PosVEN-Pro3-2.6.1-Demo-and-Complete
+          path: release-artifacts/*.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish both installers to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PosVEN Pro 2.6.1
+          body: |
+            PosVEN Pro 2.6.1 para Windows.
+
+            - PosVEN-Pro3-Setup-2.6.1.exe: instalador completo con SQLite local.
+            - PosVEN-Pro3-Demo-Setup-2.6.1.exe: edición Demo aislada con límite de 10 acciones por módulo.
+          files: release-artifacts/*.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
