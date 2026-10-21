@@ -523,6 +523,13 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                    <button onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})} className={`w-12 h-6 rounded-full transition-all relative ${datos.aplicaIVA ? 'bg-status-success' : 'bg-ink/20'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.aplicaIVA ? 'right-1' : 'left-1'}`} /></button>
                    <Label className="text-[10px] font-black uppercase text-ink cursor-pointer" onClick={() => setDatos({...datos, aplicaIVA: !datos.aplicaIVA})}>Aplica IVA (16%)</Label>
                  </div>
+                 <div className="flex items-center gap-3 p-4 bg-surface-soft rounded-xl border border-line">
+                   <button type="button" role="switch" aria-checked={!!datos.permiteVentaLibreBS} onClick={() => setDatos({...datos, permiteVentaLibreBS: !datos.permiteVentaLibreBS})} className={`w-12 h-6 rounded-full transition-all relative ${datos.permiteVentaLibreBS ? 'bg-status-success' : 'bg-ink/20'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${datos.permiteVentaLibreBS ? 'right-1' : 'left-1'}`} /></button>
+                   <div className="min-w-0 flex-1">
+                     <Label className="text-[10px] font-black uppercase text-ink cursor-pointer" onClick={() => setDatos({...datos, permiteVentaLibreBS: !datos.permiteVentaLibreBS})}>Permitir venta por monto en Bs</Label>
+                     <p className="mt-1 text-[10px] text-ink/60">Para productos a granel, por peso o fraccionables. El POS calcula la cantidad y descuenta el inventario.</p>
+                   </div>
+                 </div>
               </div>
             </div>
           )}
