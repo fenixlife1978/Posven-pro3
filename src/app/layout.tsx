@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'PosVEN pro - Soluciones Profesionales',
   description: 'Sistema de Punto de Venta avanzado para comercios en Venezuela, con gestión de inventario, ventas a crédito y reportes profesionales detallados.',
