@@ -17,7 +17,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     return [base, ...configured.filter(p => p.id !== "base" && !/^(unidad individual|unidad suelta|individual)$/i.test(String(p.nombre || "").trim()))];
   }, [product.presentacionesVenta, product.cantidad, product.precioUSD, rate]);
   type Mode = "presentation" | "unit" | "grams" | "kg" | "ml" | "budget";
-  const [mode, setMode] = useState<Mode>(product.ventaPorPeso ? "grams" : "presentation");
+  const [mode, setMode] = useState<Mode>(product.ventaPorPeso ? "grams" : product.ventaPorVolumen ? "ml" : "presentation");
   const [presentationId, setPresentationId] = useState("base");
   const [quantity, setQuantity] = useState("1");
   const [grams, setGrams] = useState("500");
@@ -77,7 +77,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     onConfirm({
       ...(selectedPresentation && (mode === "presentation" || mode === "unit") ? { presentacion: selectedPresentation.nombre, factorPresentacion: factor } : {}),
       nombre: displayName, cantidad: Number(baseQty.toFixed(6)), precioUnitUSD: unitPrice, subtotalUSD: total,
-      ...(mode === "grams" ? { cantidadGramos: Math.round(g) } : {}),
+      ...(mode === "grams" ? { cantidadGramos: Math.round(g) } : {}),\n      ...(mode === "ml" ? { cantidadMililitros: Math.round(m) } : {}),
       ...(mode === "budget" ? { ventaLibreBS: true } : {}),
     });
   };
@@ -86,7 +86,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     
     { id: "grams" as Mode, label: "Gramos", show: !!product.ventaPorPeso },
     { id: "kg" as Mode, label: "Kilogramos", show: !!product.ventaPorPeso },
-    { id: "ml" as Mode, label: "Mililitros", show: supportsVolume },
+    { id: "ml" as Mode, label: "Mililitros", show: supportsVolume || !!product.ventaPorVolumen },
     { id: "budget" as Mode, label: "Monto en Bs", show: !!product.permiteVentaLibreBS || supportsVolume },
   ].filter(x => x.show);
   return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 backdrop-blur-sm p-3 md:p-6">
