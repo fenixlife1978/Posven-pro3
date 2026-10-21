@@ -56,29 +56,57 @@ async function requireUser(request: Request) {
   return user;
 }
 
+const TERMINAL_SCOPED_TABLES = new Set<TursoStoreTable>([
+  'ventas', 'movimientos', 'cxc', 'cxp', 'devoluciones', 'anulaciones',
+  'terminales', 'libroDiario', 'reportesZ', 'caja', 'compras',
+]);
+
 export async function GET(request: Request) {
   try {
     assertTursoReady();
-    await requireUser(request);
+    const user = await requireUser(request);
     const url = new URL(request.url);
     const special = url.searchParams.get('special');
     if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     const t = table(url.searchParams.get('table'));
-    if (special === 'count') return NextResponse.json({ ok: true, total: await countRecords(t) });
+    const requestedTerminalId = url.searchParams.get('terminalId') || undefined;
+    const cashierTerminalId = user.rol === 'cajero' ? String(user.terminalId || '') : '';
+    if (user.rol === 'cajero' && TERMINAL_SCOPED_TABLES.has(t) && !cashierTerminalId) {
+      throw new Error('Tu usuario cajero no tiene una caja asignada. Solicita al administrador que la asigne en Gestión de Usuarios.');
+    }
+    const terminalId = user.rol === 'cajero' && TERMINAL_SCOPED_TABLES.has(t)
+      ? cashierTerminalId
+      : requestedTerminalId;
+    if (user.rol === 'cajero' && TERMINAL_SCOPED_TABLES.has(t) && requestedTerminalId && requestedTerminalId !== cashierTerminalId) {
+      throw new Error('No tienes permiso para consultar información de otra caja.');
+    }
+    if (special === 'count') {
+      if (user.rol === 'cajero' && TERMINAL_SCOPED_TABLES.has(t)) throw new Error('No se permite consultar conteos globales de cajas.');
+      return NextResponse.json({ ok: true, total: await countRecords(t) });
+    }
     const id = url.searchParams.get('id');
-    if (id) return NextResponse.json({ ok: true, record: await getRecord(t, id) });
-    const records = await listRecords(t, {
+    if (id) {
+      const record = await getRecord(t, id);
+      if (user.rol === 'cajero' && TERMINAL_SCOPED_TABLES.has(t)) {
+        const recordTerminalId = t === 'terminales' ? String(record?.id || '') : String(record?.terminalId || '');
+        if (record && recordTerminalId !== cashierTerminalId) throw new Error('No tienes permiso para consultar información de otra caja.');
+      }
+      return NextResponse.json({ ok: true, record });
+    }
+    let records = await listRecords(t, {
       limit: Number(url.searchParams.get('limit') || 500),
       offset: Number(url.searchParams.get('offset') || 0),
-      terminalId: url.searchParams.get('terminalId') || undefined,
+      terminalId: t === 'terminales' && user.rol === 'cajero' ? undefined : terminalId,
       estado: url.searchParams.get('estado') || undefined,
     });
+    if (t === 'terminales' && user.rol === 'cajero') records = records.filter(record => String(record?.id || '') === cashierTerminalId);
     return NextResponse.json({ ok: true, records });
   } catch (error: any) {
     const message = String(error?.message || error);
     const status = message.includes('no está configurado') ? 503
-      : message.includes('No autenticado') ? 401 : 400;
+      : message.includes('No autenticado') ? 401
+      : message.includes('No tienes permiso') || message.includes('no tiene una caja asignada') ? 403 : 400;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
