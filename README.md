@@ -5,7 +5,7 @@ Aplicación de punto de venta instalable para Windows, construida con Next.js y 
 ## Arquitectura de escritorio
 
 - **Base de datos operativa única: SQLite local** en el equipo donde se instala el sistema.
-- Archivo de datos: `%APPDATA%/posven-pro3/posven-pro3.sqlite` (ruta de usuario de Electron).
+- Archivo de datos: `app.getPath('userData')/posven-pro3.sqlite` (ruta de datos de usuario de Electron, fuera de la carpeta de instalación).
 - No requiere cuenta, URL, token ni conexión a Turso, Firebase o cualquier base de datos en la nube.
 - Las rutas API que conservan nombres históricos se ejecutan dentro del servidor Next.js local embebido en Electron; no son endpoints remotos.
 - La aplicación y sus operaciones de negocio deben seguir funcionando sin internet. Internet solo puede utilizarse para funciones opcionales explícitas, como comprobar actualizaciones.
