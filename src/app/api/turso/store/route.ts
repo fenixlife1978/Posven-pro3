@@ -116,8 +116,7 @@ function demoModuleForOperation(body: any): string | null {
   const tableName = String(body?.table || '');
   const map: Record<string, string> = {
     configPatch: 'configuracion', catalogPatch: 'configuracion',
-    factoryReset: 'administracion', productSync: 'inventario',
-    inventoryStockSync: 'inventario', inventory: 'inventario',
+    factoryReset: 'administracion', inventory: 'inventario',
     sale: 'ventas', terminalPatch: 'cajas', terminalUpsert: 'cajas',
     terminalDelete: 'cajas', debtPayment: 'cuentas-por-cobrar',
     cashMovement: 'caja', globalProviderPayment: 'cuentas-por-pagar',
@@ -128,11 +127,6 @@ function demoModuleForOperation(body: any): string | null {
     returnOrCancellation: 'devoluciones', repairReturnInventoryAndCxc: 'devoluciones',
     zClosure: 'caja',
   };
-  if (operation === 'recordsSync') {
-    if (tableName === 'clientes') return 'clientes';
-    if (tableName === 'proveedores') return 'proveedores';
-    if (tableName === 'movimientos' || tableName === 'libroDiario') return 'caja';
-  }
   if (operation === 'upsert') {
     if (tableName === 'productos') return 'inventario';
     if (tableName === 'clientes') return 'clientes';
