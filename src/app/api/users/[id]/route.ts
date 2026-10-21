@@ -17,7 +17,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const { id } = await context.params;
   const body = await request.json().catch(() => ({}));
   const target = await tursoExecute({
-    sql: 'SELECT is_seed_admin, nombre, rol, acceso_bloqueado FROM users WHERE id=? LIMIT 1',
+    sql: 'SELECT is_seed_admin, nombre, rol, acceso_bloqueado, data_json FROM users WHERE id=? LIMIT 1',
     args: [id],
   });
   if (!target.rows[0]) return NextResponse.json({ error: 'Usuario no encontrado.' }, { status: 404 });
@@ -41,9 +41,16 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ error: 'El administrador semilla debe conservar el rol administrador.' }, { status: 400 });
   }
 
+  let extra: any = {};
+  try { extra = JSON.parse(String(target.rows[0].data_json || '{}')); } catch {}
+  const terminalId = rol === 'administrador'
+    ? null
+    : (body?.terminalId === undefined ? (extra.terminalId || null) : (String(body.terminalId || '').trim() || null));
+  extra.terminalId = terminalId;
+
   await tursoExecute({
-    sql: 'UPDATE users SET nombre=?, rol=? WHERE id=?',
-    args: [nombre, rol, id],
+    sql: 'UPDATE users SET nombre=?, rol=?, data_json=? WHERE id=?',
+    args: [nombre, rol, JSON.stringify(extra), id],
     wantRows: false,
   });
 
