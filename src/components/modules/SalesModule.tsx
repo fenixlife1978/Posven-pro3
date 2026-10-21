@@ -906,7 +906,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const presentation = selection.presentacion;
     const nuevoCarrito = [...state.carrito];
     const idx = nuevoCarrito.findIndex(i => i.productoId === p.id && (i.presentacion || "") === (presentation || ""));
-    if (idx >= 0 && !selection.cantidadGramos) {
+    if (idx >= 0 && !selection.cantidadGramos && !selection.cantidadMililitros) {
       const nextQty = nuevoCarrito[idx].cantidad + selection.cantidad;
       if (nextQty > stockAvail) {
         toast({ variant: "destructive", title: "Stock insuficiente" });
@@ -923,7 +923,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         precioUnitUSD: selection.precioUnitUSD,
         subtotalUSD: selection.subtotalUSD,
         ...(presentation ? { presentacion: presentation, factorPresentacion: selection.factorPresentacion || 1 } : {}),
-        ...(selection.cantidadGramos ? { cantidadGramos: selection.cantidadGramos } : {}),
+        ...(selection.cantidadGramos ? { cantidadGramos: selection.cantidadGramos } : {}),\n        ...(selection.cantidadMililitros ? { cantidadMililitros: selection.cantidadMililitros } : {}),
       });
     }
     updateState({ carrito: nuevoCarrito });
@@ -971,6 +971,25 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     item.cantidadGramos = gramos;
     item.cantidad = kg;
     item.subtotalUSD = kg * item.precioUnitUSD;
+    updateState({ carrito: nuevo });
+    setPagos([]);
+  };
+
+  const cambiarMililitros = (index: number, mililitrosInput: string) => {
+    const mililitros = Math.max(0, Number(String(mililitrosInput).replace(',', '.')) || 0);
+    const nuevo = [...state.carrito];
+    const item = nuevo[index];
+    const p = state.productos.find(x => x.id === item.productoId);
+    if (!p?.ventaPorVolumen) return;
+    const litros = mililitros / 1000;
+    if (litros > getStockDisponible(p)) {
+      toast({ variant: "destructive", title: "Stock insuficiente", description: `Disponible: ${(getStockDisponible(p) * 1000).toLocaleString()} ml` });
+      return;
+    }
+    item.cantidadMililitros = mililitros;
+    item.cantidad = litros;
+    item.subtotalUSD = litros * item.precioUnitUSD;
+    item.nombre = `${p.nombre} (${mililitros} ml)`;
     updateState({ carrito: nuevo });
     setPagos([]);
   };
@@ -1433,9 +1452,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       <div key={i} className="grid grid-cols-[1fr_80px_70px_35px_80px_80px_80px_35px] gap-1 items-center px-3 py-3 bg-white border-b border-black/5 text-ink">
                         <div className="truncate font-black text-xs uppercase leading-tight">{item.nombre}</div>
                         <div className="flex items-center justify-center gap-1 bg-surface-soft rounded p-0.5 border border-line/30">
-                          {prod?.ventaPorPeso ? <input aria-label="Cantidad en gramos" type="number" min="1" step="1" value={item.cantidadGramos ?? Math.round(item.cantidad * 1000)} onChange={e => cambiarGramos(i, e.target.value)} className="w-[64px] text-center text-xs font-black bg-white border border-line rounded px-1 py-1" /> : <><button onClick={() => updateQty(i, -1)} className="text-ink font-black text-sm px-1.5">-</button><span className="w-5 text-center text-xs font-black">{item.factorPresentacion ? (item.cantidad / item.factorPresentacion).toFixed(2).replace(/\.00$/, '') : item.cantidad}</span><button onClick={() => updateQty(i, 1)} className="text-ink font-black text-sm px-1.5">+</button></>}
+                          {prod?.ventaPorPeso ? <input aria-label="Cantidad en gramos" type="number" min="1" step="1" value={item.cantidadGramos ?? Math.round(item.cantidad * 1000)} onChange={e => cambiarGramos(i, e.target.value)} className="w-[64px] text-center text-xs font-black bg-white border border-line rounded px-1 py-1" /> : prod?.ventaPorVolumen ? <input aria-label="Cantidad en mililitros" type="number" min="1" step="1" value={item.cantidadMililitros ?? Math.round(item.cantidad * 1000)} onChange={e => cambiarMililitros(i, e.target.value)} className="w-[64px] text-center text-xs font-black bg-white border border-line rounded px-1 py-1" /> : <><button onClick={() => updateQty(i, -1)} className="text-ink font-black text-sm px-1.5">-</button><span className="w-5 text-center text-xs font-black">{item.factorPresentacion ? (item.cantidad / item.factorPresentacion).toFixed(2).replace(/\.00$/, '') : item.cantidad}</span><button onClick={() => updateQty(i, 1)} className="text-ink font-black text-sm px-1.5">+</button></>}
                         </div>
-                        <div className="text-center text-[10px] font-black uppercase">{prod?.ventaPorPeso ? 'g' : (item.presentacion || prod?.cantidad || '-')}</div>
+                        <div className="text-center text-[10px] font-black uppercase">{prod?.ventaPorPeso ? 'g' : prod?.ventaPorVolumen ? 'ml' : (item.presentacion || prod?.cantidad || '-')}</div>
                         <div className="flex justify-center">
                           <button 
                             onClick={() => prod && setPriceSelectorItem({ index: i, product: prod })}
