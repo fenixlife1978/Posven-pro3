@@ -1,4 +1,5 @@
 import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
+import { withDemoLimit } from '@/lib/demo-limits';
 import { NextResponse } from 'next/server';
 import {
   assertTursoReady,
@@ -113,10 +114,10 @@ export async function POST(request: Request) {
       }
       case 'productSync': {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
-        const result = await syncProductChanges({
-          changes: Array.isArray(body.changes) ? body.changes : [],
-          deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
-        });
+        const changes = Array.isArray(body.changes) ? body.changes : [];
+        const newItems = changes.filter((change: any) => !change?.before && !!change?.after).length;
+        const sync = () => syncProductChanges({ changes, deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [] });
+        const result = newItems > 0 ? await withDemoLimit('items', sync, newItems) : await sync();
         return NextResponse.json({ ok: true, ...result });
       }
       case 'recordsSync': {
@@ -145,7 +146,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'sale': {
-        const result = await createSaleTransaction(body);
+        const result = await withDemoLimit('sales', () => createSaleTransaction(body));
         return NextResponse.json({ ok: true, ...result });
       }
       case 'terminalPatch': {
@@ -191,7 +192,7 @@ export async function POST(request: Request) {
       case 'reverseDebtPayment': {
         const result=await reverseDebtPaymentTransaction(body); return NextResponse.json({ok:true,...result});
       }
-      case 'createPurchase': { const result=await createPurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
+      case 'createPurchase': { const result = await withDemoLimit('purchases', () => createPurchaseTransaction(body)); return NextResponse.json({ok:true,...result}); }
       case 'deletePurchase': { const result=await deletePurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deleteCustomerDebt': { const result=await deleteCustomerDebtTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deleteCustomerAndDebts': {
