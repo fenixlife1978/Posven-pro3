@@ -241,6 +241,7 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
     margen: producto?.margen?.toString() ?? '0',
     modoMarkup: producto?.modoMarkup || 'sobre_venta',
     ventaPorPeso: producto?.ventaPorPeso || false,
+    ventaPorVolumen: producto?.ventaPorVolumen || false,
     permiteVentaLibreBS: producto?.permiteVentaLibreBS || false,
     presentacionesVenta: producto?.presentacionesVenta?.length ? producto.presentacionesVenta : [{ id: 'base', nombre: producto?.cantidad || 'Unidad', factor: 1, precioUSD: producto?.precioUSD || 0, precioBS: (producto?.precioUSD || 0) * state.tasa }],
     presentacionPrincipal: (producto as any)?.presentacionPrincipal || producto?.cantidad || 'Unidad',
@@ -500,6 +501,19 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                      <select className="form-select h-10 text-xs font-bold bg-white" value={datos.cantidad} onChange={e => { const cantidad=e.target.value; setDatos((prev:any)=>({...prev,cantidad,presentacionesVenta:(prev.presentacionesVenta||[]).map((pres:any)=>{const factor=presentationFactorFromContent(pres.contenido,pres.unidadContenido,cantidad);return factor!==null?{...pres,factor}:pres;})})); }}>
                        {(state.presentaciones || []).map((p: string) => <option key={p} value={p}>{p}</option>)}
                      </select>
+                     <p className="mt-1 text-[10px] text-ink/50">Para venta fraccionada, usa kg como unidad base de peso o litros como unidad base de volumen.</p>
+                   </div>
+                   <div className="col-span-2 space-y-2 rounded-xl border border-line bg-surface-soft p-3">
+                     <Label className="text-[10px] font-black uppercase text-ink/60">Modalidad de venta fraccionada</Label>
+                     <label className="flex items-start gap-2 text-xs font-bold">
+                       <input type="checkbox" checked={!!datos.ventaPorPeso} onChange={e=>setDatos((prev:any)=>({...prev,ventaPorPeso:e.target.checked,ventaPorVolumen:e.target.checked?false:prev.ventaPorVolumen,cantidad:e.target.checked?'Kilogramo':prev.cantidad==='Kilogramo'?'Unidad':prev.cantidad}))}/>
+                       <span>Vender por peso (kg en inventario; el cajero introduce gramos en el carrito). Ej.: verduras, quesos, embutidos.</span>
+                     </label>
+                     <label className="flex items-start gap-2 text-xs font-bold">
+                       <input type="checkbox" checked={!!datos.ventaPorVolumen} onChange={e=>setDatos((prev:any)=>({...prev,ventaPorVolumen:e.target.checked,ventaPorPeso:e.target.checked?false:prev.ventaPorPeso,cantidad:e.target.checked?'Litro':prev.cantidad==='Litro'?'Unidad':prev.cantidad}))}/>
+                       <span>Vender por volumen (litros en inventario; el cajero introduce mililitros en el carrito). Ej.: detergentes y productos de limpieza a granel.</span>
+                     </label>
+                     <p className="text-[10px] text-ink/50">El precio de venta principal corresponde a 1 kg o 1 litro según la modalidad seleccionada. No actives ambas a la vez.</p>
                    </div>
                 </div>
               </div>
