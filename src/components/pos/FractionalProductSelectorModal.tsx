@@ -33,7 +33,7 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     ? (isBasePresentation(selected) ? Number(product.precioUSD) || 0 : Number(selected.precioUSD) || 0)
     : Number(product.precioUSD) || 0;
   const individualPresentation = presentations.find(p => /unidad individual|unidad suelta|unidad|individual|\bund\b/i.test(p.nombre));
-  const supportsVolume = /ml|mililitro|litro|lts|lt\b|\bl\b/i.test([product.cantidad, product.unit, ...presentations.map(p => `${p.nombre} ${p.unidadMedida || p.unidad || ""} ${p.unidadContenido || ""}`)].join(" "));
+  const supportsVolume = !!product.ventaPorVolumen || /ml|mililitro|litro|lts|lt\\b|\\bl\\b/i.test([product.cantidad, product.unit, ...presentations.map(p => `${p.nombre} ${p.unidadMedida || p.unidad || ""} ${p.unidadContenido || ""}`)].join(" "));
   const q = Math.max(0, Number(quantity.replace(",", ".")) || 0);
   const rawGrams = Math.max(0, Number(grams.replace(",", ".")) || 0);
   // Admite 350 para gramos o 0.350 como 350 g (equivalente a 0.350 kg).
