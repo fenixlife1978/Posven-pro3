@@ -36,6 +36,12 @@ export async function withDemoLimit<T>(action: DemoAction, work: () => Promise<T
   if (!Number.isInteger(amount) || amount < 1) throw new Error('Cantidad de acciones DEMO no válida.');
   await tursoInteractiveTransaction(async tx => {
     await init(tx);
+    const all = await tx.execute({ sql: 'SELECT action, used FROM demo_usage', wantRows: true });
+    const totals = (all.rows || []) as Array<{action: DemoAction; used: number}>;
+    const exhausted = totals.find(row => Number(row.used || 0) >= DEMO_LIMIT);
+    if (exhausted) {
+      throw new Error('DEMO bloqueada: se agotó el cupo de ' + ACTION_LABEL[exhausted.action] + '. Adquiere POSVEN-PRO completo para continuar sin límites.');
+    }
     const result = await tx.execute({ sql: 'SELECT used FROM demo_usage WHERE action = ?', args: [action], wantRows: true });
     const used = Number((result.rows?.[0] as {used?: number} | undefined)?.used || 0);
     if (used + amount > DEMO_LIMIT) {
