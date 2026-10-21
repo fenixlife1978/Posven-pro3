@@ -136,6 +136,9 @@
         "owner": "fenixlife1978",
         "repo": "Posven-pro3"
       }
-    ]
+    ],
+    "extraMetadata": {
+      "posvenDemoMode": false
+    }
   }
 }
