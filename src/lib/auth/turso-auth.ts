@@ -13,6 +13,7 @@ export type AuthUser = {
   accesoBloqueado: boolean;
   isSeedAdmin: boolean;
   fechaCreacion: string | null;
+  terminalId?: string | null;
 };
 
 const SESSION_DAYS = 7;
@@ -50,6 +51,8 @@ export function verifyPassword(password: string, stored: string) {
 }
 
 function mapUser(row: any): AuthUser {
+  let extra: any = {};
+  try { extra = JSON.parse(String(row.data_json || '{}')); } catch {}
   return {
     id: String(row.id),
     username: String(row.username),
@@ -59,6 +62,7 @@ function mapUser(row: any): AuthUser {
     accesoBloqueado: Number(row.acceso_bloqueado || 0) === 1,
     isSeedAdmin: Number(row.is_seed_admin || 0) === 1,
     fechaCreacion: row.fecha_creacion == null ? null : String(row.fecha_creacion),
+    terminalId: extra.terminalId == null ? null : String(extra.terminalId),
   };
 }
 
@@ -89,6 +93,7 @@ export async function createUser(input: {
   nombre: string;
   password: string;
   rol: AppRole;
+  terminalId?: string | null;
   isSeedAdmin?: boolean;
 }) {
   await ensureTursoSchema();
@@ -110,8 +115,8 @@ export async function createUser(input: {
   await tursoExecute({
     sql: `INSERT INTO users
       (id, username, email, nombre, rol, password_hash, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, '{}')`,
-    args: [id, username, email, input.nombre.trim(), input.rol, passwordHash, input.isSeedAdmin ? 1 : 0, fecha],
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+    args: [id, username, email, input.nombre.trim(), input.rol, passwordHash, input.isSeedAdmin ? 1 : 0, fecha, JSON.stringify({ terminalId: input.terminalId || null })],
     wantRows: false,
   });
 
@@ -217,7 +222,7 @@ export async function revokeSession(sessionId: string | null | undefined) {
 export async function listUsers() {
   await ensureTursoSchema();
   const result = await tursoExecute({
-    sql: `SELECT id, username, email, nombre, rol, acceso_bloqueado, is_seed_admin, fecha_creacion
+    sql: `SELECT id, username, email, nombre, rol, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json
       FROM users ORDER BY lower(nombre), lower(username)`,
   });
   return result.rows.map(mapUser);
