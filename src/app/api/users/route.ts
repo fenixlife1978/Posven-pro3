@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
       nombre: String(body?.nombre || '').trim(),
       password: String(body?.password || ''),
       rol: body?.rol === 'administrador' ? 'administrador' : 'cajero',
+      terminalId: body?.rol === 'administrador' ? null : (body?.terminalId ? String(body.terminalId) : null),
     });
     return NextResponse.json({ usuario: created }, { status: 201 });
   } catch (error: any) {
