@@ -1,17 +1,12 @@
 /**
- * Cliente Turso serverless para POSVEN PRO.
- *
- * Usa SQL sobre HTTP v3 directamente con fetch(), sin agregar dependencias.
- * Solo se utiliza desde el servidor y únicamente para operaciones Turso.
- *
- * Solo debe importarse desde código servidor/API.
+ * Motor SQLite local para la aplicación de escritorio POSVEN-PRO3.
+ * Conserva los nombres de exportación históricos para no romper los repositorios
+ * de negocio existentes, pero NO realiza conexiones HTTP ni requiere credenciales
+ * de nube. La ruta de la base se define en POSVEN_SQLITE_PATH desde Electron.
  */
-type TursoValue =
-  | { type: 'null'; value: null }
-  | { type: 'integer'; value: string }
-  | { type: 'float'; value: number }
-  | { type: 'text'; value: string }
-  | { type: 'blob'; base64: string };
+import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export type TursoStatement = {
   sql: string;
@@ -19,260 +14,94 @@ export type TursoStatement = {
   wantRows?: boolean;
 };
 
-type TursoResult = {
-  cols: Array<{ name: string | null; decltype?: string | null }>;
-  rows: TursoValue[][];
-  affected_row_count?: number;
-  last_insert_rowid?: string | null;
-};
-
-type TursoResponse = {
-  baton: string | null;
-  base_url: string | null;
-  results: Array<
-    | { type: 'ok'; response: { type: string; result?: TursoResult } }
-    | { type: 'error'; error: { message: string; code?: string | null } }
-  >;
-};
-
-function getConfig() {
-  let url = String(process.env.TURSO_DATABASE_URL || '').trim().replace(/\/$/, '');
-  // Turso suele entregar URLs `libsql://...`; el cliente HTTP nativo de Node
-  // no entiende ese esquema. Para el endpoint SQL sobre HTTP debemos usar HTTPS.
-  if (url.startsWith('libsql://')) url = 'https://' + url.slice('libsql://'.length);
-  const token = String(process.env.TURSO_AUTH_TOKEN || '').trim();
-  return { url, token };
-}
-
-export function isTursoConfigured(): boolean {
-  const { url, token } = getConfig();
-  return !!url && !!token;
-}
-
-function encodeValue(value: unknown): TursoValue {
-  if (value === null || value === undefined) return { type: 'null', value: null };
-  if (typeof value === 'bigint') return { type: 'integer', value: value.toString() };
-  if (typeof value === 'boolean') return { type: 'integer', value: value ? '1' : '0' };
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) return { type: 'null', value: null };
-    if (Number.isInteger(value)) return { type: 'integer', value: String(value) };
-    return { type: 'float', value };
-  }
-  if (value instanceof Uint8Array) {
-    return { type: 'blob', base64: Buffer.from(value).toString('base64') };
-  }
-  return { type: 'text', value: String(value) };
-}
-
-function decodeValue(value: TursoValue): unknown {
-  switch (value.type) {
-    case 'null': return null;
-    case 'integer': {
-      const n = Number(value.value);
-      return Number.isSafeInteger(n) ? n : BigInt(value.value);
-    }
-    case 'float': return value.value;
-    case 'blob': return Buffer.from(value.base64, 'base64');
-    case 'text':
-    default: return value.value;
-  }
-}
-
-function rowsToObjects(result: TursoResult): Record<string, unknown>[] {
-  return result.rows.map(row => {
-    const out: Record<string, unknown> = {};
-    result.cols.forEach((col, index) => {
-      out[String(col.name ?? index)] = decodeValue(row[index]);
-    });
-    return out;
-  });
-}
-
-async function pipeline(requests: unknown[], baton: string | null = null): Promise<TursoResponse> {
-  const { url, token } = getConfig();
-  if (!url || !token) {
-    throw new Error('Turso no está configurado: faltan TURSO_DATABASE_URL y/o TURSO_AUTH_TOKEN.');
-  }
-
-  const response = await fetch(url + '/v3/pipeline', {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + token,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ baton, requests }),
-    cache: 'no-store',
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(
-      'Turso HTTP ' + response.status + ': ' +
-      (payload?.error?.message || response.statusText || 'respuesta no válida')
-    );
-  }
-  return payload as TursoResponse;
-}
-
-function resultFromItem(item: TursoResponse['results'][number]) {
-  if (item.type === 'error') throw new Error(item.error.message);
-  const result = item.response.result || { cols: [], rows: [] };
-  return { ...result, rows: rowsToObjects(result) };
-}
-
-function statementRequest(statement: TursoStatement) {
-  return {
-    type: 'execute',
-    stmt: {
-      sql: statement.sql,
-      args: (statement.args || []).map(encodeValue),
-      want_rows: statement.wantRows !== false,
-    },
-  };
-}
-
-export async function tursoExecute(statement: TursoStatement) {
-  const response = await pipeline([statementRequest(statement)]);
-  return resultFromItem(response.results[0]);
-}
-
-export async function tursoBatch(statements: TursoStatement[]) {
-  if (!statements.length) return [];
-
-  const response = await pipeline([{
-    type: 'batch',
-    batch: {
-      steps: statements.map(statement => ({
-        stmt: statementRequest(statement).stmt,
-      })),
-    },
-  }]);
-
-  const first = response.results[0];
-  if (!first || first.type === 'error') {
-    throw new Error(first?.error?.message || 'Turso no pudo ejecutar el lote.');
-  }
-
-  const batchResult = first.response.result as any;
-  const results = Array.isArray(batchResult?.results) ? batchResult.results : [];
-  return results.map((item: TursoResult) => ({
-    ...item,
-    rows: rowsToObjects(item),
-  }));
-}
-
-/**
- * Transacción HTTP real en un stream:
- * BEGIN IMMEDIATE -> sentencias -> COMMIT.
- * Si alguna falla, se hace ROLLBACK usando el baton del mismo stream.
- */
-export async function tursoTransaction(statements: TursoStatement[]) {
-  if (!statements.length) return [];
-
-  let response = await pipeline([
-    { type: 'execute', stmt: { sql: 'BEGIN IMMEDIATE', want_rows: false } },
-  ]);
-
-  let baton = response.baton;
-  if (!baton) throw new Error('Turso cerró el stream al iniciar la transacción.');
-
-  const outputs: TursoResult[] = [];
-
-  try {
-    for (const statement of statements) {
-      response = await pipeline([statementRequest(statement)], baton);
-      baton = response.baton;
-
-      const item = response.results[0];
-      if (!item || item.type === 'error') {
-        throw new Error(item?.error?.message || 'Turso rechazó una sentencia de la transacción.');
-      }
-
-      outputs.push(item.response.result || { cols: [], rows: [] });
-      if (!baton) throw new Error('Turso cerró el stream durante la transacción.');
-    }
-
-    response = await pipeline([
-      { type: 'execute', stmt: { sql: 'COMMIT', want_rows: false } },
-      { type: 'close' },
-    ], baton);
-
-    const commit = response.results[0];
-    if (!commit || commit.type === 'error') {
-      throw new Error(commit?.error?.message || 'Turso no pudo confirmar la transacción.');
-    }
-
-    return outputs.map(result => ({ ...result, rows: rowsToObjects(result) }));
-  } catch (error) {
-    if (baton) {
-      try {
-        await pipeline([
-          { type: 'execute', stmt: { sql: 'ROLLBACK', want_rows: false } },
-          { type: 'close' },
-        ], baton);
-      } catch {}
-    }
-    throw error;
-  }
-}
-
-
 export type TursoTransactionContext = {
   execute: (statement: TursoStatement) => Promise<any>;
 };
 
+let database: Database.Database | null = null;
+let lockTail: Promise<void> = Promise.resolve();
+
+function withLock<T>(work: () => T | Promise<T>): Promise<T> {
+  const run = lockTail.then(work, work);
+  lockTail = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+function getDatabase(): Database.Database {
+  if (database) return database;
+  const configuredPath = String(process.env.POSVEN_SQLITE_PATH || '').trim();
+  const dbPath = configuredPath || path.join(process.cwd(), 'data', 'posven-pro3.sqlite');
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  database = new Database(dbPath);
+  database.pragma('journal_mode = WAL');
+  database.pragma('foreign_keys = ON');
+  database.pragma('busy_timeout = 10000');
+  return database;
+}
+
+/** Siempre disponible: la aplicación trabaja contra SQLite local, no contra nube. */
+export function isTursoConfigured(): boolean {
+  return true;
+}
+
+function executeUnlocked(statement: TursoStatement) {
+  const db = getDatabase();
+  const prepared = db.prepare(statement.sql);
+  const args = statement.args || [];
+  if (prepared.reader && statement.wantRows !== false) {
+    const rows = prepared.all(...args) as Record<string, unknown>[];
+    const cols = prepared.columns().map(column => ({ name: column.name, decltype: column.type || null }));
+    return { cols, rows, affected_row_count: 0, last_insert_rowid: null };
+  }
+  const result = prepared.run(...args);
+  return {
+    cols: [],
+    rows: [],
+    affected_row_count: result.changes,
+    last_insert_rowid: result.lastInsertRowid == null ? null : String(result.lastInsertRowid),
+  };
+}
+
+export async function tursoExecute(statement: TursoStatement) {
+  return withLock(() => executeUnlocked(statement));
+}
+
+export async function tursoBatch(statements: TursoStatement[]) {
+  if (!statements.length) return [];
+  return withLock(() => {
+    const db = getDatabase();
+    const run = db.transaction(() => statements.map(executeUnlocked));
+    return run();
+  });
+}
+
+export async function tursoTransaction(statements: TursoStatement[]) {
+  if (!statements.length) return [];
+  return withLock(() => {
+    const db = getDatabase();
+    const run = db.transaction(() => statements.map(executeUnlocked));
+    return run();
+  });
+}
+
 /**
- * Transacción interactiva: permite leer datos dentro de BEGIN IMMEDIATE,
- * calcular el siguiente estado y escribirlo antes de COMMIT. Es la pieza
- * necesaria para conservar las garantías de concurrencia de las operaciones POS
- * runTransaction().
+ * Las transacciones críticas se serializan dentro del proceso local. Mientras
+ * dura una transacción, otras lecturas/escrituras esperan para evitar mezclar
+ * operaciones de caja entre sí.
  */
 export async function tursoInteractiveTransaction<T>(
   callback: (tx: TursoTransactionContext) => Promise<T>,
 ): Promise<T> {
-  if (!isTursoConfigured()) {
-    throw new Error('Turso no está configurado: faltan TURSO_DATABASE_URL y/o TURSO_AUTH_TOKEN.');
-  }
-
-  let response = await pipeline([
-    { type: 'execute', stmt: { sql: 'BEGIN IMMEDIATE', want_rows: false } },
-  ]);
-  let baton = response.baton;
-  if (!baton) throw new Error('Turso cerró el stream al iniciar la transacción.');
-
-  const execute = async (statement: TursoStatement) => {
-    if (!baton) throw new Error('La transacción Turso ya fue cerrada.');
-    response = await pipeline([statementRequest(statement)], baton);
-    baton = response.baton;
-    const item = response.results[0];
-    if (!item || item.type === 'error') {
-      throw new Error(item?.error?.message || 'Turso rechazó una sentencia de la transacción.');
+  return withLock(async () => {
+    const db = getDatabase();
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const value = await callback({ execute: async statement => executeUnlocked(statement) });
+      db.exec('COMMIT');
+      return value;
+    } catch (error) {
+      try { db.exec('ROLLBACK'); } catch {}
+      throw error;
     }
-    return resultFromItem(item);
-  };
-
-  try {
-    const value = await callback({ execute });
-    if (!baton) throw new Error('Turso cerró el stream antes del COMMIT.');
-    response = await pipeline([
-      { type: 'execute', stmt: { sql: 'COMMIT', want_rows: false } },
-      { type: 'close' },
-    ], baton);
-    const commit = response.results[0];
-    if (!commit || commit.type === 'error') {
-      throw new Error(commit?.error?.message || 'Turso no pudo confirmar la transacción.');
-    }
-    baton = null;
-    return value;
-  } catch (error) {
-    if (baton) {
-      try {
-        await pipeline([
-          { type: 'execute', stmt: { sql: 'ROLLBACK', want_rows: false } },
-          { type: 'close' },
-        ], baton);
-      } catch {}
-    }
-    throw error;
-  }
+  });
 }
