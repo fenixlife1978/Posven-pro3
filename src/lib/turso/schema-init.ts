@@ -66,7 +66,10 @@ async function initialize() {
         { id:'DEMO-P-0007', codigo:'750100000007', nombre:'Galletas Dulces (DEMO)', categoria:'Galletas Dulces y Ponqués', departamento:'Panadería y Galletas', cantidad:'Unidad', marca:'Marca Ficticia', costoUSD:0.45, precioUSD:0.75, margen:40, stock:25, stockMinimo:5, fechaCreacion:now, activo:true, aplicaIVA:false },
         { id:'DEMO-P-0008', codigo:'750100000008', nombre:'Tomate por kg (DEMO)', categoria:'Verduras y Hortalizas', departamento:'Frutas y Verduras', cantidad:'Kilogramo', marca:'Huerto Ficticio', costoUSD:1.00, precioUSD:1.60, margen:37, stock:16, stockMinimo:3, fechaCreacion:now, activo:true, ventaPorPeso:true, aplicaIVA:false }
       ];
-      const statements: any[] = products.map(product => ({ sql:'INSERT INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)', args:[product.id, JSON.stringify(product)], wantRows:false }));
+      const statements: any[] = products.flatMap(product => [
+        { sql:'INSERT INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)', args:[product.id, JSON.stringify(product)], wantRows:false },
+        { sql:'INSERT INTO movimientos(id,data_json,fecha,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)', args:['DEMO-MOV-'+product.id, JSON.stringify({id:'DEMO-MOV-'+product.id,productoId:product.id,tipo:'inicial',cantidad:product.stock,stockAntes:0,stockDespues:product.stock,fecha:now,referencia:'Inventario inicial ficticio DEMO'}), now], wantRows:false }
+      ]);
       const customers = [
         { id:'DEMO-CLI-001', name:'Cliente Demostración Uno', cedula:'V-00000001', phone:'0000-000001', address:'Dirección ficticia', debt:0 },
         { id:'DEMO-CLI-002', name:'Cliente Demostración Dos', cedula:'V-00000002', phone:'0000-000002', address:'Dirección ficticia', debt:12.5 }
