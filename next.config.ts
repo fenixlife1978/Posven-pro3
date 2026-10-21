@@ -17,6 +17,10 @@ const nextConfig: NextConfig = {
     ],
   },
   compress: true,
+  env: {
+    NEXT_PUBLIC_POSVEN_DEMO_BUILD: process.env.POSVEN_DEMO_BUILD === '1' ? '1' : '0',
+    POSVEN_DEMO_BUILD: process.env.POSVEN_DEMO_BUILD === '1' ? '1' : '0',
+  },
 };
 
 export default nextConfig;
