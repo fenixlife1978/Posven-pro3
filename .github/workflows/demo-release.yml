@@ -1,4 +1,4 @@
-name: Build and publish POSVEN-PRO DEMO
+name: Build and publish POSVEN-PRO 2.6.1 installers
 
 on:
   push:
@@ -26,73 +26,101 @@ permissions:
   contents: write
 
 concurrency:
-  group: posven-pro-demo-release
+  group: posven-pro-2-6-1-release
   cancel-in-progress: false
 
 jobs:
-  demo-windows:
-    name: Build limited DEMO installer
+  windows-installers:
+    name: Build complete and DEMO installers
     runs-on: windows-latest
     steps:
-      - name: Checkout DEMO branch
+      - name: Checkout DEMO source
         uses: actions/checkout@v4
         with:
           ref: demo-limitada
+          fetch-depth: 0
+
+      - name: Checkout stable source for full installer
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: full-source
           fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: Build full installer from main without modifying main
+        shell: pwsh
+        run: |
+          Push-Location full-source
+          try {
+            node -e "const fs=require('fs');const p=require('./package.json');p.version='2.6.1';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw "npm ci falló para la versión completa ($LASTEXITCODE)" }
+            $env:TURSO_MIGRATION_BUILD = '1'
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw "Build Next.js completo falló ($LASTEXITCODE)" }
+            npx electron-builder --win --publish never
+            if ($LASTEXITCODE -ne 0) { throw "electron-builder completo falló ($LASTEXITCODE)" }
+            $full = Get-ChildItem -Path dist -Filter '*.exe' -File | Select-Object -First 1
+            if (-not $full) { throw 'No se generó el instalador completo .exe.' }
+            New-Item -ItemType Directory -Force -Path ../release-assets | Out-Null
+            Copy-Item $full.FullName '../release-assets/POSVEN-PRO-Setup-2.6.1.exe' -Force
+            Write-Host "Instalador completo: $((Get-Item '../release-assets/POSVEN-PRO-Setup-2.6.1.exe').Length) bytes"
+          } finally {
+            Pop-Location
+          }
 
       - name: Prepare isolated DEMO edition
         shell: pwsh
         run: |
-          node -e "const fs=require('fs');const p=require('./package.json');p.build.appId='com.posven.pro.demo';p.build.productName='PosVEN Pro DEMO';p.build.nsis.shortcutName='PosVEN Pro DEMO';p.build.nsis.uninstallDisplayName='PosVEN Pro DEMO';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          node -e "const fs=require('fs');const p=require('./package.json');p.version='2.6.1';p.build.appId='com.posven.pro.demo';p.build.productName='PosVEN Pro DEMO';p.build.nsis.shortcutName='PosVEN Pro DEMO';p.build.nsis.uninstallDisplayName='PosVEN Pro DEMO';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
           Set-Content -Path DEMO_BUILD -Value 'POSVEN-PRO DEMO - SOLO EVALUACION - DATOS FICTICIOS'
-          Write-Host 'Edición DEMO aislada preparada.'
 
-      - name: Install dependencies
+      - name: Install DEMO dependencies
         run: npm install
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      - name: Build Next.js server with DEMO limits
+      - name: Build Next.js with DEMO limits
         run: npm run build
         env:
           POSVEN_DESKTOP_BUILD: '1'
           POSVEN_DEMO_BUILD: '1'
           NEXT_PUBLIC_POSVEN_DEMO_BUILD: '1'
 
-      - name: Build Windows installer
+      - name: Build DEMO installer
         shell: pwsh
         run: |
           npx electron-builder --win --publish never
-          if ($LASTEXITCODE -ne 0) { throw "electron-builder falló con código $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "electron-builder DEMO falló ($LASTEXITCODE)" }
           $found = Get-ChildItem -Path dist -Filter '*.exe' -File | Select-Object -First 1
           if (-not $found) { throw 'No se generó el instalador DEMO .exe.' }
-          Copy-Item $found.FullName 'dist/POSVEN-PRO-DEMO-Setup.exe' -Force
-          Write-Host "Instalador DEMO generado: $((Get-Item 'dist/POSVEN-PRO-DEMO-Setup.exe').Length) bytes"
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Copy-Item $found.FullName 'release-assets/POSVEN-PRO-DEMO-Setup-2.6.1.exe' -Force
+          Write-Host "Instalador DEMO: $((Get-Item 'release-assets/POSVEN-PRO-DEMO-Setup-2.6.1.exe').Length) bytes"
 
-      - name: Upload build artifact
+      - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: POSVEN-PRO-DEMO
-          path: dist/POSVEN-PRO-DEMO-Setup.exe
+          name: POSVEN-PRO-2.6.1-Installers
+          path: release-assets/*.exe
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish to GitHub Release DEMO
+      - name: Publish both installers to GitHub Release v2.6.1
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh auth status
-          gh release view DEMO --repo fenixlife1978/Posven-pro3 *> $null
+          gh release view v2.6.1 --repo fenixlife1978/Posven-pro3 *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create DEMO --repo fenixlife1978/Posven-pro3 --target demo-limitada --title "DEMO" --notes "POSVEN-PRO DEMO para evaluación. Incluye datos ficticios y límite de 10 ventas, 10 compras y 10 nuevos ítems. Al agotarse un cupo, la edición queda bloqueada y muestra la invitación a adquirir la versión completa. Acceso inicial: usuario admin, contraseña admin123. Cambia las credenciales antes de cualquier uso comercial; esta DEMO es solo evaluación. No usar para operaciones reales."
-            if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el Release DEMO.' }
+            gh release create v2.6.1 --repo fenixlife1978/Posven-pro3 --target main --title "POSVEN-PRO 2.6.1" --notes "Versión 2.6.1. Incluye el instalador completo POSVEN-PRO y el instalador DEMO limitado. El DEMO utiliza datos ficticios y permite hasta 10 ventas, 10 compras y 10 nuevos ítems; al agotar cualquiera de los cupos bloquea la edición de evaluación. El instalador completo se construye desde main sin modificar la rama main."
+            if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el Release v2.6.1.' }
           }
-          gh release upload DEMO dist/POSVEN-PRO-DEMO-Setup.exe --repo fenixlife1978/Posven-pro3 --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'No se pudo adjuntar el instalador al Release DEMO.' }
+          gh release upload v2.6.1 release-assets/POSVEN-PRO-Setup-2.6.1.exe release-assets/POSVEN-PRO-DEMO-Setup-2.6.1.exe --repo fenixlife1978/Posven-pro3 --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudieron adjuntar ambos instaladores al Release v2.6.1.' }
