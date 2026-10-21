@@ -33,6 +33,8 @@ export interface Product {
   presentacionesVenta?: ProductPresentation[];
   /** Para artículos vendidos por peso: el stock/precio base se expresa en kg. */
   ventaPorPeso?: boolean;
+  /** Para artículos vendidos a granel por volumen: el stock/precio base se expresa en litros. */
+  ventaPorVolumen?: boolean;
   /** Permite registrar ventas libres cuyo importe se introduce directamente en bolívares. */
   permiteVentaLibreBS?: boolean;
   stock: number;
@@ -140,6 +142,8 @@ export interface SaleItem {
   presentacion?: string;
   factorPresentacion?: number;
   cantidadGramos?: number;
+  /** Cantidad en mililitros de una venta fraccionada por volumen. */
+  cantidadMililitros?: number;
   ventaLibreBS?: boolean;
 }
 
