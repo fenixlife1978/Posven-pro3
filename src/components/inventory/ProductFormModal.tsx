@@ -576,8 +576,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                   }));
                 }} /></div>
                 <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-brand-gold-deep">{datos.modoMarkup === 'sobre_costo' ? 'Markup sobre costo %' : 'Margen sobre venta %'}</Label><Input className="h-12 font-black text-lg text-brand-gold-deep bg-white" value={datos.margen} onChange={e => recalcularTridireccional('margen', e.target.value)} /></div>
-                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-status-success">Venta ($)</Label><Input className="h-12 font-black text-lg text-status-success bg-white" value={datos.precioUSD} onChange={e => recalcularTridireccional('precioUSD', e.target.value)} /></div>
-                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink">Venta (BS)</Label><Input className="h-12 font-black text-lg bg-white" value={datos.precioBS} onChange={e => recalcularTridireccional('precioBS', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-status-success">Venta ({datos.ventaPorPeso ? "$/kg" : datos.ventaPorVolumen ? "$/L" : "$"})</Label><Input className="h-12 font-black text-lg text-status-success bg-white" value={datos.precioUSD} onChange={e => recalcularTridireccional('precioUSD', e.target.value)} /></div>
+                <div className="space-y-1"><Label className="text-[9px] font-black uppercase text-ink">Venta ({datos.ventaPorPeso ? "Bs/kg" : datos.ventaPorVolumen ? "Bs/L" : "Bs"})</Label><Input className="h-12 font-black text-lg bg-white" value={datos.precioBS} onChange={e => recalcularTridireccional('precioBS', e.target.value)} /></div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
