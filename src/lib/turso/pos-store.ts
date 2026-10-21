@@ -322,6 +322,58 @@ function terminalSeries(prefix: string, label: string, number: number, width = 6
   return prefix + '-' + label + '-' + String(number).padStart(width, '0');
 }
 
+export async function ensureDemoSeedData() {
+  if (process.env.POSVEN_DEMO_MODE !== '1') return;
+  const seeded = await tursoExecute({ sql: 'SELECT id FROM demo_seed_state WHERE id=? LIMIT 1', args: ['v2.6.1'] });
+  if (seeded.rows.length) return;
+
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+  const products = [
+    { id: 'DEMO-PROD-001', codigo: 'DEMO-001', nombre: 'Arroz Premium 1 kg', categoria: 'Granos y Legumbres', departamento: 'Víveres y Abarrotes', cantidad: '24', marca: 'Marca Demo', costoUSD: 1.1, precioUSD: 1.5, margen: 26.7, stock: 24, stockMinimo: 5, fechaCreacion: now, activo: true, aplicaIVA: false, unit: 'unidad' },
+    { id: 'DEMO-PROD-002', codigo: 'DEMO-002', nombre: 'Aceite vegetal 900 ml', categoria: 'Aceites y Grasas', departamento: 'Víveres y Abarrotes', cantidad: '18', marca: 'Marca Demo', costoUSD: 2.2, precioUSD: 2.9, margen: 24.1, stock: 18, stockMinimo: 4, fechaCreacion: now, activo: true, aplicaIVA: true, unit: 'unidad' },
+    { id: 'DEMO-PROD-003', codigo: 'DEMO-003', nombre: 'Leche UHT 1 litro', categoria: 'Leche Líquida y Derivados', departamento: 'Lácteos y Refrigerados', cantidad: '30', marca: 'Marca Demo', costoUSD: 1.4, precioUSD: 1.85, margen: 24.3, stock: 30, stockMinimo: 6, fechaCreacion: now, activo: true, aplicaIVA: true, unit: 'unidad' },
+    { id: 'DEMO-PROD-004', codigo: 'DEMO-004', nombre: 'Azúcar refinada 1 kg', categoria: 'Azúcar y Endulzantes', departamento: 'Condimentos y Especias', cantidad: '3', marca: 'Marca Demo', costoUSD: 0.95, precioUSD: 1.3, margen: 26.9, stock: 3, stockMinimo: 5, fechaCreacion: now, activo: true, aplicaIVA: false, unit: 'unidad' },
+    { id: 'DEMO-PROD-005', codigo: 'DEMO-005', nombre: 'Agua mineral 1.5 litros', categoria: 'Bebidas No Alcohólicas', departamento: 'Bebidas', cantidad: '40', marca: 'Marca Demo', costoUSD: 0.55, precioUSD: 0.9, margen: 38.9, stock: 40, stockMinimo: 8, fechaCreacion: now, activo: true, aplicaIVA: true, unit: 'unidad' },
+  ];
+  const customers = [
+    { id: 'DEMO-CLIENT-001', name: 'Cliente de Demostración Uno', cedula: 'V-00000001', phone: '0000-000001', address: 'Dirección ficticia de demostración', debt: 12.5 },
+    { id: 'DEMO-CLIENT-002', name: 'Cliente de Demostración Dos', cedula: 'V-00000002', phone: '0000-000002', address: 'Dirección ficticia de demostración', debt: 0 },
+  ];
+  const supplier = { id: 'DEMO-SUP-001', nombre: 'Proveedor Ficticio Demo', rif: 'J-00000000-0', contacto: 'Contacto de demostración', direccion: 'Dirección ficticia', telefono: '0000-000000' };
+  const terminal = { id: 'DEMO-CAJA-01', nombre: 'Caja Demo 01', usuarioId: null, activo: true, proximoRecibo: 3, prefijoCaja: 'D1', isCashOpen: false, cashData: null, cashHistory: [], fondoCajaHoyUSD: 0, fondoCajaHoyBS: 0, ultimoZ: 0, fechaUltimoZ: '', acumuladoHistorico: 0, proximaDevolucion: 1, proximaAnulacion: 1, proximoCobroDeuda: 1, proximoPagoProveedor: 1 };
+  const sales = [
+    { id: 'DEMO-VENTA-001', fecha: today + 'T09:15:00.000Z', cliente: 'Cliente Mostrador', items: [{ productoId: products[0].id, nombre: products[0].nombre, cantidad: 2, precioUnitUSD: 1.5, subtotalUSD: 3 }], subtotalUSD: 3, descuentoUSD: 0, totalUSD: 3, totalBS: 0, metodoPago: 'efectivo', estado: 'completada', type: 'contado', terminalId: terminal.id, terminalName: terminal.nombre, tasa: 1 },
+    { id: 'DEMO-VENTA-002', fecha: today + 'T10:25:00.000Z', cliente: customers[0].name, items: [{ productoId: products[1].id, nombre: products[1].nombre, cantidad: 1, precioUnitUSD: 2.9, subtotalUSD: 2.9 }], subtotalUSD: 2.9, descuentoUSD: 0, totalUSD: 2.9, totalBS: 0, metodoPago: 'credito', estado: 'pendiente', type: 'credito', terminalId: terminal.id, terminalName: terminal.nombre, tasa: 1 },
+  ];
+  const debts = [
+    { id: 'DEMO-CXC-001', fecha: today, fechaVencimiento: today, cliente: customers[0].name, clienteId: customers[0].id, numeroFactura: 'D1-FAC-000002', montoUSD: 12.5, abonadoUSD: 0, saldoUSD: 12.5, estado: 'pendiente', historialPagos: [], ventaId: sales[1].id, items: sales[1].items, concepto: 'Saldo ficticio de demostración', terminalId: terminal.id },
+  ];
+  const supplierDebt = { id: 'DEMO-CXP-001', fecha: today, fechaVencimiento: today, proveedor: supplier.nombre, proveedorId: supplier.id, numeroFactura: 'DEMO-COMP-001', montoUSD: 45, abonadoUSD: 15, saldoUSD: 30, estado: 'parcial', historialPagos: [], concepto: 'Cuenta ficticia de demostración', terminalId: terminal.id };
+  const purchase = { id: 'DEMO-COMPRA-001', fecha: today, fechaHora: now, proveedor: supplier.nombre, numeroFactura: 'DEMO-COMP-001', condicion: 'credito', montoUSD: 45, pagadoUSD: 15, saldoUSD: 30, items: [{ productoId: products[2].id, nombre: products[2].nombre, cantidad: 20, costoUnitarioUSD: 1.4, subtotalUSD: 28 }], terminalId: terminal.id };
+
+  await tursoInteractiveTransaction(async tx => {
+    const already = await tx.execute({ sql: 'SELECT id FROM demo_seed_state WHERE id=? LIMIT 1', args: ['v2.6.1'] });
+    if (already.rows.length) return;
+    const put = async (tableName: string, record: any, hasDate = true) => {
+      const sql = hasDate
+        ? 'INSERT OR IGNORE INTO ' + tableName + '(id,data_json,fecha) VALUES(?,?,?)'
+        : 'INSERT OR IGNORE INTO ' + tableName + '(id,data_json) VALUES(?,?)';
+      const args = hasDate ? [record.id, JSON.stringify(record), record.fecha || today] : [record.id, JSON.stringify(record)];
+      await tx.execute({ sql, args, wantRows: false });
+    };
+    for (const item of products) await put('productos', item, false);
+    for (const item of customers) await put('clientes', item);
+    await put('proveedores', supplier);
+    await put('terminales', terminal);
+    for (const item of sales) await put('ventas', item);
+    for (const item of debts) await put('cxc', item);
+    await put('cxp', supplierDebt);
+    await put('compras', purchase);
+    await tx.execute({ sql: 'INSERT OR IGNORE INTO demo_seed_state(id) VALUES(?)', args: ['v2.6.1'], wantRows: false });
+  });
+}
+
 export async function consumeDemoAction(moduleName: string) {
   if (process.env.POSVEN_DEMO_MODE !== '1') return { module: moduleName, actions: 0, limited: false };
   const module = String(moduleName || 'general').slice(0, 80);
