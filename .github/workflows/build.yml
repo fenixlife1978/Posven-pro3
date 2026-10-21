@@ -1,4 +1,4 @@
-name: Build Windows EXE (Turso only)
+name: Build Windows EXE (Local SQLite only)
 
 on:
   push:
@@ -34,22 +34,22 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      - name: Build Next.js for Turso API runtime
+      - name: Build Next.js desktop server for local SQLite
         run: npm run build
         env:
-          TURSO_MIGRATION_BUILD: '1'
+          POSVEN_DESKTOP_BUILD: '1'
 
       - name: Verify Next.js server build
         shell: pwsh
         run: |
           if (-not (Test-Path '.next/BUILD_ID')) {
-            throw 'No se generó .next/BUILD_ID; el build de Next.js no está listo para ejecutar las API de Turso.'
+            throw 'No se generó .next/BUILD_ID; el build de Next.js no está listo para ejecutar las API locales de SQLite.'
           }
-          Write-Host 'Build de Next.js verificado para Windows/Turso.'
+          Write-Host 'Build de Next.js verificado para Windows/SQLite local.'
 
       - name: Build Windows installer
         shell: pwsh
