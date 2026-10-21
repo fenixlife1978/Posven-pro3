@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const http = require('http');
-const dotenv = require('dotenv');
 const path = require('path');
+const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const { PosPrinter } = require('electron-pos-printer');
 
@@ -138,14 +138,15 @@ function createWindow(serverPort) {
 }
 
 async function startLocalNextServer() {
-  // La configuración se guarda fuera del instalador para no incrustar secretos.
-  const envPath = path.join(app.getPath('userData'), '.env');
-  dotenv.config({ path: envPath });
-  process.env.TURSO_MIGRATION_BUILD = '1';
-
-  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-    console.warn('Faltan credenciales Turso en ' + envPath);
-  }
+  // La base SQLite es exclusiva de este equipo y vive fuera del directorio
+  // de instalación para conservar los datos al actualizar o reinstalar la app.
+  const userDataPath = app.getPath('userData');
+  fs.mkdirSync(userDataPath, { recursive: true });
+  process.env.POSVEN_SQLITE_PATH = path.join(userDataPath, 'posven-pro3.sqlite');
+  process.env.POSVEN_DESKTOP_BUILD = '1';
+  delete process.env.TURSO_DATABASE_URL;
+  delete process.env.TURSO_AUTH_TOKEN;
+  delete process.env.TURSO_API_TOKEN;
 
   const next = require('next');
   nextApplication = next({ dev: false, dir: app.getAppPath() });
