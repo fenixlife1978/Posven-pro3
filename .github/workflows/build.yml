@@ -49,7 +49,6 @@ jobs:
         run: npm run build
         env:
           POSVEN_DESKTOP_BUILD: '1'
-          POSVEN_DEMO_MODE: '0'
 
       - name: Verify Next.js server build
         shell: pwsh
