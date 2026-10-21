@@ -975,21 +975,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setPagos([]);
   };
 
-  const agregarVentaLibreBS = () => {
-    const raw = prompt("Ingrese el importe de la venta libre en bolívares (Bs):", "");
-    if (raw === null) return;
-    const montoBS = Number(raw.replace(',', '.'));
-    if (!Number.isFinite(montoBS) || montoBS <= 0 || !state.tasa) {
-      toast({ variant: "destructive", title: "Importe inválido", description: "Introduzca un monto en Bs mayor que cero." });
-      return;
-    }
-    const montoUSD = montoBS / state.tasa;
-    const id = `VENTA-LIBRE-${Date.now()}`;
-    updateState({ carrito: [...state.carrito, { productoId: id, nombre: `VENTA LIBRE — Bs ${montoBS.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cantidad: 1, precioUnitUSD: montoUSD, subtotalUSD: montoUSD, ventaLibreBS: true }] });
-    setPagos([]);
-    toast({ title: "Venta libre agregada", description: `Bs ${montoBS.toFixed(2)} · ${Utils.fmtUSD(montoUSD)}` });
-  };
-
   const handlePriceChange = (index: number, newPrice: number) => {
     const nuevo = [...state.carrito];
     nuevo[index].precioUnitUSD = newPrice;
@@ -1384,7 +1369,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   ))}
                 </div>
               )}
-            <button type="button" onClick={agregarVentaLibreBS} className="h-10 px-3 rounded-lg bg-brand-gold text-ink text-[10px] font-black uppercase shrink-0 hover:bg-brand-gold-deep">Venta libre Bs</button>
             </div>
 
             <div className="flex items-center gap-2 bg-white px-4 py-1.5 rounded-full border border-brand-gold/30 shadow-sm shrink-0">
