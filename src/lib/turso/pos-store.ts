@@ -322,6 +322,27 @@ function terminalSeries(prefix: string, label: string, number: number, width = 6
   return prefix + '-' + label + '-' + String(number).padStart(width, '0');
 }
 
+export async function consumeDemoAction(moduleName: string) {
+  if (process.env.POSVEN_DEMO_MODE !== '1') return { module: moduleName, actions: 0, limited: false };
+  const module = String(moduleName || 'general').slice(0, 80);
+  return tursoInteractiveTransaction(async tx => {
+    const current = await tx.execute({
+      sql: 'SELECT actions FROM demo_action_counts WHERE module=? LIMIT 1',
+      args: [module],
+    });
+    const count = Number(current.rows[0]?.actions || 0);
+    if (count >= 10) {
+      throw new Error('DEMO_LIMIT: Se agotaron las 10 acciones de demostración del módulo ' + module + '. Adquiere la versión completa para continuar.');
+    }
+    await tx.execute({
+      sql: 'INSERT INTO demo_action_counts(module,actions,updated_at) VALUES(?,1,CURRENT_TIMESTAMP) ON CONFLICT(module) DO UPDATE SET actions=actions+1,updated_at=CURRENT_TIMESTAMP',
+      args: [module],
+      wantRows: false,
+    });
+    return { module, actions: count + 1, limited: false };
+  });
+}
+
 export async function getRecord(table: TursoStoreTable, id: string): Promise<any | null> {
   assertTursoReady();
   const result = await tursoExecute(txSelect(table, id));
