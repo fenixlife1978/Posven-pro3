@@ -499,7 +499,7 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                        </div>
                      </div>
                      <select className="form-select h-10 text-xs font-bold bg-white" value={datos.cantidad} onChange={e => { const cantidad=e.target.value; setDatos((prev:any)=>({...prev,cantidad,presentacionesVenta:(prev.presentacionesVenta||[]).map((pres:any)=>{const factor=presentationFactorFromContent(pres.contenido,pres.unidadContenido,cantidad);return factor!==null?{...pres,factor}:pres;})})); }}>
-                       {(state.presentaciones || []).map((p: string) => <option key={p} value={p}>{p}</option>)}
+                       {Array.from(new Set([...(state.presentaciones || []), ...(datos.ventaPorPeso ? ['Kilogramo'] : []), ...(datos.ventaPorVolumen ? ['Litro'] : [])])).map((p: string) => <option key={p} value={p}>{p}</option>)}
                      </select>
                      <p className="mt-1 text-[10px] text-ink/50">Para venta fraccionada, usa kg como unidad base de peso o litros como unidad base de volumen.</p>
                    </div>
