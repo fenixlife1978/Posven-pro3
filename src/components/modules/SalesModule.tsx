@@ -971,6 +971,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     item.cantidadGramos = gramos;
     item.cantidad = kg;
     item.subtotalUSD = kg * item.precioUnitUSD;
+    item.nombre = `${p.nombre} (${gramos} g)`;
     updateState({ carrito: nuevo });
     setPagos([]);
   };
