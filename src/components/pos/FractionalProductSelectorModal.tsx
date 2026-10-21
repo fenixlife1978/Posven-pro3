@@ -77,7 +77,8 @@ export default function FractionalProductSelectorModal({ product, rate, stock, o
     onConfirm({
       ...(selectedPresentation && (mode === "presentation" || mode === "unit") ? { presentacion: selectedPresentation.nombre, factorPresentacion: factor } : {}),
       nombre: displayName, cantidad: Number(baseQty.toFixed(6)), precioUnitUSD: unitPrice, subtotalUSD: total,
-      ...(mode === "grams" ? { cantidadGramos: Math.round(g) } : {}),\n      ...(mode === "ml" ? { cantidadMililitros: Math.round(m) } : {}),
+      ...(mode === "grams" ? { cantidadGramos: Math.round(g) } : {}),
+      ...(mode === "ml" ? { cantidadMililitros: Math.round(m) } : {}),
       ...(mode === "budget" ? { ventaLibreBS: true } : {}),
     });
   };
