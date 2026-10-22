@@ -558,14 +558,6 @@ async function applyInventoryMovementsTransaction(params: {
   const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
 
-  if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
-    if (!['AJUSTE-INVENTARIO', 'AJUSTE-INVENTARIO-POS'].includes(operationType)) {
-      throw new Error('Esta operación requiere conexión para proteger la consistencia de ventas/devoluciones.');
-    }
-    enqueueOfflineOperation('INVENTARIO', { operationId, operationType, movements, productPatches, fromOfflineQueue: true }, operationId);
-    return { queuedOffline: true, operationId, movements, products: [] };
-  }
-
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
   let result: any = null;
   await runTransaction(db, async tx => {
@@ -1400,10 +1392,6 @@ export const Store = {
    */
   async processReturnOrCancellationTransaction(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; saleId: string; operationDoc: any; movements: any[]; journal?: any; refundItems?: any[]; fullCancellation?: boolean; fromOfflineQueue?: boolean; }): Promise<any> {
     const { operationId, operationType, saleId, operationDoc, movements, journal, refundItems = [], fullCancellation = false } = params;
-    if (!params.fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
-      enqueueOfflineOperation(operationType, { ...params }, operationId);
-      return { queuedOffline: true, operationId };
-    }
     const tursoResult = await tryTursoOperation('returnOrCancellation', params);
     if (tursoResult) return tursoResult;
 
@@ -1910,15 +1898,6 @@ export const Store = {
     // Store aunque la transacción y el endpoint de Turso sí existen.
     if (typeof window === 'undefined') {
       throw new Error('Las ventas solo pueden registrarse desde el cliente mediante Turso.');
-    }
-
-    // Si no hay conexión, persistimos la intención completa en la cola local
-    // antes de devolver el control al POS. No se presenta como venta confirmada:
-    // Turso validará stock, correlativo y efectos contables al sincronizar.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false && !params.fromOfflineQueue) {
-      const operationId = String(params.operationId || ('VENTA-POS-' + Store.uid()));
-      enqueueOfflineOperation('VENTA', { ...params, operationId, fromOfflineQueue: true }, operationId);
-      return { queuedOffline: true, operationId };
     }
 
     const result = await tryTursoOperation('sale', params);
@@ -2470,9 +2449,6 @@ export const Store = {
       } else if (k === 'terminales') {
         // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete.
         // Si Turso está activo, no existe una vía genérica que pueda terminar en servidor Turso.
-        if (navigator.onLine === false) {
-          throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
-        }
       } else if (['clientes', 'proveedores', 'movimientos', 'libroDiario'].includes(String(k))) {
         const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
         const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
