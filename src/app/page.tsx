@@ -70,10 +70,16 @@ function installPosvenTabSessionFetch() {
       init?.headers ??
       (input && typeof input === 'object' && 'headers' in input ? (input as Request).headers : undefined);
     const headers = new Headers(sourceHeaders);
-    headers.set('x-posven-session-mode', 'tab');
     const sessionId = sessionStorage.getItem(POSVEN_TAB_SESSION_KEY);
-    if (sessionId) headers.set('x-posven-session', sessionId);
-    else headers.delete('x-posven-session');
+    if (sessionId) {
+      headers.set('x-posven-session-mode', 'tab');
+      headers.set('x-posven-session', sessionId);
+    } else {
+      // Al reiniciar Electron, sessionStorage se vacía; permite recuperar
+      // la sesión persistente mediante la cookie local de la aplicación.
+      headers.delete('x-posven-session-mode');
+      headers.delete('x-posven-session');
+    }
 
     return nativeFetch(input, { ...init, headers });
   };
