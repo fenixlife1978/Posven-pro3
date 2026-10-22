@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createUser, getSessionUser, listUsers } from '@/lib/auth/turso-auth';
+import { reserveDemoAction } from '@/lib/demo-limits';
 
 export const runtime = 'nodejs';
 
@@ -21,6 +22,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    if (process.env.POSVEN_DEMO_BUILD === '1' && !(await reserveDemoAction('Usuarios'))) {
+      return NextResponse.json({ error: 'La DEMO agotó el máximo de 10 acciones del módulo «Usuarios». Adquiere la versión completa para continuar.', demoLimitReached: true, limit: 10 }, { status: 429 });
+    }
     const created = await createUser({
       username: String(body?.username || body?.email || '').trim(),
       email: body?.email ? String(body.email) : undefined,
