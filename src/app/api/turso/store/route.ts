@@ -1,6 +1,6 @@
 import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
 import { NextResponse } from 'next/server';
-import { tursoTransaction } from '@/lib/turso/client';
+import { reserveDemoAction } from '@/lib/demo-limits';
 import {
   assertTursoReady,
   getRecord,
@@ -74,14 +74,6 @@ function resolveDemoModule(operation: string, body: any): string | undefined {
     return modules[table] || 'Maestros';
   }
   return DEMO_MODULE_BY_OPERATION[operation];
-}
-
-async function reserveDemoAction(moduleName: string): Promise<boolean> {
-  const results = await tursoTransaction([
-    { sql: 'INSERT OR IGNORE INTO demo_action_counts(module, actions) VALUES(?, 0)', args: [moduleName], wantRows: false },
-    { sql: 'UPDATE demo_action_counts SET actions = actions + 1 WHERE module = ? AND actions < 10', args: [moduleName], wantRows: false },
-  ]);
-  return Number(results[1]?.affected_row_count || 0) === 1;
 }
 
 const TABLES = new Set([
