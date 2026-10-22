@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteUser, getSessionUser, setUserBlocked } from '@/lib/auth/turso-auth';
 import { tursoExecute } from '@/lib/turso/client';
+import { reserveDemoAction } from '@/lib/demo-limits';
 
 export const runtime = 'nodejs';
 
@@ -14,6 +15,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const user = await admin(request);
   if (!user) return NextResponse.json({ error: 'Acceso administrativo requerido.' }, { status: 403 });
 
+  if (process.env.POSVEN_DEMO_BUILD === '1' && !(await reserveDemoAction('Usuarios'))) {
+    return NextResponse.json({ error: 'La DEMO agotó el máximo de 10 acciones del módulo «Usuarios». Adquiere la versión completa para continuar.', demoLimitReached: true, limit: 10 }, { status: 429 });
+  }
   const { id } = await context.params;
   const body = await request.json().catch(() => ({}));
   const target = await tursoExecute({
@@ -53,6 +57,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await admin(request);
   if (!user) return NextResponse.json({ error: 'Acceso administrativo requerido.' }, { status: 403 });
+  if (process.env.POSVEN_DEMO_BUILD === '1' && !(await reserveDemoAction('Usuarios'))) {
+    return NextResponse.json({ error: 'La DEMO agotó el máximo de 10 acciones del módulo «Usuarios». Adquiere la versión completa para continuar.', demoLimitReached: true, limit: 10 }, { status: 429 });
+  }
   try {
     const { id } = await context.params;
     await deleteUser(id);
