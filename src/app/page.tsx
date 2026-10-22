@@ -756,10 +756,10 @@ export default function LicoreriaPOS() {
                 {mounted && isOnline ? <Wifi className="w-4 h-4 text-status-success" /> : <WifiOff className="w-4 h-4 text-status-danger" />}
               </div>
               <div className="flex flex-col">
-                <span className="text-[0.65rem] font-black uppercase text-ink opacity-50 leading-none mb-0.5">Cloud Sync</span>
+                <span className="text-[0.65rem] font-black uppercase text-ink opacity-50 leading-none mb-0.5">Internet</span>
                 <div className="flex items-center gap-1.5 leading-none">
                   <div className={`w-1.5 h-1.5 rounded-full ${mounted ? (isOnline ? 'bg-status-success animate-pulse' : 'bg-status-danger') : 'bg-ink/20'}`} />
-                  <span className={`text-[0.74rem] font-black uppercase ${mounted ? (isOnline ? 'text-status-success' : 'text-status-danger') : 'text-ink/20'}`}>{mounted ? (isOnline ? 'En Línea' : 'Modo Offline') : 'Iniciando...'}</span>
+                  <span className={`text-[0.74rem] font-black uppercase ${mounted ? (isOnline ? 'text-status-success' : 'text-status-danger') : 'text-ink/20'}`}>{mounted ? (isOnline ? 'En Línea' : 'SQLite local') : 'Iniciando...'}</span>
                 </div>
               </div>
             </div>
