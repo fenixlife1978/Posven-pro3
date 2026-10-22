@@ -70,7 +70,8 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // ============================================================
 async function tryTursoOperation(operation: string, payload: any): Promise<any | null> {
   if (typeof window === 'undefined') return null;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('El dispositivo está sin conexión. La operación no se enviará a servidor Turso para evitar duplicados.');
+  // En la app Electron, /api/* apunta al servidor Next local en 127.0.0.1.
+  // navigator.onLine describe Internet, no el loopback local; no debe bloquear SQLite.
   let response: Response;
   try {
     response = await fetch('/api/turso/store', {
@@ -78,12 +79,12 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
       body: JSON.stringify({ operation, ...payload }),
     });
   } catch {
-    throw new Error('No se pudo contactar con Turso. La operación no fue enviada a servidor Turso para evitar duplicados.');
+    throw new Error('No se pudo contactar con el servidor local de POSVEN-PRO3. La operación no fue registrada.');
   }
-  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('La base SQLite local no está inicializada o no está disponible.');
   let body: any = null;
   try { body = await response.json(); } catch {}
-  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('Turso rechazó la operación (' + response.status + ').')));
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('SQLite local rechazó la operación (' + response.status + ').')));
   return body;
 }
 
@@ -93,10 +94,10 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   if (kind === 'catalog') params.set('name', name);
   let response: Response;
   try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
-  catch { throw new Error('No se pudo consultar Turso.'); }
+  catch { throw new Error('No se pudo consultar la base SQLite local.'); }
   if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
-  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
 async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
@@ -114,7 +115,7 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
       cache: 'no-store',
     });
   } catch {
-    throw new Error('No se pudo consultar Turso. No se usará servidor Turso como respaldo porque Turso está activo.');
+    throw new Error('No se pudo consultar la base SQLite local.');
   }
   if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null;
