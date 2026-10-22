@@ -1,11 +1,9 @@
-name: Build Windows EXE (Turso only)
+name: Build Windows EXE artifacts (no GitHub Release)
 
 on:
   push:
     branches:
       - '**'
-    tags:
-      - 'v*'
   pull_request:
     branches:
       - main
@@ -17,12 +15,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build-windows:
     name: Build Windows installer
     runs-on: windows-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,17 +50,12 @@ jobs:
           }
           Write-Host 'Build de Next.js verificado para Windows/Turso.'
 
-      - name: Build Windows installer
+      - name: Build Windows installer without publishing a Release
         shell: pwsh
         run: |
-          $publish = 'never'
-          $isRelease = ($env:GITHUB_REF -like 'refs/tags/v*') -or ($env:GITHUB_REF -eq 'refs/heads/main') -or ($env:GITHUB_REF -eq 'refs/heads/master')
-          if ($isRelease -and $env:GITHUB_EVENT_NAME -ne 'pull_request') { $publish = 'always' }
-          Write-Host "electron-builder --win --publish $publish"
-          npx electron-builder --win --publish $publish
+          npx electron-builder --win --publish never
           if ($LASTEXITCODE -ne 0) { throw "electron-builder falló con código $LASTEXITCODE" }
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Verify installer
@@ -71,7 +65,7 @@ jobs:
           if (-not $found -or $found.Count -eq 0) { throw 'No se generó ningún instalador .exe.' }
           $found | ForEach-Object { Write-Host "Instalador: $($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
 
-      - name: Upload Windows installer
+      - name: Upload Windows installer as a downloadable Actions artifact
         uses: actions/upload-artifact@v4
         with:
           name: PosVEN-Pro3-Windows-Installer
