@@ -1,5 +1,6 @@
 import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
 import { NextResponse } from 'next/server';
+import { tursoTransaction } from '@/lib/turso/client';
 import {
   assertTursoReady,
   getRecord,
@@ -37,6 +38,28 @@ import {
 } from '@/lib/turso/pos-store';
 
 export const runtime = 'nodejs';
+
+const DEMO_MODULE_BY_OPERATION: Record<string, string> = {
+  sale: 'Ventas', debtPayment: 'Cuentas por cobrar', customerDebt: 'Cuentas por cobrar',
+  globalCustomerPayment: 'Cuentas por cobrar', reverseDebtPayment: 'Cuentas por cobrar',
+  deleteCustomerDebt: 'Cuentas por cobrar', deleteCustomerAndDebts: 'Clientes',
+  supplierDebt: 'Cuentas por pagar', globalProviderPayment: 'Cuentas por pagar',
+  inventory: 'Inventario', inventoryStockSync: 'Inventario', productSync: 'Inventario',
+  createPurchase: 'Compras', deletePurchase: 'Compras',
+  terminalPatch: 'Cajas', terminalUpsert: 'Cajas', terminalDelete: 'Cajas',
+  cashMovement: 'Caja', factoryReset: 'Configuración',
+  configPatch: 'Configuración', catalogPatch: 'Catálogos', recordsSync: 'Maestros',
+  upsert: 'Maestros', returnOrCancellation: 'Devoluciones',
+  repairReturnInventoryAndCxc: 'Devoluciones',
+};
+
+async function reserveDemoAction(moduleName: string): Promise<boolean> {
+  const results = await tursoTransaction([
+    { sql: 'INSERT OR IGNORE INTO demo_action_counts(module, actions) VALUES(?, 0)', args: [moduleName], wantRows: false },
+    { sql: 'UPDATE demo_action_counts SET actions = actions + 1 WHERE module = ? AND actions < 10', args: [moduleName], wantRows: false },
+  ]);
+  return Number(results[1]?.affected_row_count || 0) === 1;
+}
 
 const TABLES = new Set([
   'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
@@ -87,8 +110,21 @@ export async function POST(request: Request) {
     assertTursoReady();
     const user = await requireUser(request);
     const body = await request.json();
+    const operation = String(body?.operation || '');
+    if (process.env.POSVEN_DEMO_BUILD === '1') {
+      const moduleName = DEMO_MODULE_BY_OPERATION[operation];
+      if (moduleName && !(await reserveDemoAction(moduleName))) {
+        return NextResponse.json({
+          ok: false,
+          error: `La DEMO agotó el máximo de 10 acciones del módulo «${moduleName}». Adquiere la versión completa para continuar.`,
+          demoLimitReached: true,
+          module: moduleName,
+          limit: 10,
+        }, { status: 429 });
+      }
+    }
 
-    switch (String(body?.operation || '')) {
+    switch (operation) {
       case 'configPatch': {
         // La tasa BCV es una configuración operativa que los cajeros están
         // autorizados a actualizar permanentemente. Los demás parámetros de
