@@ -134,7 +134,7 @@ export async function ensureSeedAdmin() {
 
   // The seed account is only reset when no active administrator exists.
   // This repairs stale/incompatible hashes after a reset or failed first setup.
-  const seedPassword = process.env.POSVEN_SEED_ADMIN_PASSWORD || 'admin123';
+  const seedPassword = process.env.POSVEN_SEED_ADMIN_PASSWORD || 'Admin123!';
   const existingSeed = await tursoExecute({
     sql: `SELECT id FROM users WHERE lower(username)='admin' LIMIT 1`,
   });
