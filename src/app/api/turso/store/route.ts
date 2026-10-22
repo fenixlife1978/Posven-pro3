@@ -157,7 +157,7 @@ export async function GET(request: Request) {
     let records = await listRecords(t, {
       limit: Number(url.searchParams.get('limit') || 500),
       offset: Number(url.searchParams.get('offset') || 0),
-      terminalId: scopedTerminalId,
+      terminalId: user.rol === 'cajero' && t === 'terminales' ? undefined : scopedTerminalId,
       estado: url.searchParams.get('estado') || undefined,
     });
     if (user.rol === 'cajero' && t === 'terminales') records = records.filter((item: any) => String(item.id) === cashierTerminalId);
