@@ -39,23 +39,25 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("Inicializando Base de Datos Turso...");
+  const [isDemoBuild, setIsDemoBuild] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("Inicializando SQLite local...");
 
   useEffect(() => {
     installLoginTabSessionFetch();
+    fetch("/api/app-mode", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(mode => setIsDemoBuild(mode?.demo === true)).catch(() => setIsDemoBuild(false));
     let cancelled = false;
     const checkTursoSession = async () => {
-      setStatusMessage("Inicializando Base de Datos Turso...");
+      setStatusMessage("Inicializando SQLite local...");
       try {
         const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
         if (response.ok) {
-          setStatusMessage("Sesión Turso encontrada. Ingresando...");
+          setStatusMessage("Sesión local encontrada. Ingresando...");
           router.push("/");
           return;
         }
-        if (!cancelled) setStatusMessage(response.status === 503 ? "Turso no está disponible." : "Turso respondió, pero no hay sesión activa.");
+        if (!cancelled) setStatusMessage(response.status === 503 ? "SQLite local no está disponible." : "SQLite local respondió, pero no hay sesión activa.");
       } catch {
-        if (!cancelled) setStatusMessage("No fue posible conectar con Turso.");
+        if (!cancelled) setStatusMessage("No fue posible conectar con el servicio local.");
       } finally {
         if (!cancelled) setAuthChecked(true);
       }
@@ -71,7 +73,7 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    setStatusMessage("Conectando con Base de Datos Turso...");
+    setStatusMessage("Conectando con SQLite local...");
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -82,7 +84,7 @@ export default function LoginPage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || ("Error de autenticación (" + response.status + ")."));
-      setStatusMessage("Turso autenticó correctamente. Ingresando...");
+      setStatusMessage("SQLite local autenticó correctamente. Ingresando...");
       if (data?.sessionId) sessionStorage.setItem(POSVEN_TAB_SESSION_KEY, String(data.sessionId));
       toast({ title: "Acceso autorizado", description: "Bienvenido, " + (data.user?.nombre || email) + "." });
       router.push("/");
@@ -96,6 +98,7 @@ export default function LoginPage() {
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-surface-warm flex items-center justify-center">
+        {isDemoBuild && <div role="status" className="fixed top-0 inset-x-0 z-50 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center text-xs sm:text-sm font-black">POSVEN-PRO3 · VERSIÓN DEMO — Máximo 10 acciones por módulo. Adquiere la versión completa.</div>}
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-brand-gold border-t-transparent rounded-full animate-spin" />
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-ink/40 text-center px-6">{statusMessage}</p>
@@ -106,6 +109,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#D4C5A6] via-[#C8B99A] to-[#B8A98A] flex items-center justify-center p-6">
+      {isDemoBuild && <div role="status" className="fixed top-0 inset-x-0 z-50 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center text-xs sm:text-sm font-black">POSVEN-PRO3 · VERSIÓN DEMO — Máximo 10 acciones por módulo. Adquiere la versión completa.</div>}
       <div className="w-full max-w-[440px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.25)] p-10 animate-in fade-in zoom-in duration-500">
         <div className="mb-10 flex flex-col items-center">
           <div className="flex items-center gap-3 mb-3">
