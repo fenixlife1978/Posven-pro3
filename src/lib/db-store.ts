@@ -1,7 +1,7 @@
 'use client';
 
 import { AppState, Terminal, Movimiento } from './types';
-import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
+import { registerOfflineProcessor } from './offline-queue';
 // Turso es la única base de datos operativa. Estos nombres se conservan únicamente
 // para que los caminos legacy de sincronización no vuelvan a escribir en servidor Turso.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
