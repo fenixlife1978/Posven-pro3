@@ -65,6 +65,29 @@ jobs:
           if (-not $found -or $found.Count -eq 0) { throw 'No se generó ningún instalador .exe.' }
           $found | ForEach-Object { Write-Host "Instalador: $($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
 
+      - name: Build separate DEMO installer with ten actions per module
+        shell: pwsh
+        run: |
+          $package = Get-Content 'package.json' -Raw | ConvertFrom-Json
+          $package.build.productName = 'PosVEN Pro DEMO'
+          $package.build.directories.output = 'dist-demo'
+          $package | ConvertTo-Json -Depth 100 | Set-Content 'package.json' -Encoding utf8
+          npx electron-builder --win --publish never
+          if ($LASTEXITCODE -ne 0) { throw "electron-builder DEMO falló con código $LASTEXITCODE" }
+          $demoInstaller = Get-ChildItem -Path 'dist-demo' -Filter '*.exe' -File
+          if (-not $demoInstaller -or $demoInstaller.Count -eq 0) { throw 'No se generó el instalador DEMO.' }
+          $demoInstaller | ForEach-Object { Write-Host "DEMO: $($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload DEMO installer as a downloadable Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PosVEN-Pro3-Windows-DEMO
+          path: dist-demo/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload Windows installer as a downloadable Actions artifact
         uses: actions/upload-artifact@v4
         with:
