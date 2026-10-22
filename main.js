@@ -1,8 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const http = require('http');
-const dotenv = require('dotenv');
 const path = require('path');
-const { autoUpdater } = require('electron-updater');
 const { PosPrinter } = require('electron-pos-printer');
 
 let mainWindow = null;
@@ -129,7 +127,6 @@ function createWindow(serverPort) {
 
   if (!isDev) {
     mainWindow.setMenu(null);
-    autoUpdater.checkForUpdatesAndNotify().catch(err => console.error('Update error:', err));
   }
 
   mainWindow.on('closed', () => {
@@ -138,14 +135,10 @@ function createWindow(serverPort) {
 }
 
 async function startLocalNextServer() {
-  // La configuración se guarda fuera del instalador para no incrustar secretos.
-  const envPath = path.join(app.getPath('userData'), '.env');
-  dotenv.config({ path: envPath });
-  process.env.TURSO_MIGRATION_BUILD = '1';
-
-  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-    console.warn('Faltan credenciales Turso en ' + envPath);
-  }
+  // Base de datos SQLite local, persistente y exclusiva de este equipo/usuario.
+  // No cargar .env ni credenciales de servicios cloud.
+  process.env.POSVEN_SQLITE_PATH = path.join(app.getPath('userData'), 'posven-pro3.sqlite');
+  process.env.POSVEN_DESKTOP_BUILD = '1';
 
   const next = require('next');
   nextApplication = next({ dev: false, dir: app.getAppPath() });
