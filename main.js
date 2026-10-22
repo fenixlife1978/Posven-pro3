@@ -139,6 +139,7 @@ async function startLocalNextServer() {
   // No cargar .env ni credenciales de servicios cloud.
   process.env.POSVEN_SQLITE_PATH = path.join(app.getPath('userData'), 'posven-pro3.sqlite');
   process.env.POSVEN_DESKTOP_BUILD = '1';
+  process.env.POSVEN_DEMO_BUILD = app.getName().toUpperCase().includes('DEMO') ? '1' : '0';
 
   const next = require('next');
   nextApplication = next({ dev: false, dir: app.getAppPath() });
