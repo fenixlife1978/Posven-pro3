@@ -92,7 +92,7 @@ function payloadTerminalId(operation: string, body: any): string {
   return String(
     body?.terminalId || body?.terminal?.id || body?.movement?.terminalId ||
     body?.operationDoc?.terminalId || body?.report?.terminalId ||
-    body?.sale?.terminalId || body?.params?.terminalId || ''
+    body?.sale?.terminalId || body?.params?.terminalId || body?.movements?.[0]?.terminalId || ''
   ).trim();
 }
 
@@ -132,11 +132,13 @@ export async function GET(request: Request) {
     if (user.rol === 'cajero' && requestedTerminalId && requestedTerminalId !== cashierTerminalId) {
       return NextResponse.json({ ok: false, error: 'No puede consultar información de otra caja.' }, { status: 403 });
     }
-    const scopedTerminalId = cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t))
+    const scopedTerminalId = cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t)) && t !== 'terminales'
       ? cashierTerminalId
       : requestedTerminalId;
     if (special === 'count') {
-      const total = cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t))
+      const total = cashierTerminalId && t === 'terminales'
+        ? 1
+        : cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t))
         ? (await listRecords(t, { limit: 10000, terminalId: cashierTerminalId })).length
         : await countRecords(t);
       return NextResponse.json({ ok: true, total });
