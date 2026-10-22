@@ -50,8 +50,31 @@ const DEMO_MODULE_BY_OPERATION: Record<string, string> = {
   cashMovement: 'Caja', factoryReset: 'Configuración',
   configPatch: 'Configuración', catalogPatch: 'Catálogos', recordsSync: 'Maestros',
   upsert: 'Maestros', returnOrCancellation: 'Devoluciones',
-  repairReturnInventoryAndCxc: 'Devoluciones',
+  repairReturnInventoryAndCxc: 'Devoluciones', zClosure: 'Corte Z',
 };
+
+function resolveDemoModule(operation: string, body: any): string | undefined {
+  if (operation === 'upsert') {
+    const table = String(body?.table || '');
+    const modules: Record<string, string> = {
+      productos: 'Inventario', ventas: 'Ventas', movimientos: 'Inventario',
+      cxc: 'Cuentas por cobrar', cxp: 'Cuentas por pagar', clientes: 'Clientes',
+      proveedores: 'Proveedores', terminales: 'Cajas', caja: 'Caja',
+      compras: 'Compras', devoluciones: 'Devoluciones', anulaciones: 'Devoluciones',
+      reportesZ: 'Corte Z', libroDiario: 'Contabilidad',
+    };
+    return modules[table] || 'Maestros';
+  }
+  if (operation === 'recordsSync') {
+    const table = String(body?.table || '');
+    const modules: Record<string, string> = {
+      clientes: 'Clientes', proveedores: 'Proveedores',
+      movimientos: 'Inventario', libroDiario: 'Contabilidad',
+    };
+    return modules[table] || 'Maestros';
+  }
+  return DEMO_MODULE_BY_OPERATION[operation];
+}
 
 async function reserveDemoAction(moduleName: string): Promise<boolean> {
   const results = await tursoTransaction([
@@ -112,7 +135,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const operation = String(body?.operation || '');
     if (process.env.POSVEN_DEMO_BUILD === '1') {
-      const moduleName = DEMO_MODULE_BY_OPERATION[operation];
+      const moduleName = resolveDemoModule(operation, body);
       if (moduleName && !(await reserveDemoAction(moduleName))) {
         return NextResponse.json({
           ok: false,
