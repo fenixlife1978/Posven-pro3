@@ -23,10 +23,14 @@ function installLoginTabSessionFetch() {
     if (!sameOrigin) return nativeFetch(input, init);
     const headers = new Headers(input instanceof Request ? input.headers : undefined);
     if (init?.headers) new Headers(init.headers).forEach((value, key) => headers.set(key, value));
-    headers.set('x-posven-session-mode', 'tab');
     const sessionId = getTabSessionId();
-    if (sessionId) headers.set('x-posven-session', sessionId);
-    else headers.delete('x-posven-session');
+    if (sessionId) {
+      headers.set('x-posven-session-mode', 'tab');
+      headers.set('x-posven-session', sessionId);
+    } else {
+      headers.delete('x-posven-session-mode');
+      headers.delete('x-posven-session');
+    }
     return nativeFetch(input, { ...init, headers });
   };
 }
