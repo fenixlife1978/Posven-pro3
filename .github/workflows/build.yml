@@ -29,26 +29,26 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
-      - name: Build Next.js for Turso API runtime
+      - name: Build Next.js desktop runtime (SQLite local)
         run: npm run build
         env:
-          TURSO_MIGRATION_BUILD: '1'
+          POSVEN_DESKTOP_BUILD: '1'
 
       - name: Verify Next.js server build
         shell: pwsh
         run: |
           if (-not (Test-Path '.next/BUILD_ID')) {
-            throw 'No se generó .next/BUILD_ID; el build de Next.js no está listo para ejecutar las API de Turso.'
+            throw 'No se generó .next/BUILD_ID; el build local de Next.js no está listo para SQLite.'
           }
-          Write-Host 'Build de Next.js verificado para Windows/Turso.'
+          Write-Host 'Build de Next.js verificado para escritorio/SQLite.'
 
       - name: Build Windows installer without publishing a Release
         shell: pwsh
