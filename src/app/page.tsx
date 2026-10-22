@@ -85,6 +85,7 @@ export default function LicoreriaPOS() {
   const [activeModule, setActiveTab] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isDemoBuild, setIsDemoBuild] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -104,6 +105,7 @@ export default function LicoreriaPOS() {
   useEffect(() => {
     setMounted(true);
     installPosvenTabSessionFetch();
+    fetch('/api/app-mode', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(mode => setIsDemoBuild(mode?.demo === true)).catch(() => setIsDemoBuild(false));
 
     const captureError = (e: ErrorEvent) => {
       try {
@@ -723,6 +725,11 @@ export default function LicoreriaPOS() {
       </aside>
 
       <main className="flex-1 flex flex-col min-h-screen min-w-0 w-0 max-w-full overflow-hidden">
+        {isDemoBuild && (
+          <div role="status" className="shrink-0 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center text-xs sm:text-sm font-black tracking-wide">
+            POSVEN-PRO3 · VERSIÓN DEMO — Máximo 10 acciones por módulo. Adquiere la versión completa para desbloquear el sistema.
+          </div>
+        )}
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-3 sm:px-7 py-3.5 flex items-center gap-2 sm:gap-6 no-print min-w-0 overflow-hidden">
           {!isCajero && (
             <button className="p-2 -ml-2 text-ink hover:text-brand-gold" onClick={() => setIsSidebarOpen(true)}>
