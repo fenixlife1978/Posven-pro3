@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     response.cookies.set('posven_session', session.id, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' && process.env.POSVEN_DESKTOP_BUILD !== '1',
       path: '/',
       expires: new Date(session.expires),
     });

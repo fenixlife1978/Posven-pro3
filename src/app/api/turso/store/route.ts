@@ -1,5 +1,6 @@
 import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
 import { NextResponse } from 'next/server';
+import { reserveDemoAction } from '@/lib/demo-limits';
 import {
   assertTursoReady,
   getRecord,
@@ -38,6 +39,68 @@ import {
 
 export const runtime = 'nodejs';
 
+const DEMO_MODULE_BY_OPERATION: Record<string, string> = {
+  sale: 'Ventas', debtPayment: 'Cuentas por cobrar', customerDebt: 'Cuentas por cobrar',
+  globalCustomerPayment: 'Cuentas por cobrar', reverseDebtPayment: 'Cuentas por cobrar',
+  deleteCustomerDebt: 'Cuentas por cobrar', deleteCustomerAndDebts: 'Clientes',
+  supplierDebt: 'Cuentas por pagar', globalProviderPayment: 'Cuentas por pagar',
+  inventory: 'Inventario', inventoryStockSync: 'Inventario', productSync: 'Inventario',
+  createPurchase: 'Compras', deletePurchase: 'Compras',
+  terminalPatch: 'Cajas', terminalUpsert: 'Cajas', terminalDelete: 'Cajas',
+  cashMovement: 'Caja', factoryReset: 'Configuración',
+  configPatch: 'Configuración', catalogPatch: 'Catálogos', recordsSync: 'Maestros',
+  upsert: 'Maestros', returnOrCancellation: 'Devoluciones',
+  repairReturnInventoryAndCxc: 'Devoluciones', zClosure: 'Corte Z',
+};
+
+function resolveDemoModule(operation: string, body: any): string | undefined {
+  if (operation === 'upsert') {
+    const table = String(body?.table || '');
+    const modules: Record<string, string> = {
+      productos: 'Inventario', ventas: 'Ventas', movimientos: 'Inventario',
+      cxc: 'Cuentas por cobrar', cxp: 'Cuentas por pagar', clientes: 'Clientes',
+      proveedores: 'Proveedores', terminales: 'Cajas', caja: 'Caja',
+      compras: 'Compras', devoluciones: 'Devoluciones', anulaciones: 'Devoluciones',
+      reportesZ: 'Corte Z', libroDiario: 'Contabilidad',
+    };
+    return modules[table] || 'Maestros';
+  }
+  if (operation === 'recordsSync') {
+    const table = String(body?.table || '');
+    const modules: Record<string, string> = {
+      clientes: 'Clientes', proveedores: 'Proveedores',
+      movimientos: 'Inventario', libroDiario: 'Contabilidad',
+    };
+    return modules[table] || 'Maestros';
+  }
+  return DEMO_MODULE_BY_OPERATION[operation];
+}
+
+const TERMINAL_SCOPED_TABLES = new Set([
+  'movimientos', 'ventas', 'cxc', 'cxp', 'devoluciones', 'anulaciones',
+  'terminales', 'libroDiario', 'reportesZ', 'caja', 'compras',
+]);
+
+async function assignedTerminalId(user: { id: string; rol: string }): Promise<string> {
+  const terminals = await listRecords('terminales', { limit: 500 });
+  const own = terminals.find((item: any) => String(item?.usuarioId || '') === String(user.id));
+  if (!own?.id) throw new Error('El cajero no tiene una caja asignada en SQLite local.');
+  return String(own.id);
+}
+
+function payloadTerminalId(operation: string, body: any): string {
+  return String(
+    body?.terminalId || body?.terminal?.id || body?.movement?.terminalId ||
+    body?.operationDoc?.terminalId || body?.report?.terminalId ||
+    body?.sale?.terminalId || body?.params?.terminalId || body?.movements?.[0]?.terminalId || ''
+  ).trim();
+}
+
+const TERMINAL_BOUND_OPERATIONS = new Set([
+  'sale', 'inventory', 'cashMovement', 'terminalPatch', 'terminalUpsert',
+  'terminalDelete', 'zClosure', 'returnOrCancellation', 'debtPayment',
+]);
+
 const TABLES = new Set([
   'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
   'devoluciones','anulaciones','terminales','libroDiario','reportesZ','caja','compras',
@@ -58,21 +121,46 @@ async function requireUser(request: Request) {
 export async function GET(request: Request) {
   try {
     assertTursoReady();
-    await requireUser(request);
+    const user = await requireUser(request);
     const url = new URL(request.url);
     const special = url.searchParams.get('special');
     if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     const t = table(url.searchParams.get('table'));
-    if (special === 'count') return NextResponse.json({ ok: true, total: await countRecords(t) });
+    const requestedTerminalId = url.searchParams.get('terminalId') || undefined;
+    const cashierTerminalId = user.rol === 'cajero' ? await assignedTerminalId(user) : undefined;
+    if (user.rol === 'cajero' && requestedTerminalId && requestedTerminalId !== cashierTerminalId) {
+      return NextResponse.json({ ok: false, error: 'No puede consultar información de otra caja.' }, { status: 403 });
+    }
+    const scopedTerminalId = cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t)) && t !== 'terminales'
+      ? cashierTerminalId
+      : requestedTerminalId;
+    if (special === 'count') {
+      const total = cashierTerminalId && t === 'terminales'
+        ? 1
+        : cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t))
+        ? (await listRecords(t, { limit: 10000, terminalId: cashierTerminalId })).length
+        : await countRecords(t);
+      return NextResponse.json({ ok: true, total });
+    }
     const id = url.searchParams.get('id');
-    if (id) return NextResponse.json({ ok: true, record: await getRecord(t, id) });
-    const records = await listRecords(t, {
+    if (id) {
+      const record = await getRecord(t, id);
+      if (user.rol === 'cajero' && record) {
+        const recordTerminalId = t === 'terminales' ? String(record.id) : String(record.terminalId || '');
+        if (TERMINAL_SCOPED_TABLES.has(String(t)) && recordTerminalId !== cashierTerminalId) {
+          return NextResponse.json({ ok: false, error: 'No puede consultar registros de otra caja.' }, { status: 403 });
+        }
+      }
+      return NextResponse.json({ ok: true, record });
+    }
+    let records = await listRecords(t, {
       limit: Number(url.searchParams.get('limit') || 500),
       offset: Number(url.searchParams.get('offset') || 0),
-      terminalId: url.searchParams.get('terminalId') || undefined,
+      terminalId: user.rol === 'cajero' && t === 'terminales' ? undefined : scopedTerminalId,
       estado: url.searchParams.get('estado') || undefined,
     });
+    if (user.rol === 'cajero' && t === 'terminales') records = records.filter((item: any) => String(item.id) === cashierTerminalId);
     return NextResponse.json({ ok: true, records });
   } catch (error: any) {
     const message = String(error?.message || error);
@@ -87,8 +175,29 @@ export async function POST(request: Request) {
     assertTursoReady();
     const user = await requireUser(request);
     const body = await request.json();
+    const operation = String(body?.operation || '');
+    if (user.rol === 'cajero') {
+      const ownTerminalId = await assignedTerminalId(user);
+      const targetTerminalId = payloadTerminalId(operation, body);
+      if (TERMINAL_BOUND_OPERATIONS.has(operation) &&
+          (!targetTerminalId || targetTerminalId !== ownTerminalId)) {
+        return NextResponse.json({ ok: false, error: 'La operación debe pertenecer exclusivamente a la caja asignada a este cajero.' }, { status: 403 });
+      }
+    }
+    if (process.env.POSVEN_DEMO_BUILD === '1') {
+      const moduleName = resolveDemoModule(operation, body);
+      if (moduleName && !(await reserveDemoAction(moduleName))) {
+        return NextResponse.json({
+          ok: false,
+          error: `La DEMO agotó el máximo de 10 acciones del módulo «${moduleName}». Adquiere la versión completa para continuar.`,
+          demoLimitReached: true,
+          module: moduleName,
+          limit: 10,
+        }, { status: 429 });
+      }
+    }
 
-    switch (String(body?.operation || '')) {
+    switch (operation) {
       case 'configPatch': {
         // La tasa BCV es una configuración operativa que los cajeros están
         // autorizados a actualizar permanentemente. Los demás parámetros de

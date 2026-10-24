@@ -1,7 +1,7 @@
 'use client';
 
 import { AppState, Terminal, Movimiento } from './types';
-import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
+import { registerOfflineProcessor } from './offline-queue';
 // Turso es la única base de datos operativa. Estos nombres se conservan únicamente
 // para que los caminos legacy de sincronización no vuelvan a escribir en servidor Turso.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
@@ -70,7 +70,8 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // ============================================================
 async function tryTursoOperation(operation: string, payload: any): Promise<any | null> {
   if (typeof window === 'undefined') return null;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('El dispositivo está sin conexión. La operación no se enviará a servidor Turso para evitar duplicados.');
+  // En la app Electron, /api/* apunta al servidor Next local en 127.0.0.1.
+  // navigator.onLine describe Internet, no el loopback local; no debe bloquear SQLite.
   let response: Response;
   try {
     response = await fetch('/api/turso/store', {
@@ -78,12 +79,12 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
       body: JSON.stringify({ operation, ...payload }),
     });
   } catch {
-    throw new Error('No se pudo contactar con Turso. La operación no fue enviada a servidor Turso para evitar duplicados.');
+    throw new Error('No se pudo contactar con el servidor local de POSVEN-PRO3. La operación no fue registrada.');
   }
-  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('La base SQLite local no está inicializada o no está disponible.');
   let body: any = null;
   try { body = await response.json(); } catch {}
-  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('Turso rechazó la operación (' + response.status + ').')));
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('SQLite local rechazó la operación (' + response.status + ').')));
   return body;
 }
 
@@ -93,10 +94,10 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   if (kind === 'catalog') params.set('name', name);
   let response: Response;
   try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
-  catch { throw new Error('No se pudo consultar Turso.'); }
+  catch { throw new Error('No se pudo consultar la base SQLite local.'); }
   if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
-  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
 async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
@@ -114,7 +115,7 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
       cache: 'no-store',
     });
   } catch {
-    throw new Error('No se pudo consultar Turso. No se usará servidor Turso como respaldo porque Turso está activo.');
+    throw new Error('No se pudo consultar la base SQLite local.');
   }
   if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null;
@@ -556,14 +557,6 @@ async function applyInventoryMovementsTransaction(params: {
 
   const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
-
-  if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
-    if (!['AJUSTE-INVENTARIO', 'AJUSTE-INVENTARIO-POS'].includes(operationType)) {
-      throw new Error('Esta operación requiere conexión para proteger la consistencia de ventas/devoluciones.');
-    }
-    enqueueOfflineOperation('INVENTARIO', { operationId, operationType, movements, productPatches, fromOfflineQueue: true }, operationId);
-    return { queuedOffline: true, operationId, movements, products: [] };
-  }
 
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
   let result: any = null;
@@ -1399,10 +1392,6 @@ export const Store = {
    */
   async processReturnOrCancellationTransaction(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; saleId: string; operationDoc: any; movements: any[]; journal?: any; refundItems?: any[]; fullCancellation?: boolean; fromOfflineQueue?: boolean; }): Promise<any> {
     const { operationId, operationType, saleId, operationDoc, movements, journal, refundItems = [], fullCancellation = false } = params;
-    if (!params.fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
-      enqueueOfflineOperation(operationType, { ...params }, operationId);
-      return { queuedOffline: true, operationId };
-    }
     const tursoResult = await tryTursoOperation('returnOrCancellation', params);
     if (tursoResult) return tursoResult;
 
@@ -1909,15 +1898,6 @@ export const Store = {
     // Store aunque la transacción y el endpoint de Turso sí existen.
     if (typeof window === 'undefined') {
       throw new Error('Las ventas solo pueden registrarse desde el cliente mediante Turso.');
-    }
-
-    // Si no hay conexión, persistimos la intención completa en la cola local
-    // antes de devolver el control al POS. No se presenta como venta confirmada:
-    // Turso validará stock, correlativo y efectos contables al sincronizar.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false && !params.fromOfflineQueue) {
-      const operationId = String(params.operationId || ('VENTA-POS-' + Store.uid()));
-      enqueueOfflineOperation('VENTA', { ...params, operationId, fromOfflineQueue: true }, operationId);
-      return { queuedOffline: true, operationId };
     }
 
     const result = await tryTursoOperation('sale', params);
@@ -2469,9 +2449,6 @@ export const Store = {
       } else if (k === 'terminales') {
         // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete.
         // Si Turso está activo, no existe una vía genérica que pueda terminar en servidor Turso.
-        if (navigator.onLine === false) {
-          throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
-        }
       } else if (['clientes', 'proveedores', 'movimientos', 'libroDiario'].includes(String(k))) {
         const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
         const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
