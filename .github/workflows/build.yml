@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  # Required to publish the COMPLETE and DEMO installers as release assets.
   contents: write
 
 jobs:
