@@ -21,6 +21,16 @@ type SqliteDatabase = {
 
 let database: SqliteDatabase | null = null;
 let transactionActive = false;
+// Todas las operaciones comparten una única conexión SQLite. Serializarlas evita
+// que dos peticiones HTTP simultáneas confundan una transacción concurrente con
+// una transacción anidada o ejecuten consultas dentro de la transacción ajena.
+let operationQueue: Promise<void> = Promise.resolve();
+
+function enqueueDatabaseOperation<T>(operation: () => T | Promise<T>): Promise<T> {
+  const result = operationQueue.then(operation, operation);
+  operationQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
 
 function getDatabase(): SqliteDatabase {
   if (database) return database;
@@ -51,7 +61,7 @@ export function isTursoConfigured(): boolean {
 }
 
 export async function tursoExecute(statement: TursoStatement) {
-  return run(statement);
+  return enqueueDatabaseOperation(() => run(statement));
 }
 
 export async function tursoBatch(statements: TursoStatement[]) {
@@ -61,20 +71,21 @@ export async function tursoBatch(statements: TursoStatement[]) {
 
 export async function tursoTransaction(statements: TursoStatement[]) {
   if (!statements.length) return [];
-  const db = getDatabase();
-  if (transactionActive) throw new Error('No se permite una transacción SQLite anidada.');
-  transactionActive = true;
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const outputs = statements.map(run);
-    db.exec('COMMIT');
-    return outputs;
-  } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
-    throw error;
-  } finally {
-    transactionActive = false;
-  }
+  return enqueueDatabaseOperation(() => {
+    const db = getDatabase();
+    transactionActive = true;
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      const outputs = statements.map(run);
+      db.exec('COMMIT');
+      return outputs;
+    } catch (error) {
+      try { db.exec('ROLLBACK'); } catch {}
+      throw error;
+    } finally {
+      transactionActive = false;
+    }
+  });
 }
 
 export type TursoTransactionContext = {
@@ -84,19 +95,20 @@ export type TursoTransactionContext = {
 export async function tursoInteractiveTransaction<T>(
   callback: (tx: TursoTransactionContext) => Promise<T>,
 ): Promise<T> {
-  const db = getDatabase();
-  if (transactionActive) throw new Error('No se permite una transacción SQLite anidada.');
-  transactionActive = true;
-  db.exec('BEGIN IMMEDIATE');
-  const execute = async (statement: TursoStatement) => run(statement);
-  try {
-    const value = await callback({ execute });
-    db.exec('COMMIT');
-    return value;
-  } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
-    throw error;
-  } finally {
-    transactionActive = false;
-  }
+  return enqueueDatabaseOperation(async () => {
+    const db = getDatabase();
+    transactionActive = true;
+    const execute = async (statement: TursoStatement) => run(statement);
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      const value = await callback({ execute });
+      db.exec('COMMIT');
+      return value;
+    } catch (error) {
+      try { db.exec('ROLLBACK'); } catch {}
+      throw error;
+    } finally {
+      transactionActive = false;
+    }
+  });
 }
