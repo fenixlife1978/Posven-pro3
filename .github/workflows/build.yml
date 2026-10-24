@@ -82,8 +82,8 @@ jobs:
         if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release-desktop]'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-sqlite-${{ github.run_number }}
-          name: PosVEN-PRO3 SQLite Desktop - build ${{ github.run_number }}
+          tag_name: v2.5.9
+          name: PosVEN Pro 2.5.9 - instaladores SQLite Desktop
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -91,21 +91,3 @@ jobs:
             dist/*.exe
             dist-demo/*.exe
           fail_on_unmatched_files: true
-
-      - name: Upload COMPLETE installer as optional Actions artifact
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: PosVEN-Pro3-Windows-Installer
-          path: dist/*.exe
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Upload DEMO installer as optional Actions artifact
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: PosVEN-Pro3-Windows-DEMO
-          path: dist-demo/*.exe
-          if-no-files-found: error
-          retention-days: 3
