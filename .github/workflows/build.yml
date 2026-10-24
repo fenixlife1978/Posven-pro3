@@ -23,6 +23,7 @@ jobs:
   build-windows:
     name: Build Windows installer
     runs-on: windows-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
