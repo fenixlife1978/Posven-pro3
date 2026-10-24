@@ -154,6 +154,10 @@ export default function LoginPage() {
             {loading ? <span className="flex items-center gap-3"><div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />{statusMessage}</span> : "Iniciar Sesión"}
           </button>
         </form>
+        <div className="mt-8 pt-5 border-t border-[#F3F4F6] flex flex-col items-center gap-2" aria-label="Empresa desarrolladora EFAS">
+          <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#9CA3AF]">Software desarrollado por</span>
+          <img src="/efas-logo-horizontal.png" alt="EFAS — empresa desarrolladora de PosVEN Pro" className="h-8 w-auto max-w-[210px] object-contain" />
+        </div>
       </div>
     </div>
   );

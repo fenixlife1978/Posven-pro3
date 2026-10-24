@@ -800,13 +800,17 @@ export default function LicoreriaPOS() {
         
         <div className="p-3 sm:p-7 flex-1 min-w-0 overflow-x-hidden overflow-y-auto">{renderModule()}</div>
 
-        <footer className="px-8 py-6 border-t border-line text-[0.76rem] font-black text-ink flex flex-col sm:flex-row justify-between gap-4 no-print bg-surface-warm/30">
+        <footer className="px-4 sm:px-8 py-4 border-t border-line text-[0.76rem] font-black text-ink flex flex-col sm:flex-row sm:items-center justify-between gap-3 no-print bg-surface-warm/30">
           <div>© 2026 PosVEN Pro · Persistencia Offline Activa</div>
-          <div className="flex gap-4 items-center">
+          <div className="flex items-center gap-2 self-start sm:self-auto" aria-label="Empresa desarrolladora EFAS">
+            <span className="text-[0.62rem] sm:text-[0.68rem] font-bold uppercase tracking-wider text-ink/50">Desarrollado por</span>
+            <img src="/efas-logo-horizontal.png" alt="EFAS — empresa desarrolladora de PosVEN Pro" className="h-7 w-auto max-w-[180px] object-contain" />
+          </div>
+          <div className="flex flex-wrap gap-4 items-center">
             <span className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-status-success animate-pulse' : 'bg-status-warn'}`} /> {isOnline ? 'Nube Sincronizada' : 'Sincronización Pendiente'}
             </span>
-            <span className="px-2 py-0.5 bg-white border border-line rounded text-[0.65rem] font-black">v2.5.6-resilient</span>
+            <span className="px-2 py-0.5 bg-white border border-line rounded text-[0.65rem] font-black">v2.5.8</span>
           </div>
         </footer>
       </main>
