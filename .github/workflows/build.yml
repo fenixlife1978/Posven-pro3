@@ -1,4 +1,4 @@
-name: Build Windows EXE installers (SQLite desktop)
+name: Build Windows EXE installers (SQLite desktop, Ubuntu cross-build)
 
 on:
   push:
@@ -22,11 +22,16 @@ permissions:
 jobs:
   build-windows:
     name: Build Windows installer
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Windows packaging prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wine64
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
