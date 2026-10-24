@@ -1,4 +1,4 @@
-name: Build Windows EXE installers (SQLite desktop, Ubuntu cross-build)
+name: Build Windows EXE installers (SQLite desktop, Windows installer build)
 
 on:
   push:
@@ -87,8 +87,8 @@ jobs:
         if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release-desktop]'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.5.9
-          name: PosVEN Pro 2.5.9 - instaladores SQLite Desktop
+          tag_name: v2.6.2
+          name: PosVEN Pro 2.6.2 - instaladores SQLite Desktop
           draft: false
           prerelease: false
           generate_release_notes: true
