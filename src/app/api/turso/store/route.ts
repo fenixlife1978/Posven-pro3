@@ -334,7 +334,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       default:
-        throw new Error('Operación Turso no soportada todavía.');
+        throw new Error('Operación local no soportada todavía.');
     }
   } catch (error: any) {
     const message = String(error?.message || error);
