@@ -1,4 +1,4 @@
-import { tursoTransaction, tursoExecute } from '@/lib/turso/client';
+import { localDbTransaction, localDbExecute } from '@/lib/turso/client';
 
 export const DEMO_LIMIT = 10;
 export const DEMO_TRACKED_MODULES = ['Ventas', 'Productos creados', 'Compras'] as const;
@@ -6,11 +6,11 @@ export type DemoTrackedModule = typeof DEMO_TRACKED_MODULES[number];
 const ENSURE_DEMO_SCHEMA = "CREATE TABLE IF NOT EXISTS demo_action_counts (module TEXT PRIMARY KEY NOT NULL, actions INTEGER NOT NULL DEFAULT 0 CHECK(actions >= 0))";
 
 async function ensureDemoSchema(): Promise<void> {
-  await tursoExecute({ sql: ENSURE_DEMO_SCHEMA, wantRows: false });
+  await localDbExecute({ sql: ENSURE_DEMO_SCHEMA, wantRows: false });
 }
 
 
-/** Atomically consumes one of the ten allowed demo actions for a tracked category. */
+/** Consumes one of the ten allowed demo actions atomically in local SQLite. */
 export async function reserveDemoAction(moduleName: string): Promise<boolean> {
   if (!DEMO_TRACKED_MODULES.includes(moduleName as DemoTrackedModule)) return false;
   await ensureDemoSchema();
@@ -29,14 +29,14 @@ export async function reserveDemoAction(moduleName: string): Promise<boolean> {
       wantRows: false,
     },
   ];
-  const results = await tursoTransaction(statements);
+  const results = await localDbTransaction(statements);
   return Number(results[results.length - 1]?.affected_row_count || 0) === 1;
 }
 
 /** Returns stable counters even before a category has its first action. */
 export async function getDemoActionCounts(): Promise<Record<DemoTrackedModule, number>> {
   await ensureDemoSchema();
-  const result = await tursoExecute({
+  const result = await localDbExecute({
     sql: 'SELECT module, actions FROM demo_action_counts WHERE module IN (?, ?, ?)',
     args: [...DEMO_TRACKED_MODULES],
     wantRows: true,
