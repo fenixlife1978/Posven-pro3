@@ -1,6 +1,6 @@
 import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
 import { NextResponse } from 'next/server';
-import { reserveDemoAction } from '@/lib/demo-limits';
+import { reserveDemoAction, getDemoActionCounts, isDemoExhausted } from '@/lib/demo-limits';
 import {
   assertTursoReady,
   getRecord,
@@ -40,38 +40,30 @@ import {
 export const runtime = 'nodejs';
 
 const DEMO_MODULE_BY_OPERATION: Record<string, string> = {
-  sale: 'Ventas', debtPayment: 'Cuentas por cobrar', customerDebt: 'Cuentas por cobrar',
-  globalCustomerPayment: 'Cuentas por cobrar', reverseDebtPayment: 'Cuentas por cobrar',
-  deleteCustomerDebt: 'Cuentas por cobrar', deleteCustomerAndDebts: 'Clientes',
-  supplierDebt: 'Cuentas por pagar', globalProviderPayment: 'Cuentas por pagar',
-  inventory: 'Inventario', inventoryStockSync: 'Inventario', productSync: 'Inventario',
-  createPurchase: 'Compras', deletePurchase: 'Compras',
-  terminalPatch: 'Cajas', terminalUpsert: 'Cajas', terminalDelete: 'Cajas',
-  cashMovement: 'Caja', factoryReset: 'Configuración',
-  configPatch: 'Configuración', catalogPatch: 'Catálogos', recordsSync: 'Maestros',
-  upsert: 'Maestros', returnOrCancellation: 'Devoluciones',
-  repairReturnInventoryAndCxc: 'Devoluciones', zClosure: 'Corte Z',
+  sale: 'Ventas',
+  createPurchase: 'Compras',
 };
 
-function resolveDemoModule(operation: string, body: any): string | undefined {
-  if (operation === 'upsert') {
-    const table = String(body?.table || '');
-    const modules: Record<string, string> = {
-      productos: 'Inventario', ventas: 'Ventas', movimientos: 'Inventario',
-      cxc: 'Cuentas por cobrar', cxp: 'Cuentas por pagar', clientes: 'Clientes',
-      proveedores: 'Proveedores', terminales: 'Cajas', caja: 'Caja',
-      compras: 'Compras', devoluciones: 'Devoluciones', anulaciones: 'Devoluciones',
-      reportesZ: 'Corte Z', libroDiario: 'Contabilidad',
-    };
-    return modules[table] || 'Maestros';
+async function resolveDemoModule(operation: string, body: any): Promise<string | undefined> {
+  if (operation === 'productSync') {
+    const changes = Array.isArray(body?.changes) ? body.changes : [];
+    for (const change of changes) {
+      const id = String(change?.id || change?.product?.id || '').trim();
+      if (!id) continue;
+      const existing = await getRecord('productos', id);
+      if (!existing) return 'Productos creados';
+    }
+    return undefined;
   }
-  if (operation === 'recordsSync') {
-    const table = String(body?.table || '');
-    const modules: Record<string, string> = {
-      clientes: 'Clientes', proveedores: 'Proveedores',
-      movimientos: 'Inventario', libroDiario: 'Contabilidad',
-    };
-    return modules[table] || 'Maestros';
+  if (operation === 'upsert' && String(body?.table || '') === 'productos') {
+    const records = Array.isArray(body?.records) ? body.records : [];
+    for (const record of records) {
+      const id = String(record?.id || '').trim();
+      if (!id) return 'Productos creados';
+      const existing = await getRecord('productos', id);
+      if (!existing) return 'Productos creados';
+    }
+    return undefined;
   }
   return DEMO_MODULE_BY_OPERATION[operation];
 }
@@ -124,6 +116,10 @@ export async function GET(request: Request) {
     const user = await requireUser(request);
     const url = new URL(request.url);
     const special = url.searchParams.get('special');
+    if (special === 'demoStatus') {
+      if (process.env.POSVEN_DEMO_BUILD !== '1') return NextResponse.json({ ok: true, demo: false, counts: {} });
+      return NextResponse.json({ ok: true, demo: true, limit: 10, counts: await getDemoActionCounts(), exhausted: (await isDemoExhausted()).exhausted }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     const t = table(url.searchParams.get('table'));
@@ -185,13 +181,26 @@ export async function POST(request: Request) {
       }
     }
     if (process.env.POSVEN_DEMO_BUILD === '1') {
-      const moduleName = resolveDemoModule(operation, body);
-      if (moduleName && !(await reserveDemoAction(moduleName))) {
+      const status = await isDemoExhausted();
+      if (status.exhausted) {
         return NextResponse.json({
           ok: false,
-          error: `La DEMO agotó el máximo de 10 acciones del módulo «${moduleName}». Adquiere la versión completa para continuar.`,
+          error: `La versión DEMO alcanzó el límite de 10/10 en «${status.module}». La prueba del sistema ha terminado. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.`,
+          demoLimitReached: true,
+          module: status.module,
+          counts: status.counts,
+          limit: 10,
+        }, { status: 429 });
+      }
+      const moduleName = await resolveDemoModule(operation, body);
+      if (moduleName && !(await reserveDemoAction(moduleName))) {
+        const latest = await isDemoExhausted();
+        return NextResponse.json({
+          ok: false,
+          error: `La versión DEMO alcanzó el límite de 10/10 en «${moduleName}». La prueba del sistema ha terminado. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.`,
           demoLimitReached: true,
           module: moduleName,
+          counts: latest.counts,
           limit: 10,
         }, { status: 429 });
       }
