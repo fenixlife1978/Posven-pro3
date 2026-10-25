@@ -12,12 +12,25 @@ async function ensureDemoSchema(): Promise<void> {
 
 /** Atomically consumes one of the ten allowed demo actions for a tracked category. */
 export async function reserveDemoAction(moduleName: string): Promise<boolean> {
+  if (!DEMO_TRACKED_MODULES.includes(moduleName as DemoTrackedModule)) return false;
   await ensureDemoSchema();
-  const results = await tursoTransaction([
-    { sql: 'INSERT OR IGNORE INTO demo_action_counts(module, actions) VALUES(?, 0)', args: [moduleName], wantRows: false },
-    { sql: 'UPDATE demo_action_counts SET actions = actions + 1 WHERE module = ? AND actions < ?', args: [moduleName, DEMO_LIMIT], wantRows: false },
-  ]);
-  return Number(results[1]?.affected_row_count || 0) === 1;
+  // Seed all counters and check the global lock in the SAME SQLite transaction
+  // as the increment. Concurrent requests cannot slip through after another
+  // category reaches 10/10.
+  const statements = [
+    ...DEMO_TRACKED_MODULES.map((name) => ({
+      sql: 'INSERT OR IGNORE INTO demo_action_counts(module, actions) VALUES(?, 0)',
+      args: [name],
+      wantRows: false,
+    })),
+    {
+      sql: 'UPDATE demo_action_counts SET actions = actions + 1 WHERE module = ? AND actions < ? AND NOT EXISTS (SELECT 1 FROM demo_action_counts WHERE actions >= ?)',
+      args: [moduleName, DEMO_LIMIT, DEMO_LIMIT],
+      wantRows: false,
+    },
+  ];
+  const results = await tursoTransaction(statements);
+  return Number(results[results.length - 1]?.affected_row_count || 0) === 1;
 }
 
 /** Returns stable counters even before a category has its first action. */
