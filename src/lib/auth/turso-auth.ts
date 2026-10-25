@@ -1,6 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { tursoExecute, tursoTransaction } from '@/lib/turso/client';
-import { ensureTursoSchema } from '@/lib/turso/schema-init';
+import { localDbExecute, localDbTransaction } from '@/lib/turso/client';
+import { ensureLocalSchema } from '@/lib/turso/schema-init';
 
 export type AppRole = 'administrador' | 'cajero';
 
@@ -63,10 +63,10 @@ function mapUser(row: any): AuthUser {
 }
 
 export async function findUser(identifier: string) {
-  await ensureTursoSchema();
+  await ensureLocalSchema();
   const value = String(identifier || '').trim().toLowerCase();
   if (!value) return null;
-  const result = await tursoExecute({
+  const result = await localDbExecute({
     sql: `SELECT * FROM users WHERE lower(username)=? OR lower(COALESCE(email,''))=? LIMIT 1`,
     args: [value, value],
   });
@@ -74,9 +74,9 @@ export async function findUser(identifier: string) {
 }
 
 export async function getUserWithSecret(identifier: string) {
-  await ensureTursoSchema();
+  await ensureLocalSchema();
   const value = String(identifier || '').trim().toLowerCase();
-  const result = await tursoExecute({
+  const result = await localDbExecute({
     sql: `SELECT * FROM users WHERE lower(username)=? OR lower(COALESCE(email,''))=? LIMIT 1`,
     args: [value, value],
   });
@@ -91,13 +91,13 @@ export async function createUser(input: {
   rol: AppRole;
   isSeedAdmin?: boolean;
 }) {
-  await ensureTursoSchema();
+  await ensureLocalSchema();
   const username = input.username.trim().toLowerCase();
   const email = input.email?.trim().toLowerCase() || null;
   if (!username || !input.nombre.trim()) throw new Error('Nombre y usuario son obligatorios.');
   if (!['administrador', 'cajero'].includes(input.rol)) throw new Error('Rol inválido.');
 
-  const existing = await tursoExecute({
+  const existing = await localDbExecute({
     sql: `SELECT id FROM users WHERE lower(username)=? OR (? IS NOT NULL AND lower(email)=?) LIMIT 1`,
     args: [username, email, email],
   });
@@ -107,7 +107,7 @@ export async function createUser(input: {
   const fecha = nowIso();
   const passwordHash = hashPassword(input.password);
 
-  await tursoExecute({
+  await localDbExecute({
     sql: `INSERT INTO users
       (id, username, email, nombre, rol, password_hash, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json)
       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, '{}')`,
@@ -125,9 +125,9 @@ export async function createUser(input: {
  * Never create a backdoor seed account while another active administrator exists.
  */
 export async function ensureSeedAdmin() {
-  await ensureTursoSchema();
+  await ensureLocalSchema();
 
-  const activeAdmins = await tursoExecute({
+  const activeAdmins = await localDbExecute({
     sql: `SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 LIMIT 1`,
   });
   if (activeAdmins.rows.length) return;
@@ -135,12 +135,12 @@ export async function ensureSeedAdmin() {
   // The seed account is only reset when no active administrator exists.
   // This repairs stale/incompatible hashes after a reset or failed first setup.
   const seedPassword = process.env.POSVEN_SEED_ADMIN_PASSWORD || 'Admin123!';
-  const existingSeed = await tursoExecute({
+  const existingSeed = await localDbExecute({
     sql: `SELECT id FROM users WHERE lower(username)='admin' LIMIT 1`,
   });
 
   if (existingSeed.rows.length) {
-    await tursoExecute({
+    await localDbExecute({
       sql: `UPDATE users
         SET rol='administrador', acceso_bloqueado=0, is_seed_admin=1,
             email=COALESCE(email, 'admin@posven.local'),
@@ -164,7 +164,7 @@ export async function ensureSeedAdmin() {
   } catch (error) {
     // Two first-login requests may race. If the other request created the
     // seed account, treat that as success; otherwise preserve the real error.
-    const winner = await tursoExecute({
+    const winner = await localDbExecute({
       sql: `SELECT id FROM users WHERE lower(username)='admin' AND is_seed_admin=1 LIMIT 1`,
     });
     if (!winner.rows.length) throw error;
@@ -172,11 +172,11 @@ export async function ensureSeedAdmin() {
 }
 
 export async function createSession(userId: string) {
-  await ensureTursoSchema();
+  await ensureLocalSchema();
   const id = randomBytes(32).toString('hex');
   const created = nowIso();
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
-  await tursoExecute({
+  await localDbExecute({
     sql: `INSERT INTO sessions (id, user_id, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
     args: [id, userId, expires, created, created],
     wantRows: false,
@@ -185,9 +185,9 @@ export async function createSession(userId: string) {
 }
 
 export async function getSessionUser(sessionId: string | null | undefined) {
-  await ensureTursoSchema();
+  await ensureLocalSchema();
   if (!sessionId) return null;
-  const result = await tursoExecute({
+  const result = await localDbExecute({
     sql: `SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
       WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at > CURRENT_TIMESTAMP
       LIMIT 1`,
@@ -196,7 +196,7 @@ export async function getSessionUser(sessionId: string | null | undefined) {
   if (!result.rows[0]) return null;
   const user = mapUser(result.rows[0]);
   if (user.accesoBloqueado) return null;
-  await tursoExecute({
+  await localDbExecute({
     sql: `UPDATE sessions SET last_seen_at=? WHERE id=?`,
     args: [nowIso(), sessionId],
     wantRows: false,
@@ -205,9 +205,9 @@ export async function getSessionUser(sessionId: string | null | undefined) {
 }
 
 export async function revokeSession(sessionId: string | null | undefined) {
-  await ensureTursoSchema();
+  await ensureLocalSchema();
   if (!sessionId) return;
-  await tursoExecute({
+  await localDbExecute({
     sql: `UPDATE sessions SET revoked_at=? WHERE id=?`,
     args: [nowIso(), sessionId],
     wantRows: false,
@@ -215,8 +215,8 @@ export async function revokeSession(sessionId: string | null | undefined) {
 }
 
 export async function listUsers() {
-  await ensureTursoSchema();
-  const result = await tursoExecute({
+  await ensureLocalSchema();
+  const result = await localDbExecute({
     sql: `SELECT id, username, email, nombre, rol, acceso_bloqueado, is_seed_admin, fecha_creacion
       FROM users ORDER BY lower(nombre), lower(username)`,
   });
@@ -224,8 +224,8 @@ export async function listUsers() {
 }
 
 export async function setUserBlocked(id: string, blocked: boolean) {
-  await ensureTursoSchema();
-  const target = await tursoExecute({
+  await ensureLocalSchema();
+  const target = await localDbExecute({
     sql: `SELECT rol, is_seed_admin, acceso_bloqueado FROM users WHERE id=? LIMIT 1`,
     args: [id],
   });
@@ -235,7 +235,7 @@ export async function setUserBlocked(id: string, blocked: boolean) {
   if (wasBlocked === blocked) return;
 
   if (blocked && String(target.rows[0].rol) === 'administrador') {
-    const activeAdmins = await tursoExecute({
+    const activeAdmins = await localDbExecute({
       sql: `SELECT COUNT(*) AS total FROM users
         WHERE rol='administrador' AND acceso_bloqueado=0 AND id<>?`,
       args: [id],
@@ -249,7 +249,7 @@ export async function setUserBlocked(id: string, blocked: boolean) {
     }
   }
 
-  await tursoTransaction([
+  await localDbTransaction([
     {
       sql: `UPDATE users SET acceso_bloqueado=? WHERE id=?`,
       args: [blocked ? 1 : 0, id],
@@ -262,8 +262,8 @@ export async function setUserBlocked(id: string, blocked: boolean) {
 }
 
 export async function deleteUser(id: string) {
-  await ensureTursoSchema();
-  const target = await tursoExecute({
+  await ensureLocalSchema();
+  const target = await localDbExecute({
     sql: `SELECT is_seed_admin FROM users WHERE id=? LIMIT 1`,
     args: [id],
   });
@@ -271,7 +271,7 @@ export async function deleteUser(id: string) {
   if (Number(target.rows[0].is_seed_admin) === 1) {
     throw new Error('El administrador semilla no puede eliminarse.');
   }
-  await tursoTransaction([
+  await localDbTransaction([
     { sql: `DELETE FROM sessions WHERE user_id=?`, args: [id], wantRows: false },
     { sql: `DELETE FROM users WHERE id=?`, args: [id], wantRows: false },
   ]);
