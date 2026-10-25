@@ -287,7 +287,7 @@ export default function LicoreriaPOS() {
       const { user: _cachedUser, isAuthenticated: _cachedAuth, ...dbPatch } = dbUpdate as any;
       setState(prev => ({ ...prev, ...dbPatch }) as AppState);
     });
-    const timerClock = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timerClock = setInterval(() => setCurrentTime(new Date()), 15000); // Reduce renders globales: el reloj no necesita refrescar cada segundo.
     const runtimeHeartbeat = setInterval(() => {
       try {
         const raw = localStorage.getItem('posven_runtime_marker');
