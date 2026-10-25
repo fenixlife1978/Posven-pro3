@@ -2,7 +2,7 @@
 
 import { AppState, Terminal, Movimiento } from './types';
 import { registerOfflineProcessor } from './offline-queue';
-// Turso es la única base de datos operativa. Estos nombres se conservan únicamente
+// SQLite local es la única base de datos operativa. Estos nombres se conservan únicamente
 // para que los caminos legacy de sincronización no vuelvan a escribir en servidor Turso.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
 type DocumentData = any;
@@ -10,7 +10,7 @@ type QueryDocumentSnapshot<T = any> = any;
 const db: any = null;
 const legacyRealtime: any = null;
 const servidorTursoRetirado = (..._args: any[]): never => {
-  throw new Error('servidor Turso fue retirado del flujo operativo. Turso es la única fuente de datos.');
+  throw new Error('No se permite acceso a una base de datos remota; SQLite local es la fuente de verdad.');
 };
 const collection: any = servidorTursoRetirado;
 const doc: any = servidorTursoRetirado;
@@ -61,10 +61,10 @@ const COLLECTIONS: Record<string, string> = {
 const OPERATIONS_COLLECTION = 'operaciones';
 
 // ============================================================
-// PUENTE DE OPERACIONES CRÍTICAS A TURSO
+// OPERACIONES CRÍTICAS EN SQLITE LOCAL
 // ------------------------------------------------------------
-// Turso solo toma el control cuando sus credenciales existen en el servidor.
-// Si no está configurado (HTTP 503), el flujo existente de servidor Turso continúa.
+// Las operaciones se ejecutan exclusivamente contra SQLite local.
+// Si SQLite local no está inicializado, la operación falla de forma explícita.
 // Si Turso sí está configurado pero falla por otra causa, NO hacemos fallback
 // a servidor Turso: evitar dos fuentes de verdad es obligatorio durante la migración.
 // ============================================================
@@ -74,7 +74,7 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
   // navigator.onLine describe Internet, no el loopback local; no debe bloquear SQLite.
   let response: Response;
   try {
-    response = await fetch('/api/turso/store', {
+    response = await fetch('/api/local-store', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ operation, ...payload }),
     });
@@ -93,7 +93,7 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   const params = new URLSearchParams({ special: kind });
   if (kind === 'catalog') params.set('name', name);
   let response: Response;
-  try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
+  try { response = await fetch('/api/local-store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
   catch { throw new Error('No se pudo consultar la base SQLite local.'); }
   if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
@@ -109,7 +109,7 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
     if (options.limit) params.set('limit', String(options.limit));
     if (options.terminalId) params.set('terminalId', String(options.terminalId));
     if (options.estado) params.set('estado', String(options.estado));
-    response = await fetch('/api/turso/store?' + params.toString(), {
+    response = await fetch('/api/local-store?' + params.toString(), {
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
@@ -1339,7 +1339,7 @@ async function getSaleById(saleId: string): Promise<any | null> {
     // El cache local puede contener una versión antigua de la venta migrada
     // sin items y no debe ocultar el payload completo persistido.
     if (typeof window !== 'undefined') {
-      const response = await fetch('/api/turso/store?table=ventas&id=' + encodeURIComponent(id), {
+      const response = await fetch('/api/local-store?table=ventas&id=' + encodeURIComponent(id), {
         credentials: 'include',
         cache: 'no-store',
       });
@@ -1825,7 +1825,7 @@ export const Store = {
     journal?: any;
   }): Promise<any> {
     // En modo Turso no existe `db` local: Turso es la única fuente operativa.
-    // No debemos bloquear esta ruta antes de llamar al endpoint /api/turso/store.
+    // No debemos bloquear esta ruta antes de llamar al endpoint /api/local-store.
     if (typeof window === 'undefined') return null;
     const tursoResult = await tryTursoOperation('supplierDebt', params);
     if (tursoResult) {
