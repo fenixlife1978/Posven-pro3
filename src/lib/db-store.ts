@@ -65,7 +65,7 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // ------------------------------------------------------------
 // Las operaciones se ejecutan exclusivamente contra SQLite local.
 // Si SQLite local no está inicializado, la operación falla de forma explícita.
-// Si LocalStore sí está configurado pero falla por otra causa, NO hacemos fallback
+// Si SQLite local sí está configurado pero falla por otra causa, NO hacemos fallback
 // a servidor LocalStore: evitar dos fuentes de verdad es obligatorio durante la migración.
 // ============================================================
 async function tryLocalStoreOperation(operation: string, payload: any): Promise<any | null> {
@@ -95,7 +95,7 @@ async function tryLocalStoreSpecialRead(kind: 'config' | 'catalog', name = ''): 
   let response: Response;
   try { response = await fetch('/api/local-store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
   catch { throw new Error('No se pudo consultar la base SQLite local.'); }
-  if (response.status === 503) throw new Error('LocalStore no está configurado o no está disponible. servidor LocalStore no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. No se utilizará una base remota como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
@@ -117,11 +117,11 @@ async function tryLocalStoreRead(table: string, options: { limit?: number; termi
   } catch {
     throw new Error('No se pudo consultar la base SQLite local.');
   }
-  if (response.status === 503) throw new Error('LocalStore no está configurado o no está disponible. servidor LocalStore no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. No se utilizará una base remota como respaldo.');
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) {
-    throw new Error(String(body?.error || ('LocalStore rechazó la lectura (' + response.status + ').')));
+    throw new Error(String(body?.error || ('SQLite local rechazó la lectura (' + response.status + ').')));
   }
   return Array.isArray(body?.records) ? body.records : [];
 }
@@ -1345,7 +1345,7 @@ async function getSaleById(saleId: string): Promise<any | null> {
       });
       if (response.status === 503) throw new Error('LocalStore no está configurado o no está disponible.');
       const body: any = await response.json();
-      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'LocalStore rechazó la lectura.'));
+      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
       if (body?.record) return sanitizeRecord(body.record);
       return null;
     }
