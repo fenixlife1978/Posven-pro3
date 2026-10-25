@@ -7,7 +7,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 type SqliteStatement = { sql: string; args?: unknown[]; wantRows?: boolean };
-export type TursoStatement = SqliteStatement;
+export type LocalDbStatement = SqliteStatement;
+export type TursoStatement = LocalDbStatement;
 type SqliteRunResult = { changes: number; lastInsertRowid: number | bigint };
 type SqliteDatabase = {
   exec(sql: string): void;
@@ -55,21 +56,21 @@ function run(statement: SqliteStatement) {
   return { rows: [], affected_row_count: Number(result.changes || 0), last_insert_rowid: String(result.lastInsertRowid ?? '') };
 }
 
-export function isTursoConfigured(): boolean {
+export function isLocalDatabaseConfigured(): boolean {
   // Nombre histórico para compatibilidad interna; verifica SQLite local.
   return Boolean(String(process.env.POSVEN_SQLITE_PATH || '').trim());
 }
 
-export async function tursoExecute(statement: TursoStatement) {
+export async function localDbExecute(statement: LocalDbStatement) {
   return enqueueDatabaseOperation(() => run(statement));
 }
 
-export async function tursoBatch(statements: TursoStatement[]) {
+export async function localDbBatch(statements: LocalDbStatement[]) {
   if (!statements.length) return [];
-  return tursoTransaction(statements);
+  return localDbTransaction(statements);
 }
 
-export async function tursoTransaction(statements: TursoStatement[]) {
+export async function localDbTransaction(statements: LocalDbStatement[]) {
   if (!statements.length) return [];
   return enqueueDatabaseOperation(() => {
     const db = getDatabase();
@@ -88,12 +89,12 @@ export async function tursoTransaction(statements: TursoStatement[]) {
   });
 }
 
-export type TursoTransactionContext = {
+export type LocalDbTransactionContext = {
   execute: (statement: TursoStatement) => Promise<any>;
 };
 
-export async function tursoInteractiveTransaction<T>(
-  callback: (tx: TursoTransactionContext) => Promise<T>,
+export async function localDbInteractiveTransaction<T>(
+  callback: (tx: LocalDbTransactionContext) => Promise<T>,
 ): Promise<T> {
   return enqueueDatabaseOperation(async () => {
     const db = getDatabase();
@@ -112,3 +113,11 @@ export async function tursoInteractiveTransaction<T>(
     }
   });
 }
+
+// Compatibilidad temporal: estos alias no conectan con ningún servicio remoto.
+export const isTursoConfigured = isLocalDatabaseConfigured;
+export const tursoExecute = localDbExecute;
+export const tursoBatch = localDbBatch;
+export const tursoTransaction = localDbTransaction;
+export type TursoTransactionContext = LocalDbTransactionContext;
+export const tursoInteractiveTransaction = localDbInteractiveTransaction;
