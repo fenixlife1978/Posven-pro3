@@ -47,12 +47,8 @@ const DEMO_MODULE_BY_OPERATION: Record<string, string> = {
 async function resolveDemoModule(operation: string, body: any): Promise<string | undefined> {
   if (operation === 'productSync') {
     const changes = Array.isArray(body?.changes) ? body.changes : [];
-    for (const change of changes) {
-      const id = String(change?.id || change?.product?.id || '').trim();
-      if (!id) continue;
-      const existing = await getRecord('productos', id);
-      if (!existing) return 'Productos creados';
-    }
+    // db-store sends { before, after }; only a new record consumes a creation.
+    if (changes.some((change: any) => !change?.before && change?.after?.id)) return 'Productos creados';
     return undefined;
   }
   if (operation === 'upsert' && String(body?.table || '') === 'productos') {
