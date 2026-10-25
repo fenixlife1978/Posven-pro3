@@ -413,19 +413,19 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
 
   return (
     <div className="modal show"><div className="modal-bg" onClick={() => onClose()}></div>
-      <div className="modal-box bg-white max-w-2xl border-2 border-line rounded-xl overflow-hidden shadow-2xl">
+      <div className="modal-box relative z-[51] bg-white max-w-2xl border-2 border-line rounded-xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="modal-head py-4 px-6 border-b border-line bg-ink flex justify-between items-center text-white">
           <h3 className="font-black uppercase italic tracking-tighter text-sm flex items-center gap-2">
             <Box className="w-5 h-5 text-brand-gold" /> {producto ? 'EDITAR FICHA' : 'NUEVO ÍTEM / PRODUCTO'}
           </h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white"><X className="w-5 h-5"/></button>
+          <button type="button" onClick={onClose} className="text-white/40 hover:text-white"><X className="w-5 h-5"/></button>
         </div>
 
         <div className="flex bg-surface-soft border-b border-line">
-          <button onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'general' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>General</button>
-          <button onClick={() => setActiveTab('precios')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'precios' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Precios</button>
-          <button onClick={() => setActiveTab('presentaciones')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'presentaciones' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Presentaciones</button>
-          <button onClick={() => setActiveTab('kit')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'kit' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Kits / Combos</button>
+          <button type="button" onClick={() => setActiveTab('general')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'general' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>General</button>
+          <button type="button" onClick={() => setActiveTab('precios')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'precios' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Precios</button>
+          <button type="button" onClick={() => setActiveTab('presentaciones')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'presentaciones' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Presentaciones</button>
+          <button type="button" onClick={() => setActiveTab('kit')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'kit' ? 'border-brand-gold text-brand-gold bg-white' : 'border-transparent text-ink/40'}`}>Kits / Combos</button>
         </div>
 
         <div className="modal-body p-6 space-y-6 bg-white max-h-[70vh] overflow-y-auto">
@@ -434,11 +434,11 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
               <div className="space-y-4">
                 <div className="space-y-1">
                   <Label className="text-[10px] font-black uppercase text-ink/50 block">SKU / Código interno</Label>
-                  <Input className="h-10 font-black text-ink bg-white" value={datos.codigo} readOnly={!!datos.skuCompuestoAutomatico} onChange={e => setDatos({...datos, codigo: e.target.value})} placeholder="SKU-REP-00001" autoFocus />
+                  <Input className="h-10 font-black text-ink bg-white" value={datos.codigo} readOnly={!!datos.skuCompuestoAutomatico} onChange={e => setDatos((prev: any) => ({...prev, codigo: e.target.value}))} placeholder="SKU-REP-00001" autoFocus />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] font-black uppercase text-ink/50 block">Código de barras original del fabricante</Label>
-                  <Input className="h-10 font-mono text-ink bg-white" value={datos.barcode || ''} onChange={e => setDatos({...datos, barcode: e.target.value.trim()})} placeholder="Escanee aquí o escriba el EAN/UPC" />
+                  <Input className="h-10 font-mono text-ink bg-white" value={datos.barcode || ''} onChange={e => setDatos((prev: any) => ({...prev, barcode: e.target.value}))} placeholder="Escanee aquí o escriba el EAN/UPC" />
                   <p className="text-[10px] text-ink/50">El SKU y este código de barras identifican el mismo producto.</p>
                 </div>
                 <label className="flex items-start gap-2 text-xs font-bold rounded-lg border border-line p-3">
@@ -450,7 +450,7 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                 </label>
                 <div className="space-y-1">
                   <Label className="text-[10px] font-black uppercase text-ink/50 block">Nombre del Producto</Label>
-                  <Input className="h-10 font-black text-ink uppercase bg-white" value={datos.nombre} onChange={e => setDatos({...datos, nombre: e.target.value})} />
+                  <Input className="h-10 font-black text-ink uppercase bg-white" value={datos.nombre} onChange={e => setDatos((prev: any) => ({...prev, nombre: e.target.value}))} />
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -458,8 +458,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                      <div className="flex justify-between items-center mb-1">
                        <Label className="text-[10px] font-black uppercase text-ink/50">Departamento</Label>
                        <div className="flex gap-1">
-                         <button onClick={() => handleAddListItem('departamentos')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
-                         <button onClick={() => handleRemoveListItem('departamentos', datos.departamento)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
+                         <button type="button" onClick={() => handleAddListItem('departamentos')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
+                         <button type="button" onClick={() => handleRemoveListItem('departamentos', datos.departamento)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
                        </div>
                      </div>
                      <select className="form-select h-10 text-xs font-bold bg-white" value={datos.departamento} onChange={e => {
@@ -476,8 +476,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                      <div className="flex justify-between items-center mb-1">
                        <Label className="text-[10px] font-black uppercase text-ink/50">Categoría</Label>
                        <div className="flex gap-1">
-                         <button onClick={() => handleAddListItem('categorias')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
-                         <button onClick={() => handleRemoveListItem('categorias', datos.categoria)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
+                         <button type="button" onClick={() => handleAddListItem('categorias')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
+                         <button type="button" onClick={() => handleRemoveListItem('categorias', datos.categoria)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
                        </div>
                      </div>
                      <select className="form-select h-10 text-xs font-bold bg-white" value={datos.categoria} onChange={e => {
@@ -493,8 +493,8 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
                      <div className="flex justify-between items-center mb-1">
                        <Label className="text-[10px] font-black uppercase text-ink/50">Unidad de Medida Base</Label>
                        <div className="flex gap-1">
-                         <button onClick={() => handleAddListItem('presentaciones')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
-                         <button onClick={() => handleRemoveListItem('presentaciones', datos.cantidad)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
+                         <button type="button" onClick={() => handleAddListItem('presentaciones')} className="text-brand-gold"><PlusCircle className="w-3.5 h-3.5"/></button>
+                         <button type="button" onClick={() => handleRemoveListItem('presentaciones', datos.cantidad)} className="text-status-danger"><MinusCircle className="w-3.5 h-3.5"/></button>
                        </div>
                      </div>
                      <select className="form-select h-10 text-xs font-bold bg-white" value={datos.cantidad} onChange={e => { const cantidad=e.target.value; setDatos((prev:any)=>({...prev,cantidad,presentacionesVenta:(prev.presentacionesVenta||[]).map((pres:any)=>{const factor=presentationFactorFromContent(pres.contenido,pres.unidadContenido,cantidad);return factor!==null?{...pres,factor}:pres;})})); }}>
@@ -655,7 +655,7 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
             </div>
           )}
         </div>
-        <div className="modal-foot p-5 bg-surface-soft border-t border-line flex justify-end gap-3"><Button variant="secondary" className="px-8 font-black uppercase text-[10px]" onClick={onClose}>Cerrar</Button><Button className="bg-brand-gold hover:bg-brand-gold-deep text-ink px-10 font-black uppercase text-[10px] shadow-lg" onClick={handleSave}>{producto ? 'ACTUALIZAR' : 'CREAR PRODUCTO'}</Button></div>
+        <div className="modal-foot p-5 bg-surface-soft border-t border-line flex justify-end gap-3"><Button variant="secondary" className="px-8 font-black uppercase text-[10px]" onClick={onClose}>Cerrar</Button><Button type="button" className="bg-brand-gold hover:bg-brand-gold-deep text-ink px-10 font-black uppercase text-[10px] shadow-lg" onClick={handleSave}>{producto ? 'ACTUALIZAR' : 'CREAR PRODUCTO'}</Button></div>
       </div>
     </div>
   );

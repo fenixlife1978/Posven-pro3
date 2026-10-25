@@ -63,6 +63,17 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Mark runtime as DEMO before packaging the DEMO installer
+        shell: pwsh
+        run: |
+          $main = Get-Content 'main.js' -Raw
+          if ($main -notmatch 'POSVEN_DEMO_BUILD') {
+            Set-Content -Path 'main.js' -Value ("process.env.POSVEN_DEMO_BUILD = '1';" + [Environment]::NewLine + $main) -Encoding utf8
+          }
+          if (-not (Select-String -Path 'main.js' -Pattern 'POSVEN_DEMO_BUILD' -Quiet)) {
+            throw 'No se pudo activar POSVEN_DEMO_BUILD para el instalador DEMO.'
+          }
+
       - name: Build separate DEMO installer
         shell: pwsh
         run: |

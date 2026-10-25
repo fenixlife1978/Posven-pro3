@@ -92,6 +92,7 @@ export default function LicoreriaPOS() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isDemoBuild, setIsDemoBuild] = useState(false);
+  const [demoCounts, setDemoCounts] = useState<Record<string, number>>({ 'Ventas': 0, 'Productos creados': 0, 'Compras': 0 });
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -286,7 +287,7 @@ export default function LicoreriaPOS() {
       const { user: _cachedUser, isAuthenticated: _cachedAuth, ...dbPatch } = dbUpdate as any;
       setState(prev => ({ ...prev, ...dbPatch }) as AppState);
     });
-    const timerClock = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timerClock = setInterval(() => setCurrentTime(new Date()), 15000); // Reduce renders globales: el reloj no necesita refrescar cada segundo.
     const runtimeHeartbeat = setInterval(() => {
       try {
         const raw = localStorage.getItem('posven_runtime_marker');
@@ -326,6 +327,24 @@ export default function LicoreriaPOS() {
       window.removeEventListener('error', captureError);
     };
   }, [router]);
+
+  useEffect(() => {
+    if (!isDemoBuild) return;
+    let cancelled = false;
+    const refreshDemoCounts = async () => {
+      try {
+        const response = await fetch('/api/turso/store?special=demoStatus', { cache: 'no-store', credentials: 'include' });
+        if (!response.ok) return;
+        const body = await response.json();
+        if (!cancelled && body?.demo && body?.counts) setDemoCounts(body.counts);
+      } catch {
+        // El contador se vuelve a consultar en el siguiente ciclo; no bloquea la interfaz.
+      }
+    };
+    void refreshDemoCounts();
+    const timer = setInterval(refreshDemoCounts, 2500);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [isDemoBuild]);
 
   // Maestros bajo demanda: solo mantienen realtime mientras el módulo que los necesita está abierto.
   // El sincronizador conserva el listener si el siguiente módulo también lo necesita,
@@ -732,8 +751,14 @@ export default function LicoreriaPOS() {
 
       <main className="flex-1 flex flex-col min-h-screen min-w-0 w-0 max-w-full overflow-hidden">
         {isDemoBuild && (
-          <div role="status" className="shrink-0 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center text-xs sm:text-sm font-black tracking-wide">
-            POSVEN-PRO3 · VERSIÓN DEMO — Máximo 10 acciones por módulo. Adquiere la versión completa para desbloquear el sistema.
+          <div role="status" aria-label="Límites de la versión DEMO" className="shrink-0 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center">
+            <div className="text-xs sm:text-sm font-black tracking-wide">POSVEN PRO · VERSIÓN DEMO — PRUEBA DEL SISTEMA</div>
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] sm:text-xs font-bold">
+              <span>Ventas: {Math.min(10, demoCounts['Ventas'] || 0)}/10</span>
+              <span>Productos creados: {Math.min(10, demoCounts['Productos creados'] || 0)}/10</span>
+              <span>Compras: {Math.min(10, demoCounts['Compras'] || 0)}/10</span>
+            </div>
+            <div className="mt-1 text-[10px] sm:text-xs font-bold">Al llegar cualquiera a 10/10, la prueba se bloquea. Adquiere la versión COMPLETA para continuar sin interrupciones.</div>
           </div>
         )}
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-3 sm:px-7 py-3.5 flex items-center gap-2 sm:gap-6 no-print min-w-0 overflow-hidden">
