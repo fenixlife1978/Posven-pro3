@@ -191,11 +191,12 @@ export async function POST(request: Request) {
       const moduleName = await resolveDemoModule(operation, body);
       if (moduleName && !(await reserveDemoAction(moduleName))) {
         const latest = await isDemoExhausted();
+        const exhaustedModule = latest.module || moduleName;
         return NextResponse.json({
           ok: false,
-          error: `La versión DEMO alcanzó el límite de 10/10 en «${moduleName}». La prueba del sistema ha terminado. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.`,
+          error: `La versión DEMO alcanzó el límite de 10/10 en «${exhaustedModule}». La prueba del sistema ha terminado. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.`,
           demoLimitReached: true,
-          module: moduleName,
+          module: exhaustedModule,
           counts: latest.counts,
           limit: 10,
         }, { status: 429 });
