@@ -1,4 +1,4 @@
-import { tursoBatch, tursoExecute } from '@/lib/turso/client';
+import { localDbBatch, localDbExecute } from '@/lib/turso/client';
 
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS app_config (id TEXT PRIMARY KEY, data_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
@@ -38,7 +38,7 @@ let initializing: Promise<void> | null = null;
 async function initialize() {
   // Repetir los CREATE IF NOT EXISTS corrige instalaciones interrumpidas.
   // Son idempotentes y no borran datos existentes.
-  await tursoBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
+  await localDbBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
 
   const requiredTables = [
     'app_config', 'users', 'catalogos', 'productos', 'movimientos', 'ventas',
@@ -47,16 +47,16 @@ async function initialize() {
     'operaciones', 'auditoria_sistema', 'legacy_documents', 'sessions',
     'migration_runs', 'demo_action_counts',
   ];
-  const verify = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table'" });
+  const verify = await localDbExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table'" });
   const names = new Set(verify.rows.map((row: any) => String(row.name)));
   const missing = requiredTables.filter(required => !names.has(required));
   if (missing.length) {
-    throw new Error('Esquema Turso incompleto. Faltan tablas: ' + missing.join(', '));
+    throw new Error('Esquema SQLite local incompleto. Faltan tablas: ' + missing.join(', '));
   }
   initialized = true;
 }
 
-export async function ensureTursoSchema() {
+export async function ensureLocalSchema() {
   if (initialized) return;
   if (!initializing) {
     initializing = initialize().finally(() => {
@@ -65,3 +65,6 @@ export async function ensureTursoSchema() {
   }
   await initializing;
 }
+
+// Alias temporal para los módulos de autenticación aún no migrados.
+export const ensureTursoSchema = ensureLocalSchema;
