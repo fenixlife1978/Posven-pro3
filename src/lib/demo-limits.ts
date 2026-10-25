@@ -3,9 +3,16 @@ import { tursoTransaction, tursoExecute } from '@/lib/turso/client';
 export const DEMO_LIMIT = 10;
 export const DEMO_TRACKED_MODULES = ['Ventas', 'Productos creados', 'Compras'] as const;
 export type DemoTrackedModule = typeof DEMO_TRACKED_MODULES[number];
+const ENSURE_DEMO_SCHEMA = "CREATE TABLE IF NOT EXISTS demo_action_counts (module TEXT PRIMARY KEY NOT NULL, actions INTEGER NOT NULL DEFAULT 0 CHECK(actions >= 0))";
+
+async function ensureDemoSchema(): Promise<void> {
+  await tursoExecute({ sql: ENSURE_DEMO_SCHEMA, wantRows: false });
+}
+
 
 /** Atomically consumes one of the ten allowed demo actions for a tracked category. */
 export async function reserveDemoAction(moduleName: string): Promise<boolean> {
+  await ensureDemoSchema();
   const results = await tursoTransaction([
     { sql: 'INSERT OR IGNORE INTO demo_action_counts(module, actions) VALUES(?, 0)', args: [moduleName], wantRows: false },
     { sql: 'UPDATE demo_action_counts SET actions = actions + 1 WHERE module = ? AND actions < ?', args: [moduleName, DEMO_LIMIT], wantRows: false },
@@ -15,6 +22,7 @@ export async function reserveDemoAction(moduleName: string): Promise<boolean> {
 
 /** Returns stable counters even before a category has its first action. */
 export async function getDemoActionCounts(): Promise<Record<DemoTrackedModule, number>> {
+  await ensureDemoSchema();
   const result = await tursoExecute({
     sql: 'SELECT module, actions FROM demo_action_counts WHERE module IN (?, ?, ?)',
     args: [...DEMO_TRACKED_MODULES],
