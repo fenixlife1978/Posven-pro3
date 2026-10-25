@@ -89,7 +89,7 @@ export async function POST(request: Request) {
         ok: true,
         action,
         skipped: ['users','operaciones','auditoriaSistema','legacy_documents'],
-        note: 'Se conserva el administrador semilla de Turso.',
+        note: 'Se conserva el administrador semilla local.',
       });
     }
 
