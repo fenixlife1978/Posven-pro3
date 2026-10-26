@@ -1,6 +1,6 @@
 export interface User {
   uid: string;
-  /** ID del terminal/caja asignado en Turso; es la identidad operativa del cajero. */
+  /** ID del terminal/caja asignado en SQLite local; es la identidad operativa del cajero. */
   terminalId?: string | null;
   isSeedAdmin?: boolean;
   nombre: string;
