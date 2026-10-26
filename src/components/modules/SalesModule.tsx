@@ -215,12 +215,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         const allRecords: any[] = [];
         for (let offset = 0; ; offset += pageSize) {
           const response = await fetch(
-            '/api/turso/store?table=cxc&limit=' + pageSize + '&offset=' + offset,
+            '/api/local-store?table=cxc&limit=' + pageSize + '&offset=' + offset,
             { credentials: 'include', cache: 'no-store' }
           );
           const body: any = await response.json();
           if (!response.ok || body?.ok === false) {
-            throw new Error(String(body?.error || 'Turso rechazó la lectura histórica de CxC.'));
+            throw new Error(String(body?.error || 'SQLite local rechazó la lectura histórica de CxC.'));
           }
           const page = Array.isArray(body?.records) ? body.records : [];
           allRecords.push(...page);
@@ -239,7 +239,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     if (view !== 'credits') setCreditSearch('');
   }, [view]);
 
-  // Releer el saldo real desde Turso tras cada cobro/abono; el estado local
+  // Releer el saldo real desde SQLite local tras cada cobro/abono; el estado local
   // de la pestaña Consultar Créditos nunca debe quedar mostrando importes viejos.
   const refreshCreditDebts = async () => {
     try {
@@ -247,12 +247,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const allRecords: any[] = [];
       for (let offset = 0; ; offset += pageSize) {
         const response = await fetch(
-          '/api/turso/store?table=cxc&limit=' + pageSize + '&offset=' + offset,
+          '/api/local-store?table=cxc&limit=' + pageSize + '&offset=' + offset,
           { credentials: 'include', cache: 'no-store' }
         );
         const body: any = await response.json();
         if (!response.ok || body?.ok === false) {
-          throw new Error(String(body?.error || 'No se pudo actualizar el saldo de créditos desde Turso.'));
+          throw new Error(String(body?.error || 'No se pudo actualizar el saldo de créditos desde SQLite local.'));
         }
         const page = Array.isArray(body?.records) ? body.records : [];
         allRecords.push(...page);
@@ -260,7 +260,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       }
       setCreditDebts(allRecords as Debt[]);
     } catch (error: any) {
-      // El cobro ya puede estar confirmado en Turso: no reportarlo como fallido
+      // El cobro ya puede estar confirmado en SQLite local: no reportarlo como fallido
       // solo porque falle la recarga de la lista.
       console.error('[POS] Cobro registrado, pero falló la actualización visual de CxC:', error);
       toast({ title: 'Pago registrado; actualización pendiente', description: 'El saldo se guardó. Cambia de pestaña y vuelve a Consultar Créditos para recargarlo.', variant: 'destructive' });
@@ -830,11 +830,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowDetails(debt);
     try {
       const response = await fetch(
-        '/api/turso/store?table=cxc&id=' + encodeURIComponent(String(debt.id)),
+        '/api/local-store?table=cxc&id=' + encodeURIComponent(String(debt.id)),
         { credentials: 'include', cache: 'no-store' }
       );
       const body: any = await response.json();
-      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura de la deuda.'));
+      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura de la deuda.'));
       const sourceDebt: any = body?.record || debt;
       const saleId = String(sourceDebt?.ventaId || sourceDebt?.facturaId || '').trim();
       let sale: any = null;
@@ -1101,7 +1101,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const operationId = 'VENTA-POS-' + Store.uid();
 
       // La venta NO se confirma con un simple Store.set() local.
-      // Debe pasar por la transacción atómica de Turso para que
+      // Debe pasar por la transacción atómica de SQLite local para que
       // venta + stock + kardex + asiento + correlativo queden persistidos
       // antes de mostrarla como completada.
       const result = await Store.createSaleTransaction({
@@ -1120,13 +1120,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       if (result?.queuedOffline) {
         // La cola local ya guardó la operación completa con un ID idempotente.
         // Se libera el carrito visible para evitar reintentos duplicados; no se
-        // imprime factura ni se muestra la operación como confirmada por Turso.
+        // imprime factura ni se muestra la operación como confirmada por SQLite local.
         if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
         setPagos([]);
         setCliente('Consumidor final');
         setSelectedProductDisplay(null);
         updateState({ carrito: [] });
-        toast({ title: 'Venta guardada pendiente de sincronización', description: 'La operación quedó almacenada en este equipo. No se emitió factura definitiva; al recuperar internet, Turso validará stock y registrará la venta.' });
+        toast({ title: 'Venta guardada pendiente de sincronización', description: 'La operación quedó almacenada en este equipo. No se emitió factura definitiva; al recuperar internet, SQLite local validará stock y registrará la venta.' });
         return;
       }
       if (!result?.sale) throw new Error('La venta no pudo confirmarse en la base de datos.');
@@ -1210,7 +1210,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setLastProcessedSale(saleFinal);
       setShowReceiptModal(true);
       setShowAbonoModal(null);
-      // Refrescar desde Turso: saldo pendiente, estado y abonos de la factura.
+      // Refrescar desde SQLite local: saldo pendiente, estado y abonos de la factura.
       await refreshCreditDebts();
     } finally {
       setIsProcessing(false);
@@ -1267,7 +1267,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           description: `${cashMovement.tipo === 'egreso' ? 'Salida' : 'Entrada'} de ${cashMovement.metodo === 'efectivo_bs' ? Utils.fmtBS(monto) : Utils.fmtUSD(monto)} registrada en ${terminal.nombre}.`
         });
       } catch (e: any) {
-        toast({ variant: 'destructive', title: 'Movimiento no registrado', description: e?.message || 'No se pudo persistir el movimiento en Turso.' });
+        toast({ variant: 'destructive', title: 'Movimiento no registrado', description: e?.message || 'No se pudo persistir el movimiento en SQLite local.' });
       }
     })();
 
@@ -1313,10 +1313,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         setIsCreditModalOpen(false);
         setSelectedClient(null);
         updateState({ carrito: [] });
-        toast({ title: 'Venta a crédito guardada pendiente', description: 'La solicitud quedó en la cola local. La deuda y la factura solo existirán después de que Turso confirme la sincronización.' });
+        toast({ title: 'Venta a crédito guardada pendiente', description: 'La solicitud quedó en la cola local. La deuda y la factura solo existirán después de que SQLite local confirme la sincronización.' });
         return;
       }
-      if (!result?.sale || !result?.debt) throw new Error('La venta a crédito no pudo confirmarse en Turso.');
+      if (!result?.sale || !result?.debt) throw new Error('La venta a crédito no pudo confirmarse en SQLite local.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
 
       setLastProcessedSale(result.sale);
@@ -1328,7 +1328,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       toast({
         variant: 'destructive',
         title: 'Venta a crédito no registrada',
-        description: e?.message || 'No se pudo confirmar la venta en Turso.'
+        description: e?.message || 'No se pudo confirmar la venta en SQLite local.'
       });
     } finally {
       setIsProcessing(false);
