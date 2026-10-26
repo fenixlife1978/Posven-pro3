@@ -32,10 +32,10 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     if (isNaN(n) || n <= 0) return alert('Tasa inválida');
     try {
       await Store.patchConfig({ tasa: n });
-      toast({ title: "Sincronizado", description: "Tasa de cambio guardada en Turso y disponible después de recargar." });
+      toast({ title: "Sincronizado", description: "Tasa de cambio guardada en SQLite local y disponible después de recargar." });
     } catch (error: any) {
-      console.error('Error guardando tasa en Turso:', error);
-      toast({ variant: 'destructive', title: 'No se guardó la tasa', description: error?.message || 'Turso no confirmó el cambio.' });
+      console.error('Error guardando tasa en SQLite local:', error);
+      toast({ variant: 'destructive', title: 'No se guardó la tasa', description: error?.message || 'SQLite local no confirmó el cambio.' });
     }
   };
 
@@ -92,28 +92,28 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
 
 
   const formatearSistema = async () => {
-    const confirmMsg = '⚠️ Esta acción eliminará los datos operativos almacenados en Turso. El administrador semilla se conservará. ¿Desea continuar?';
+    const confirmMsg = '⚠️ Esta acción eliminará los datos operativos almacenados en SQLite local. El administrador semilla se conservará. ¿Desea continuar?';
     if (!confirm(confirmMsg)) return;
     setIsFormatting(true);
     try {
-      const response = await fetch('/api/turso/store', {
+      const response = await fetch('/api/local-store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ operation: 'factoryReset' })
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.ok === false) throw new Error(data?.error || 'Turso no confirmó el formateo.');
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || 'SQLite local no confirmó el formateo.');
       if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('posven_apertura_done');
         localStorage.removeItem('posven_last_cxp_alert');
       }
       await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-      toast({ title: 'Sistema Formateado', description: 'Turso fue reiniciado y el administrador semilla fue conservado.' });
+      toast({ title: 'Sistema Formateado', description: 'SQLite local fue reiniciado y el administrador semilla fue conservado.' });
       window.location.href = '/login';
     } catch (error: any) {
-      console.error('Error en formateo Turso:', error);
+      console.error('Error en formateo SQLite local:', error);
       toast({ variant: 'destructive', title: 'Fallo en Limpieza', description: error?.message || 'No se pudo completar el formateo.' });
     } finally {
       setIsFormatting(false);
