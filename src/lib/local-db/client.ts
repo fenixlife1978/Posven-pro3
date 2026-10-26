@@ -8,7 +8,6 @@ import path from 'node:path';
 
 type SqliteStatement = { sql: string; args?: unknown[]; wantRows?: boolean };
 export type LocalDbStatement = SqliteStatement;
-export type LocalDbStatement = LocalDbStatement;
 type SqliteRunResult = { changes: number; lastInsertRowid: number | bigint };
 type SqliteDatabase = {
   exec(sql: string): void;
