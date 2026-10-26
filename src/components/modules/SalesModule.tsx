@@ -1268,7 +1268,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     setShowCashMovementModal(false);
   };
 
-  // ===== VENTA A CRÉDITO: MISMA TRANSACCIÓN TURSO QUE UNA VENTA NORMAL =====
+  // ===== VENTA A CRÉDITO: MISMA TRANSACCIÓN SQLITE LOCAL QUE UNA VENTA NORMAL =====
   const ejecutarVentaACredito = async (customer: Customer) => {
     if (state.carrito.length === 0 || isProcessing) return;
     if (!customer) return alert("Seleccione un cliente.");
