@@ -1,8 +1,8 @@
-import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
+import { getRequestSessionId, getSessionUser } from '@/lib/auth/local-auth';
 import { NextResponse } from 'next/server';
 import { reserveDemoAction, getDemoActionCounts, isDemoExhausted } from '@/lib/demo-limits';
 import {
-  assertTursoReady,
+  assertLocalDatabaseReady,
   getRecord,
   listRecords,
   countRecords,
@@ -34,8 +34,8 @@ import {
   deleteCustomerDebtTransaction,
   createPurchaseTransaction,
   deletePurchaseTransaction,
-  type TursoStoreTable,
-} from '@/lib/turso/pos-store';
+  type LocalStoreTable,
+} from '@/lib/local-db/pos-store';
 
 export const runtime = 'nodejs';
 
@@ -94,10 +94,10 @@ const TABLES = new Set([
   'devoluciones','anulaciones','terminales','libroDiario','reportesZ','caja','compras',
 ]);
 
-function table(value: unknown): TursoStoreTable {
+function table(value: unknown): LocalStoreTable {
   const name = String(value || '');
   if (!TABLES.has(name)) throw new Error('Tabla POSVEN no permitida.');
-  return name as TursoStoreTable;
+  return name as LocalStoreTable;
 }
 
 async function requireUser(request: Request) {
@@ -108,7 +108,7 @@ async function requireUser(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    assertTursoReady();
+    assertLocalDatabaseReady();
     const user = await requireUser(request);
     const url = new URL(request.url);
     const special = url.searchParams.get('special');
@@ -164,7 +164,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    assertTursoReady();
+    assertLocalDatabaseReady();
     const user = await requireUser(request);
     const body = await request.json();
     const operation = String(body?.operation || '');
