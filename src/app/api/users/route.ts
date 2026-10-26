@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createUser, getSessionUser, listUsers } from '@/lib/auth/turso-auth';
+import { createUser, getSessionUser, listUsers } from '@/lib/auth/local-auth';
 import { reserveDemoAction } from '@/lib/demo-limits';
 
 export const runtime = 'nodejs';
