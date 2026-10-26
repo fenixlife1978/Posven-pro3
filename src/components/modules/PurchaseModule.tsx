@@ -164,7 +164,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   }, [state.movimientos, state.cxp, state.productos]);
 
   const todasCompras = useMemo<PurchaseRecord[]>(() => {
-    // Una compra registrada en Turso puede aparecer también en legacyCompras
+    // Una compra registrada en SQLite local puede aparecer también en legacyCompras
     // porque su movimiento de inventario ya existe. El registro canónico de
     // compras debe prevalecer para no mostrarla dos veces.
     const map = new Map<string, PurchaseRecord>();
@@ -180,7 +180,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     };
 
     // Primero entra la reconstrucción histórica y luego el registro canónico
-    // de Turso. Así una compra nueva reemplaza a su copia reconstruida desde
+    // de SQLite local. Así una compra nueva reemplaza a su copia reconstruida desde
     // el movimiento de Kardex, en vez de sumarse como una segunda compra.
     (legacyCompras || []).forEach((c: any) => map.set(keyOf(c), c));
     (state.compras || []).forEach((c: any) => map.set(keyOf(c), c));
@@ -407,7 +407,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       });
 
       if (resultCompra?.queuedOffline) { toast({ title: 'Compra guardada sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
-      // Turso ya actualizó el producto dentro de la misma transacción.
+      // SQLite local ya actualizó el producto dentro de la misma transacción.
       // No volvemos a sumar la compra en el cliente: eso duplicaba el stock.
       updateState({
         compras: [...(state.compras || []), nuevaCompra],
@@ -415,7 +415,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
           ? { productos: mergeById(state.productos || [], resultCompra.products) }
           : {})
       });
-      toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en Turso de forma transaccional.` });
+      toast({ title: "Compra Registrada ✅", description: `Factura ${numeroFactura} guardada en SQLite local de forma transaccional.` });
       
       setProveedor('');
       setNumeroFactura('');
@@ -424,7 +424,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
       setCondicion('contado');
     } catch (err: any) {
       console.error('❌ Error procesando compra:', err);
-      toast({ title: "Error al guardar compra", description: err?.message || 'Turso no confirmó la persistencia de la compra', variant: "destructive", duration: 8000 });
+      toast({ title: "Error al guardar compra", description: err?.message || 'SQLite local no confirmó la persistencia de la compra', variant: "destructive", duration: 8000 });
       // NO limpiar formulario: usuario puede reintentar
     } finally {
       processingRef.current = false;
