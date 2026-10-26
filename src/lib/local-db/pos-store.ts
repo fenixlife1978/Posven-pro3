@@ -2131,5 +2131,3 @@ export async function deleteCustomerDebtTransaction(params:any){
 }
 
 // Alias temporales para endpoints heredados; la implementación usa solo SQLite local.
-export const assertLocalDatabaseReady = assertLocalDatabaseReady;
-export type LocalStoreTable = LocalStoreTable;
