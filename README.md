@@ -4,29 +4,34 @@ Aplicación de punto de venta para Windows, construida con Next.js y Electron.
 
 ## Arquitectura
 
-- Base de datos operativa: Turso (libSQL/SQLite remoto).
-- Autenticación: sesiones propias de la aplicación y contraseñas con hash.
-- Aplicación de escritorio: instalador Windows x64 generado mediante GitHub Actions.
-- Compilación: exclusivamente en runner Windows; no se construyen paquetes Linux.
-- Las credenciales de Turso deben configurarse en el servidor que ejecuta las API y nunca incrustarse en el frontend ni en el instalador.
+- **Base de datos operativa: SQLite local** en el perfil de datos de la aplicación Electron.
+- Archivo de base de datos: `posven-pro3.sqlite`, dentro de `app.getPath('userData')`.
+- **Sin conexión operativa con Turso, Firebase, Firestore ni servicios de base de datos remotos.**
+- Autenticación mediante sesiones propias y contraseñas con hash.
+- Aplicación de escritorio Windows x64 generada mediante GitHub Actions.
+- Las operaciones requieren que el servidor local de Next.js esté funcionando dentro de la aplicación de escritorio.
 
-## Generar el instalador
+La caché del navegador no es la fuente de verdad. Los registros operativos se leen y escriben en SQLite local.
 
-Abre la pestaña Actions, ejecuta Build Windows EXE (Turso only) y descarga el artefacto PosVEN-Pro3-Windows-Installer.
+## Generar los instaladores
 
-## Configuración local de Turso para Windows
+En GitHub, abre **Actions** y ejecuta el flujo **Build Windows EXE installers (SQLite desktop)**. El flujo debe generar dos instaladores independientes:
 
-La aplicación de escritorio carga un archivo `.env` externo al instalador desde la carpeta de datos de usuario que Electron devuelve mediante `app.getPath('userData')`. Crea ese archivo con este contenido:
+- **PosVEN Pro COMPLETO:** sin límites de DEMO.
+- **PosVEN Pro DEMO:** limita a 10 las ventas, los productos creados y las compras; al alcanzar el límite de cualquiera de estas categorías, bloquea nuevas operaciones de la DEMO.
 
-```dotenv
-TURSO_DATABASE_URL=libsql://TU-BASE.turso.io
-TURSO_AUTH_TOKEN=TU_TOKEN
-# Opcional: contraseña inicial del administrador semilla si no existe ningún administrador
-POSVEN_SEED_ADMIN_PASSWORD=CAMBIA_ESTA_CLAVE
-```
+No distribuyas instaladores antiguos como si incluyeran cambios recientes. Solo considera una compilación válida cuando el flujo termine correctamente y los archivos generados hayan sido verificados.
 
-No reemplaces los valores por credenciales reales dentro del repositorio. No compartas el archivo `.env` ni lo incluyas en el instalador. En un despliegue con API remota, estas credenciales deben permanecer en el servidor, no en el equipo cliente.
+## Administrador semilla
 
-## Administrador semilla (primer inicio o reinicio de datos)
+En la primera ejecución, si no existe ningún administrador activo, la aplicación crea o recupera el usuario semilla:
 
-Antes de validar el login, la aplicación comprueba en Turso si existe al menos un administrador activo. Si no existe, crea o recupera el usuario semilla `admin` con correo `admin@posven.local` y rol administrador. La contraseña inicial predeterminada es `admin123`; se recomienda definir `POSVEN_SEED_ADMIN_PASSWORD` en el `.env` externo antes del primer inicio. Si el sistema ya tiene un administrador activo, no crea una cuenta semilla adicional. La creación es idempotente: reinstalar la aplicación no borra usuarios de Turso, y si se vacía la tabla de usuarios, el bootstrap se ejecuta en el siguiente intento de inicio de sesión.
+- Usuario: `admin`
+- Correo: `admin@posven.local`
+- Contraseña inicial predeterminada: `Admin123!`
+
+Se puede definir `POSVEN_SEED_ADMIN_PASSWORD` antes del primer inicio para establecer otra contraseña. Cambia la contraseña inicial después de entrar. Si ya existe un administrador activo, no se crea una cuenta semilla adicional.
+
+## Persistencia y copias de seguridad
+
+La base de datos está vinculada al perfil local de usuario de Electron. Desinstalar y reinstalar no debe considerarse una estrategia de respaldo. Utiliza la función de respaldo de la aplicación y conserva los archivos exportados en una ubicación segura.
