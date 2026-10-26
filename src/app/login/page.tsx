@@ -50,7 +50,7 @@ export default function LoginPage() {
     installLoginTabSessionFetch();
     fetch("/api/app-mode", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(mode => setIsDemoBuild(mode?.demo === true)).catch(() => setIsDemoBuild(false));
     let cancelled = false;
-    const checkTursoSession = async () => {
+    const checkLocalSession = async () => {
       setStatusMessage("Inicializando SQLite local...");
       try {
         const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
@@ -66,7 +66,7 @@ export default function LoginPage() {
         if (!cancelled) setAuthChecked(true);
       }
     };
-    checkTursoSession();
+    checkLocalSession();
     return () => { cancelled = true; };
   }, [router]);
 
