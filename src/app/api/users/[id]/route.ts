@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteUser, getSessionUser, setUserBlocked } from '@/lib/auth/turso-auth';
-import { tursoExecute } from '@/lib/turso/client';
+import { deleteUser, getSessionUser, setUserBlocked } from '@/lib/auth/local-auth';
+import { localDbExecute } from '@/lib/local-db/client';
 import { reserveDemoAction } from '@/lib/demo-limits';
 
 export const runtime = 'nodejs';
@@ -20,7 +20,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   }
   const { id } = await context.params;
   const body = await request.json().catch(() => ({}));
-  const target = await tursoExecute({
+  const target = await localDbExecute({
     sql: 'SELECT is_seed_admin, nombre, rol, acceso_bloqueado FROM users WHERE id=? LIMIT 1',
     args: [id],
   });
@@ -45,7 +45,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ error: 'El administrador semilla debe conservar el rol administrador.' }, { status: 400 });
   }
 
-  await tursoExecute({
+  await localDbExecute({
     sql: 'UPDATE users SET nombre=?, rol=? WHERE id=?',
     args: [nombre, rol, id],
     wantRows: false,
