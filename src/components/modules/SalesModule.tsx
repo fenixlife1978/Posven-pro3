@@ -1116,19 +1116,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         saleType: 'VENTA',
         cajeroId: (state as any).user?.id || (state as any).user?.uid
       });
-
-      if (result?.queuedOffline) {
-        // La cola local ya guardó la operación completa con un ID idempotente.
-        // Se libera el carrito visible para evitar reintentos duplicados; no se
-        // imprime factura ni se muestra la operación como confirmada por SQLite local.
-        if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
-        setPagos([]);
-        setCliente('Consumidor final');
-        setSelectedProductDisplay(null);
-        updateState({ carrito: [] });
-        toast({ title: 'Venta guardada pendiente de sincronización', description: 'La operación quedó almacenada en este equipo. No se emitió factura definitiva; al recuperar internet, SQLite local validará stock y registrará la venta.' });
-        return;
-      }
       if (!result?.sale) throw new Error('La venta no pudo confirmarse en la base de datos.');
 
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
@@ -1306,16 +1293,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           debtId: 'CRD-PENDIENTE'
         }
       });
-
-      if (result?.queuedOffline) {
-        if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
-        setPagos([]);
-        setIsCreditModalOpen(false);
-        setSelectedClient(null);
-        updateState({ carrito: [] });
-        toast({ title: 'Venta a crédito guardada pendiente', description: 'La solicitud quedó en la cola local. La deuda y la factura solo existirán después de que SQLite local confirme la sincronización.' });
-        return;
-      }
       if (!result?.sale || !result?.debt) throw new Error('La venta a crédito no pudo confirmarse en SQLite local.');
       if (typeof window !== 'undefined') sessionStorage.removeItem('posven_current_cart');
 
