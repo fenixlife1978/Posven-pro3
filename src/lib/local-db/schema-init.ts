@@ -65,6 +65,3 @@ export async function ensureLocalSchema() {
   }
   await initializing;
 }
-
-// Alias temporal para los módulos de autenticación aún no migrados.
-export const ensureLocalSchema = ensureLocalSchema;
