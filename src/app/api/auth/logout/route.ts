@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRequestSessionId, revokeSession } from '@/lib/auth/turso-auth';
+import { getRequestSessionId, revokeSession } from '@/lib/auth/local-auth';
 
 export const runtime = 'nodejs';
 
