@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/auth/turso-auth';
-import { isLocalDatabaseConfigured } from '@/lib/turso/client';
+import { createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/auth/local-auth';
+import { isLocalDatabaseConfigured } from '@/lib/local-db/client';
 
 export const runtime = 'nodejs';
 
