@@ -46,7 +46,7 @@ async function loadOriginalSale(debt: any) {
   try {
     const debtId = String(debt?.id || '').trim();
     if (debtId) {
-      const response = await fetch('/api/turso/store?table=cxc&id=' + encodeURIComponent(debtId), {
+      const response = await fetch('/api/local-store?table=cxc&id=' + encodeURIComponent(debtId), {
         credentials: 'include',
         cache: 'no-store',
       });
