@@ -1,4 +1,4 @@
-import { localDbTransaction, localDbExecute } from '@/lib/turso/client';
+import { localDbTransaction, localDbExecute } from '@/lib/local-db/client';
 
 export const DEMO_LIMIT = 10;
 export const DEMO_TRACKED_MODULES = ['Ventas', 'Productos creados', 'Compras'] as const;
