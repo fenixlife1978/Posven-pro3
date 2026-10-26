@@ -32,9 +32,9 @@ export default function UsersModule() {
       setUsuarios((data.usuarios || data.users || []).map((u: any) => ({ ...u, uid: u.id, fechaCreacion: u.fechaCreacion || '' })));
       return;
     }
-    if (!response) throw new Error('No se pudo conectar con Turso.');
+    if (!response) throw new Error('No se pudo conectar con SQLite local.');
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || 'Turso no está disponible.');
+    throw new Error(data.error || 'SQLite local no está disponible.');
   };
 
   useEffect(() => {
@@ -88,7 +88,7 @@ export default function UsersModule() {
 
       toast({
         title: editingId ? 'Perfil actualizado' : 'Usuario creado',
-        description: 'Los datos quedaron guardados en Turso.'
+        description: 'Los datos quedaron guardados en SQLite local.'
       });
       closeModal();
       await cargarUsuarios();
@@ -167,7 +167,7 @@ export default function UsersModule() {
           <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
             <UsersIcon className="w-5 h-5 text-brand-gold" /> PERSONAL AUTORIZADO
           </h3>
-          <span className="text-[9px] font-black uppercase text-white/50">TURSO</span>
+          <span className="text-[9px] font-black uppercase text-white/50">SQLite local</span>
         </div>
         <div className="table-wrap">
           <table>
