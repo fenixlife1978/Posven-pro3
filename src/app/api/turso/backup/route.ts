@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { createSession, getSessionUser } from '@/lib/auth/turso-auth';
+import { createSession, getSessionUser } from '@/lib/auth/local-auth';
 import {
-  assertTursoReady,
+  assertLocalDatabaseReady,
   factoryResetTransaction,
   upsertRecords,
   patchAppConfig,
   patchCatalog,
-  type TursoStoreTable,
-} from '@/lib/turso/pos-store';
+  type LocalStoreTable,
+} from '@/lib/local-db/pos-store';
 
 export const runtime = 'nodejs';
 
@@ -27,7 +27,7 @@ type TableName = typeof TABLES[number];
 type CatalogName = typeof CATALOGS[number];
 
 async function requireAdmin() {
-  assertTursoReady();
+  assertLocalDatabaseReady();
   const cookieStore = await cookies();
   const user = await getSessionUser(cookieStore.get('posven_session')?.value);
   if (!user) throw Object.assign(new Error('No autenticado.'), { status: 401 });
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       if (!TABLES.includes(table)) throw new Error('Tabla de respaldo no permitida.');
       const rows = Array.isArray(body?.rows) ? body.rows : [];
       if (rows.length > 450) throw new Error('El lote supera el límite seguro de 450 registros.');
-      const result = await upsertRecords(table as TursoStoreTable, rows);
+      const result = await upsertRecords(table as LocalStoreTable, rows);
       return NextResponse.json({ ok: true, action, table, count: result.count });
     }
 
