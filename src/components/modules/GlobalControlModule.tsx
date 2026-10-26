@@ -35,13 +35,13 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       try {
         const response = await fetch('/api/users', { credentials: 'include', cache: 'no-store' });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data?.error || 'No se pudieron cargar los usuarios desde Turso.');
+        if (!response.ok) throw new Error(data?.error || 'No se pudieron cargar los usuarios desde SQLite local.');
         if (!cancelled) {
           setUsers(Array.isArray(data.usuarios) ? data.usuarios : (Array.isArray(data.users) ? data.users : []));
           setLoadingUsers(false);
         }
       } catch (error) {
-        console.error("Error cargando usuarios desde Turso:", error);
+        console.error("Error cargando usuarios desde SQLite local:", error);
         if (!cancelled) setLoadingUsers(false);
       }
     })();
@@ -63,12 +63,12 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || body?.ok === false) {
-        if (response.status === 503) throw new Error('Turso no está configurado.');
+        if (response.status === 503) throw new Error('SQLite local no está configurado.');
         throw new Error(String(body?.error || 'No se pudo actualizar el acceso.'));
       }
       toast({
         title: newStatus ? "Acceso Bloqueado" : "Acceso Concedido",
-        description: 'El estado del operador fue actualizado en Turso.'
+        description: 'El estado del operador fue actualizado en SQLite local.'
       });
     } catch (e: any) {
       console.error("Error al actualizar acceso:", e);
@@ -83,7 +83,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
   const migrateUserIds = async () => {
     toast({
       title: "Migración no requerida",
-      description: "La gestión de usuarios y sus identificadores ya se realiza mediante Turso."
+      description: "La gestión de usuarios y sus identificadores ya se realiza mediante SQLite local."
     });
   };
 
@@ -117,7 +117,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       acumuladoHistorico: 0
     };
     try {
-      const response = await fetch('/api/turso/store', {
+      const response = await fetch('/api/local-store', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -131,7 +131,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
       updateState({ terminales: [...(state.terminales || []).filter(t => t.id !== persisted.id), persisted] });
       setNewTerminalName('');
       setShowAddTerminal(false);
-      toast({ title: "Terminal Creado", description: "Terminal guardado en Turso." });
+      toast({ title: "Terminal Creado", description: "Terminal guardado en SQLite local." });
     } catch (e: any) {
       console.error("Error creando terminal:", e);
       toast({ variant: "destructive", title: "Error al crear terminal", description: e?.message || "No se pudo guardar el terminal." });
@@ -141,7 +141,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
   const deleteTerminal = async (id: string) => {
     if (!confirm('¿Eliminar este terminal?')) return;
     try {
-      const response = await fetch('/api/turso/store', {
+      const response = await fetch('/api/local-store', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -152,7 +152,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
         throw new Error(String(body?.error || 'No se pudo eliminar el terminal.'));
       }
       updateState({ terminales: state.terminales.filter(t => t.id !== id) });
-      toast({ title: "Terminal Eliminado", description: "Terminal eliminado de Turso." });
+      toast({ title: "Terminal Eliminado", description: "Terminal eliminado de SQLite local." });
     } catch (e: any) {
       console.error("Error eliminando terminal:", e);
       toast({ variant: "destructive", title: "Error al eliminar terminal", description: e?.message || "No se pudo eliminar el terminal." });
@@ -162,7 +162,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
   const assignUserToTerminal = async (terminalId: string, userId: string | null) => {
     const assignedUserId = userId === 'none' ? null : userId;
     try {
-      const response = await fetch('/api/turso/store', {
+      const response = await fetch('/api/local-store', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -177,7 +177,7 @@ export default function GlobalControlModule({ state, updateState }: { state: App
         t.id === terminalId ? (persisted || { ...t, usuarioId: assignedUserId }) : t
       );
       updateState({ terminales: updated });
-      toast({ title: "Asignación Actualizada", description: "Responsable guardado en Turso." });
+      toast({ title: "Asignación Actualizada", description: "Responsable guardado en SQLite local." });
     } catch (e: any) {
       console.error("Error actualizando asignación:", e);
       toast({ variant: "destructive", title: "Error de asignación", description: e?.message || "No se pudo guardar la asignación." });
