@@ -1,7 +1,6 @@
 'use client';
 
 import { AppState, Terminal, Movimiento } from './types';
-import { registerOfflineProcessor } from './offline-queue';
 // SQLite local es la única base de datos operativa. Estos nombres se conservan únicamente
 // para que los caminos legacy de sincronización no vuelvan a escribir en servidor LocalStore.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
@@ -2546,27 +2545,6 @@ export const Store = {
   }
 };
 
-registerOfflineProcessor(async (operation) => {
-  if (operation.type === 'VENTA') {
-    await Store.createSaleTransaction({ ...(operation.payload || {}), fromOfflineQueue: true, operationId: operation.operationId });
-    return;
-  }
-  if (operation.type === 'INVENTARIO') {
-    await Store.applyInventoryMovementsTransaction({ ...(operation.payload || {}), fromOfflineQueue: true, operationId: operation.operationId });
-    return;
-  }
-  if (operation.type === 'COMPRA') { await Store.createPurchaseTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'PAGO-DEUDA') { await Store.applyDebtPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'PAGO-CXP-GLOBAL') { await Store.applyGlobalProviderPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'REVERSAR-PAGO') { await Store.reverseDebtPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'ELIMINAR-COMPRA') { await Store.deletePurchaseTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'ELIMINAR-CLIENTE') { await Store.deleteCustomerAndDebtsTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'ELIMINAR-CXC') { await Store.deleteCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'DEUDA-CXC') { await Store.createCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'DEUDA-CXP') { await Store.createSupplierDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'DEVOLUCION' || operation.type === 'ANULACION') { await Store.processReturnOrCancellationTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  throw new Error('Tipo de operación offline no soportado: ' + operation.type);
-});
 
 export const Utils = {
   getVzlaDate: () => {
