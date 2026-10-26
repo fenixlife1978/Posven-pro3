@@ -35,11 +35,11 @@ export default function DashboardModule({ state, onNavigate }: { state: AppState
 
   useEffect(() => {
     let active = true;
-    fetch('/api/turso/store?special=count&table=ventas', { credentials: 'include', cache: 'no-store' })
+    fetch('/api/local-store?special=count&table=ventas', { credentials: 'include', cache: 'no-store' })
       .then(async response => {
-        if (!response.ok) throw new Error('No se pudo consultar el histórico de ventas en Turso.');
+        if (!response.ok) throw new Error('No se pudo consultar el histórico de ventas en SQLite local.');
         const body = await response.json();
-        if (!body?.ok) throw new Error(String(body?.error || 'Turso rechazó la consulta.'));
+        if (!body?.ok) throw new Error(String(body?.error || 'SQLite local rechazó la consulta.'));
         return Number(body.total || 0);
       })
       .then(total => { if (active) setHistoricalSalesCount(total); })
@@ -197,7 +197,7 @@ export default function DashboardModule({ state, onNavigate }: { state: AppState
             <div className="text-[0.74rem] font-bold text-ink-subtle uppercase tracking-wider">Total Facturado</div>
             <div className="font-display text-[1.7rem] font-[800] text-ink mt-0.5">{historicalSalesCount ?? state.ventas.length}</div>
           </div>
-          <div className="mt-2.5 pt-3 border-t border-line text-[0.74rem] font-medium text-ink-subtle/80 uppercase">Histórico real de ventas en Turso</div>
+          <div className="mt-2.5 pt-3 border-t border-line text-[0.74rem] font-medium text-ink-subtle/80 uppercase">Histórico real de ventas en SQLite local</div>
         </div>
 
         <div className="bg-white border border-line rounded-[20px] p-6 shadow-sm-card group hover:shadow-card transition-all">
@@ -314,7 +314,7 @@ export default function DashboardModule({ state, onNavigate }: { state: AppState
         <div className="bg-white border border-line rounded-[20px] shadow-sm-card p-6 flex flex-col items-center justify-center text-center">
             <Sparkles className="w-12 h-12 text-brand-gold opacity-20 mb-4" />
             <h3 className="font-display font-black text-ink uppercase text-sm mb-2">Sistema PosVEN Pro Cloud</h3>
-            <p className="text-xs font-medium text-ink-subtle max-w-xs uppercase tracking-widest leading-loose">Información sincronizada con la base de datos Turso para todos los terminales de venta.</p>
+            <p className="text-xs font-medium text-ink-subtle max-w-xs uppercase tracking-widest leading-loose">Información persistida en SQLite local para los terminales de esta instalación.</p>
         </div>
       </section>
 
