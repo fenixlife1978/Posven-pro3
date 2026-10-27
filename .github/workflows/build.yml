@@ -88,16 +88,12 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Publish installers as downloadable GitHub Release assets
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release-desktop]'))
-        uses: softprops/action-gh-release@v2
+      - name: Upload installers as GitHub Actions artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v2.6.4
-          name: PosVEN Pro 2.6.4 - instaladores SQLite Desktop
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: |
+          name: PosVEN-Pro-Windows-installers-${{ github.run_number }}-${{ github.sha }}
+          path: |
             dist/*.exe
             dist-demo/*.exe
-          fail_on_unmatched_files: true
+          if-no-files-found: error
+          retention-days: 30
