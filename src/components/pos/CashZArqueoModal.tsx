@@ -130,8 +130,8 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
           <button onClick={onCancel} className="p-2 text-white/60 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="p-4 overflow-auto">
-          <table className="min-w-[1250px] w-full text-xs border-collapse">
+        <div className="p-2 sm:p-3 overflow-auto">
+          <table className="min-w-[760px] lg:min-w-0 w-full text-[10px] sm:text-xs border-collapse table-fixed">
             <thead className="bg-surface-soft text-ink">
               <tr>
                 {[
@@ -146,7 +146,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
                   "Total Monto Sistema",
                   "Monto Real",
                   "DIF. (+/-)",
-                ].map((h) => <th key={h} className="p-2 border border-line text-left font-black uppercase">{h}</th>)}
+                ].map((h) => <th key={h} className="p-1 sm:p-2 border border-line text-left font-black uppercase break-words">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -157,14 +157,14 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
                 return (
                   <tr key={row.method}>
                     <td className="p-2 border border-line font-black">{label(row.method)}</td>
-                    <td className="p-2 border border-line text-right">{money(row.method === "efectivo_bs" ? row.opening : 0, "BS")}</td>
+                    <td className="p-1 sm:p-2 border border-line text-right break-words">{money(row.method === "efectivo_bs" ? row.opening : 0, "BS")}</td>
                     <td className="p-2 border border-line text-right">{money(row.method === "efectivo_usd" ? row.opening : 0, "USD")}</td>
                     <td className="p-2 border border-line text-right">{money(row.sales, row.currency)}</td>
                     <td className="p-2 border border-line text-right">{money(row.cxc, row.currency)}</td>
                     <td className="p-2 border border-line text-right">{money(row.dev, row.currency)}</td>
                     <td className="p-2 border border-line text-right">{money(row.plus, row.currency)}</td>
                     <td className="p-2 border border-line text-right">{money(row.minus, row.currency)}</td>
-                    <td className="p-2 border border-line text-right font-black">{money(row.system, row.currency)}</td>
+                    <td className="p-1 sm:p-2 border border-line text-right font-black break-words">{money(row.system, row.currency)}</td>
                     <td className="p-1 border border-line">
                       <input
                         type="text"
