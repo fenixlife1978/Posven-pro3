@@ -132,11 +132,20 @@ export async function GET(request: Request) {
       ? cashierTerminalId
       : requestedTerminalId;
     if (special === 'count') {
-      const total = cashierTerminalId && t === 'terminales'
-        ? 1
-        : cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t))
-        ? (await listRecords(t, { limit: 10000, terminalId: cashierTerminalId })).length
-        : await countRecords(t);
+      let total: number;
+      if (cashierTerminalId && t === 'terminales') {
+        total = 1;
+      } else if (cashierTerminalId && t === 'cxc') {
+        const debts = await listRecords(t, { limit: 10000 });
+        total = debts.filter((item: any) => {
+          const debtTerminalId = String(item?.terminalId || '').trim();
+          return !debtTerminalId || debtTerminalId === 'GLOBAL' || debtTerminalId === cashierTerminalId;
+        }).length;
+      } else if (cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t))) {
+        total = (await listRecords(t, { limit: 10000, terminalId: cashierTerminalId })).length;
+      } else {
+        total = await countRecords(t);
+      }
       return NextResponse.json({ ok: true, total });
     }
     const id = url.searchParams.get('id');
