@@ -113,7 +113,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#D4C5A6] via-[#C8B99A] to-[#B8A98A] flex items-center justify-center p-6">
-      {isDemoBuild && <div role="status" className="fixed top-0 inset-x-0 z-50 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center text-xs sm:text-sm font-black">POSVEN-PRO3 · VERSIÓN DEMO — Máximo 10 acciones por módulo. Adquiere la versión completa.</div>}
+      
       <div className="w-full max-w-[440px] bg-white rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.25)] p-10 animate-in fade-in zoom-in duration-500">
         <div className="mb-10 flex flex-col items-center">
           <div className="flex items-center gap-3 mb-3">
