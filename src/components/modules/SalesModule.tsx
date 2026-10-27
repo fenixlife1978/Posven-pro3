@@ -988,7 +988,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const cambiarGramos = (index: number, gramosInput: string) => {
-    const gramos = Math.max(0, Number(String(gramosInput).replace(',', '.')) || 0);
+    const raw = String(gramosInput).trim().replace(',', '.');
+    // Entrada libre sin controles +/-; admite hasta 3 decimales y conserva
+    // precisión interna para calcular kg, precio y stock sin redondear el total.
+    if (raw && !/^\\d*(?:\\.\\d{0,3})?$/.test(raw)) return;
+    const parsed = raw === '' || raw === '.' ? 0 : Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    const gramos = parsed;
     const nuevo = [...state.carrito];
     const item = nuevo[index];
     const p = state.productos.find(x => x.id === item.productoId);
@@ -1426,7 +1432,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                       <div key={i} className="grid grid-cols-[1fr_80px_70px_35px_80px_80px_80px_35px] gap-1 items-center px-3 py-3 bg-white border-b border-black/5 text-ink">
                         <div className="truncate font-black text-xs uppercase leading-tight">{item.nombre}</div>
                         <div className="flex items-center justify-center gap-1 bg-surface-soft rounded p-0.5 border border-line/30">
-                          {prod?.ventaPorPeso ? <input aria-label="Cantidad en gramos" type="number" min="1" step="1" value={item.cantidadGramos ?? Math.round(item.cantidad * 1000)} onChange={e => cambiarGramos(i, e.target.value)} className="w-[64px] text-center text-xs font-black bg-white border border-line rounded px-1 py-1" /> : <><button onClick={() => updateQty(i, -1)} className="text-ink font-black text-sm px-1.5">-</button><span className="w-5 text-center text-xs font-black">{item.factorPresentacion ? (item.cantidad / item.factorPresentacion).toFixed(2).replace(/\.00$/, '') : item.cantidad}</span><button onClick={() => updateQty(i, 1)} className="text-ink font-black text-sm px-1.5">+</button></>}
+                          {prod?.ventaPorPeso ? <input aria-label="Cantidad en gramos" type="text" inputMode="decimal" value={item.cantidadGramos ?? (item.cantidad * 1000)} onChange={e => cambiarGramos(i, e.target.value)} className="w-[64px] text-center text-xs font-black bg-white border border-line rounded px-1 py-1" /> : <><button onClick={() => updateQty(i, -1)} className="text-ink font-black text-sm px-1.5">-</button><span className="w-5 text-center text-xs font-black">{item.factorPresentacion ? (item.cantidad / item.factorPresentacion).toFixed(2).replace(/\.00$/, '') : item.cantidad}</span><button onClick={() => updateQty(i, 1)} className="text-ink font-black text-sm px-1.5">+</button></>}
                         </div>
                         <div className="text-center text-[10px] font-black uppercase">{prod?.ventaPorPeso ? 'g' : (item.presentacion || prod?.cantidad || '-')}</div>
                         <div className="flex justify-center">
