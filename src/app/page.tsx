@@ -411,10 +411,14 @@ export default function LicoreriaPOS() {
         // Un cierre de sesión explícito invalida también la continuidad offline
         // para impedir que el siguiente usuario herede la caja autenticada.
         try { localStorage.removeItem('posven_offline_session_v1'); } catch {}
-        await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-        router.push('/login');
+        await fetch('/api/auth/logout', { method: 'POST', cache: 'no-store', credentials: 'same-origin' }).catch(() => {});
+        // Fuerza un documento nuevo después del logout. La navegación SPA dejaba
+        // en algunos equipos el overlay/estado del POS montado encima del login,
+        // haciendo que los campos parecieran visibles pero no recibieran clics.
+        window.location.replace('/login');
       } catch (e) {
-        router.push('/login');
+        // El login debe quedar interactivo incluso si falla la petición de logout.
+        window.location.replace('/login');
       }
     }
   };
