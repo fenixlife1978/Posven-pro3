@@ -124,10 +124,10 @@ export async function GET(request: Request) {
     if (user.rol === 'cajero' && requestedTerminalId && requestedTerminalId !== cashierTerminalId) {
       return NextResponse.json({ ok: false, error: 'No puede consultar información de otra caja.' }, { status: 403 });
     }
-    // Las CxC son obligaciones del cliente y pueden originarse tanto en
-    // ventas de cualquier caja como en el módulo administrativo. Para el cajero
-    // se muestran las de su terminal y las globales/administrativas, sin revelar
-    // deudas vinculadas exclusivamente a otra caja.
+    // Las CxC son obligaciones del cliente, no propiedad de una caja. El POS
+    // necesita consultar y cobrar el saldo consolidado aunque la venta se haya
+    // originado en otra terminal; se conserva la restricción de terminal para
+    // operaciones de caja, ventas y demás tablas operativas.
     const scopedTerminalId = cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t)) && t !== 'terminales' && t !== 'cxc'
       ? cashierTerminalId
       : requestedTerminalId;
@@ -135,12 +135,6 @@ export async function GET(request: Request) {
       let total: number;
       if (cashierTerminalId && t === 'terminales') {
         total = 1;
-      } else if (cashierTerminalId && t === 'cxc') {
-        const debts = await listRecords(t, { limit: 10000 });
-        total = debts.filter((item: any) => {
-          const debtTerminalId = String(item?.terminalId || '').trim();
-          return !debtTerminalId || debtTerminalId === 'GLOBAL' || debtTerminalId === cashierTerminalId;
-        }).length;
       } else if (cashierTerminalId && TERMINAL_SCOPED_TABLES.has(String(t))) {
         total = (await listRecords(t, { limit: 10000, terminalId: cashierTerminalId })).length;
       } else {
@@ -166,12 +160,6 @@ export async function GET(request: Request) {
       estado: url.searchParams.get('estado') || undefined,
     });
     if (user.rol === 'cajero' && t === 'terminales') records = records.filter((item: any) => String(item.id) === cashierTerminalId);
-    if (user.rol === 'cajero' && t === 'cxc') {
-      records = records.filter((item: any) => {
-        const debtTerminalId = String(item?.terminalId || '').trim();
-        return !debtTerminalId || debtTerminalId === 'GLOBAL' || debtTerminalId === cashierTerminalId;
-      });
-    }
     return NextResponse.json({ ok: true, records });
   } catch (error: any) {
     const message = String(error?.message || error);
