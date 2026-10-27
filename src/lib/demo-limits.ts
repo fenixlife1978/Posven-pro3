@@ -1,7 +1,7 @@
 import { localDbTransaction, localDbExecute } from '@/lib/local-db/client';
 
 export const DEMO_LIMIT = 10;
-export const DEMO_TRACKED_MODULES = ['Ventas', 'Productos creados', 'Compras'] as const;
+export const DEMO_TRACKED_MODULES = ['Dashboard', 'Ventas', 'Inventario', 'Compras', 'CxC', 'CxP', 'Reportes', 'Configuración', 'Usuarios', 'Proveedores', 'Contabilidad', 'Control Global', 'Productos creados'] as const;
 export type DemoTrackedModule = typeof DEMO_TRACKED_MODULES[number];
 const ENSURE_DEMO_SCHEMA = "CREATE TABLE IF NOT EXISTS demo_action_counts (module TEXT PRIMARY KEY NOT NULL, actions INTEGER NOT NULL DEFAULT 0 CHECK(actions >= 0))";
 
@@ -37,7 +37,7 @@ export async function reserveDemoAction(moduleName: string): Promise<boolean> {
 export async function getDemoActionCounts(): Promise<Record<DemoTrackedModule, number>> {
   await ensureDemoSchema();
   const result = await localDbExecute({
-    sql: 'SELECT module, actions FROM demo_action_counts WHERE module IN (?, ?, ?)',
+    sql: `SELECT module, actions FROM demo_action_counts WHERE module IN (${DEMO_TRACKED_MODULES.map(() => '?').join(', ')})`,
     args: [...DEMO_TRACKED_MODULES],
     wantRows: true,
   });
