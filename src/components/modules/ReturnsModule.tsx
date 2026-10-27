@@ -74,8 +74,10 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
 
     const qtyStr = prompt(`Cantidad a devolver (Máx: ${availableToReturn}):`, '1');
     if (!qtyStr) return;
-    const qty = Number(String(qtyStr || '0').trim().replace(',', '.'));
-    if (isNaN(qty) || qty <= 0 || qty > availableToReturn) return alert('Cantidad no válida');
+    const qtyRaw = String(qtyStr || '0').trim().replace(',', '.');
+    if (!/^\\d+(?:\\.\\d{1,3})?$/.test(qtyRaw)) return alert('Cantidad no válida. Use hasta 3 decimales.');
+    const qty = Number(qtyRaw);
+    if (!Number.isFinite(qty) || qty <= 0 || qty > availableToReturn) return alert('Cantidad no válida');
 
     const condition = confirm('¿El producto se encuentra APTO para la venta? (OK: Vuelve a stock, CANCEL: Va a merma/daño)') 
       ? 'REINTEGRADO_STOCK' 
