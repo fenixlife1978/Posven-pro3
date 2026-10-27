@@ -44,45 +44,37 @@ const DEMO_MODULE_BY_OPERATION: Record<string, string> = {
   sale: 'Ventas',
 };
 
-async function resolveDemoModule(operation: string, body: any): Promise<string | undefined> {
+async function resolveDemoAction(operation: string, body: any): Promise<{ module: string; amount: number } | undefined> {
   if (operation === 'productSync') {
     const changes = Array.isArray(body?.changes) ? body.changes : [];
     // db-store sends { before, after }; only a new record consumes a creation.
-    if (changes.some((change: any) => !change?.before && change?.after?.id)) return 'Productos creados';
+    const created = changes.filter((change: any) => !change?.before && change?.after?.id).length;
+    if (created) return { module: 'Productos creados', amount: created };
     return undefined;
   }
   if (['upsert', 'recordsSync'].includes(operation)) {
     const tableName = String(body?.table || '');
     const tableModule: Record<string, string> = {
       productos: 'Productos creados',
-      movimientos: 'Inventario',
       ventas: 'Ventas',
-      compras: 'Compras',
-      cxc: 'CxC',
-      cxp: 'CxP',
-      clientes: 'CxC',
-      proveedores: 'CxP',
-      terminales: 'Control Global',
-      devoluciones: 'Ventas',
-      anulaciones: 'Ventas',
-      reportesZ: 'Ventas',
-      caja: 'Ventas',
-      libroDiario: 'Contabilidad',
     };
     const moduleName = tableModule[tableName];
-    if (moduleName === 'Productos creados') {
+    if (moduleName === 'Productos creados' || moduleName === 'Ventas') {
       const records = Array.isArray(body?.records) ? body.records : [];
+      const table = moduleName === 'Productos creados' ? 'productos' : 'ventas';
+      let created = 0;
       for (const record of records) {
         const id = String(record?.id || '').trim();
-        if (!id) return moduleName;
-        const existing = await getRecord('productos', id);
-        if (!existing) return moduleName;
+        if (!id) { created++; continue; }
+        const existing = await getRecord(table as LocalStoreTable, id);
+        if (!existing) created++;
       }
-      return undefined;
+      return created ? { module: moduleName, amount: created } : undefined;
     }
-    return moduleName;
+    return undefined;
   }
-  return DEMO_MODULE_BY_OPERATION[operation];
+  const module = DEMO_MODULE_BY_OPERATION[operation];
+  return module ? { module, amount: 1 } : undefined;
 }
 
 const TERMINAL_SCOPED_TABLES = new Set([
@@ -216,11 +208,11 @@ export async function POST(request: Request) {
           limit: 10,
         }, { status: 429 });
       }
-      const moduleName = await resolveDemoModule(operation, body);
-      // Other operations remain usable during the trial but do not consume its two limits.
-      if (moduleName && !(await reserveDemoAction(moduleName))) {
+      const demoAction = await resolveDemoAction(operation, body);
+      // Only actual new sales and new product registrations consume the trial.
+      if (demoAction && !(await reserveDemoAction(demoAction.module, demoAction.amount))) {
         const latest = await isDemoExhausted();
-        const exhaustedModule = latest.module || moduleName;
+        const exhaustedModule = latest.module || demoAction.module;
         return NextResponse.json({
           ok: false,
           error: `La versión DEMO alcanzó el límite de 10/10 en «${exhaustedModule}». La prueba del sistema ha terminado. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.`,
