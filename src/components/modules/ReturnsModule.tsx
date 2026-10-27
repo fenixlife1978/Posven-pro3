@@ -312,9 +312,21 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       return;
     }
 
-    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\n(Si confirma, se solicitará la distribución por método de pago)");
-    if (representaEgreso) {
-      setRefundPayments([{ metodo: (selectedSale.metodoPago || 'efectivo_usd') as PaymentMethod, montoUSD: Number(selectedSale.totalUSD) || 0, montoBS: (Number(selectedSale.totalUSD) || 0) * (Number(state.tasa) || 1) }]);
+    // La anulación posterior a devoluciones parciales solo puede reembolsar
+    // lo que queda de la mercancía y del dinero efectivamente cobrado.
+    const priorReturns = (state.devoluciones || []).filter(d => String(d.ventaId) === String(selectedSale.id));
+    const alreadyRefundedUSD = priorReturns.reduce((sum, d) =>
+      sum + (Array.isArray(d.refundPayments)
+        ? d.refundPayments.reduce((part, p) => part + (Number(p?.montoUSD) || 0), 0)
+        : 0), 0);
+    const priorReturnedValueUSD = priorReturns.reduce((sum, d) => sum + (Number(d.totalUSD) || 0), 0);
+    const remainingSaleValueUSD = Math.max(0, (Number(selectedSale.totalUSD) || 0) - priorReturnedValueUSD);
+    const remainingPaidUSD = Math.max(0, salePaidUSD - alreadyRefundedUSD);
+    const maxRefundUSD = Math.round(Math.min(remainingSaleValueUSD, remainingPaidUSD) * 100) / 100;
+
+    const representaEgreso = confirm("¿Esta anulación requiere el REINTEGRO DE DINERO físico al cliente?\\n(Si confirma, se solicitará la distribución por método de pago)");
+    if (representaEgreso && maxRefundUSD > 0.001) {
+      setRefundPayments([{ metodo: (selectedSale.metodoPago || 'efectivo_usd') as PaymentMethod, montoUSD: maxRefundUSD, montoBS: maxRefundUSD * (Number(state.tasa) || 1) }]);
       setPendingCancellation(true); setShowCancellationRefund(true); return;
     }
     await ejecutarAnulacion([]);
