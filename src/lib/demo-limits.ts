@@ -12,7 +12,7 @@ async function ensureDemoSchema(): Promise<void> {
 
 /** Consumes one of the ten allowed demo actions atomically in local SQLite. */
 export async function reserveDemoAction(moduleName: string, amount = 1): Promise<boolean> {
-  if (!DEMO_TRACKED_MODULES.includes(moduleName as DemoTrackedModule) || !Number.isInteger(amount) || amount < 1 || amount > DEMO_LIMIT) return false;
+  if (!DEMO_TRACKED_MODULES.includes(moduleName as DemoTrackedModule) || !Number.isInteger(amount) || amount < 1) return false;
   await ensureDemoSchema();
   // Seed both trial counters and check the global lock in the SAME SQLite transaction
   // as the increment. Concurrent requests cannot slip through after another
@@ -24,8 +24,8 @@ export async function reserveDemoAction(moduleName: string, amount = 1): Promise
       wantRows: false,
     })),
     {
-      sql: 'UPDATE demo_action_counts SET actions = actions + ? WHERE module = ? AND actions + ? <= ? AND NOT EXISTS (SELECT 1 FROM demo_action_counts WHERE actions >= ?)',
-      args: [amount, moduleName, amount, DEMO_LIMIT, DEMO_LIMIT],
+      sql: 'UPDATE demo_action_counts SET actions = MIN(?, actions + ?) WHERE module = ? AND actions < ? AND NOT EXISTS (SELECT 1 FROM demo_action_counts WHERE actions >= ?)',
+      args: [DEMO_LIMIT, amount, moduleName, DEMO_LIMIT, DEMO_LIMIT],
       wantRows: false,
     },
   ];
