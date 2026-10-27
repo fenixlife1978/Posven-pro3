@@ -502,10 +502,10 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
               <TableRow className="bg-surface-soft">
                 <TableHead className="font-black text-ink uppercase text-[10px]">Cod.</TableHead>
                 <TableHead className="font-black text-ink uppercase text-[10px]">Producto</TableHead>
-                <TableHead className="font-black text-ink uppercase text-[10px] text-right">Costo Unit.</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-right">CPP Unitario (USD)</TableHead>
                 <TableHead className="font-black text-ink uppercase text-[10px] text-right">Venta Unit.</TableHead>
                 <TableHead className="font-black text-ink uppercase text-[10px] text-center">Stock</TableHead>
-                <TableHead className="font-black text-ink uppercase text-[10px] text-right">Subtotal Costo</TableHead>
+                <TableHead className="font-black text-ink uppercase text-[10px] text-right">CPP Total (USD)</TableHead>
                 <TableHead className="font-black text-ink uppercase text-[10px] text-center">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -517,10 +517,10 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
                   <TableRow key={p.id} className="border-b border-line/30">
                     <TableCell className="mono text-[11px] font-black text-ink">{p.codigo}</TableCell>
                     <TableCell className="font-black uppercase text-xs text-ink">{p.nombre}</TableCell>
-                    <TableCell className="mono text-right text-xs font-bold text-ink/60">{Utils.fmtUSD(p.costoUSD)}</TableCell>
+                    <TableCell className="mono text-right text-xs font-black text-blue-700">{Utils.fmtUSD(Number(p.costoUSD) || 0)}</TableCell>
                     <TableCell className="mono text-right text-brand-gold-deep font-black">{Utils.fmtUSD(p.precioUSD)}</TableCell>
                     <TableCell className="text-center py-3 px-4"><span className="badge badge-neutral font-black">{p.stock}</span></TableCell>
-                    <TableCell className="mono text-right font-black text-ink">{Utils.fmtUSD(Utils.round(p.costoUSD * p.stock))}</TableCell>
+                    <TableCell className="mono text-right font-black text-blue-800">{Utils.fmtUSD(Utils.round((Number(p.costoUSD) || 0) * (Number(p.stock) || 0)))}</TableCell>
                     <TableCell>
                       <div className="flex justify-center gap-1">
                         <button className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Editar" onClick={() => onAction('edit', p.id)}><Edit2 className="w-4 h-4" /></button>
