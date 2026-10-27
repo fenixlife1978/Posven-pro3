@@ -74,7 +74,7 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
 
     const qtyStr = prompt(`Cantidad a devolver (Máx: ${availableToReturn}):`, '1');
     if (!qtyStr) return;
-    const qty = parseInt(qtyStr || '0');
+    const qty = Number(String(qtyStr || '0').trim().replace(',', '.'));
     if (isNaN(qty) || qty <= 0 || qty > availableToReturn) return alert('Cantidad no válida');
 
     const condition = confirm('¿El producto se encuentra APTO para la venta? (OK: Vuelve a stock, CANCEL: Va a merma/daño)') 
