@@ -376,6 +376,7 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
       if (!categorias.some(item => item.toLocaleLowerCase('es') === value.toLocaleLowerCase('es'))) categorias.push(value);
       onUpdateLists({ categorias, categoriasPorDepartamento: associations });
       setDatos((prev: any) => ({ ...prev, categoria: value, codigo: prev.skuAutomatico ? generarSkuGeneral(datos.departamento, value) : prev.codigo }));
+      setListEditor(null);
       return;
     }
     if (listName === 'departamentos') {
@@ -383,11 +384,13 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
       if (!list.some(item => item.toLocaleLowerCase('es') === value.toLocaleLowerCase('es'))) list.push(value);
       onUpdateLists({ departamentos: list });
       setDatos((prev: any) => ({ ...prev, departamento: value, categoria: '', codigo: prev.skuAutomatico ? generarSkuGeneral(value, '') : prev.codigo }));
+      setListEditor(null);
       return;
     }
     const list = [...(state[listName] || [])];
     if (!list.some(item => String(item).toLocaleLowerCase('es') === value.toLocaleLowerCase('es'))) list.push(value);
     onUpdateLists({ [listName]: list });
+    setListEditor(null);
   };
 
   const handleRemoveListItem = (listName: 'categorias' | 'marcas' | 'departamentos' | 'presentaciones', current: string) => {
