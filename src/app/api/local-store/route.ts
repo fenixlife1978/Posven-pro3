@@ -40,30 +40,8 @@ import {
 export const runtime = 'nodejs';
 
 const DEMO_MODULE_BY_OPERATION: Record<string, string> = {
+  // The DEMO trial is consumed only by completed sales and new product registrations.
   sale: 'Ventas',
-  returnOrCancellation: 'Ventas',
-  createPurchase: 'Compras',
-  deletePurchase: 'Compras',
-  inventory: 'Inventario',
-  inventoryStockSync: 'Inventario',
-  applyInventoryMovements: 'Inventario',
-  debtPayment: 'CxC',
-  globalCustomerPayment: 'CxC',
-  customerDebt: 'CxC',
-  reverseDebtPayment: 'CxC',
-  deleteCustomerDebt: 'CxC',
-  deleteCustomerAndDebts: 'CxC',
-  globalProviderPayment: 'CxP',
-  supplierDebt: 'CxP',
-  configPatch: 'Configuración',
-  catalogPatch: 'Configuración',
-  terminalPatch: 'Control Global',
-  terminalUpsert: 'Control Global',
-  terminalDelete: 'Control Global',
-  cashMovement: 'Ventas',
-  zClosure: 'Ventas',
-  factoryReset: 'Control Global',
-  repairReturnInventoryAndCxc: 'Control Global',
 };
 
 async function resolveDemoModule(operation: string, body: any): Promise<string | undefined> {
@@ -239,6 +217,7 @@ export async function POST(request: Request) {
         }, { status: 429 });
       }
       const moduleName = await resolveDemoModule(operation, body);
+      // Other operations remain usable during the trial but do not consume its two limits.
       if (moduleName && !(await reserveDemoAction(moduleName))) {
         const latest = await isDemoExhausted();
         const exhaustedModule = latest.module || moduleName;
