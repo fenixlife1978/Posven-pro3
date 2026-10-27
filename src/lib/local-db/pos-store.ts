@@ -1379,6 +1379,30 @@ export async function processReturnOrCancellationTransaction(params:any){
 
     const effectiveTotal=Math.round((effectiveItems.reduce((sum:number,item:any)=>sum+(Number(item.subtotalUSD)||0),0)+Number.EPSILON)*100)/100;
 
+    // Evitar reembolsos duplicados al anular una factura que ya tuvo devoluciones.
+    // Solo puede devolverse dinero efectivamente cobrado y aún no reembolsado;
+    // una nota de crédito de una venta impaga no genera salida de caja.
+    const originalPaidUSD = Array.isArray(sale.payments)
+      ? sale.payments.reduce((sum:number,p:any)=>sum+(Number(p?.montoUSD)||0),0)
+      : 0;
+    const previouslyRefundedUSD = previousReturns.reduce((sum:number,dev:any) =>
+      sum + (Array.isArray(dev?.refundPayments)
+        ? dev.refundPayments.reduce((part:number,p:any)=>part+(Number(p?.montoUSD)||0),0)
+        : 0), 0);
+    const requestedRefundUSD = Array.isArray(operationDoc?.refundPayments)
+      ? operationDoc.refundPayments.reduce((sum:number,p:any)=>sum+(Number(p?.montoUSD)||0),0)
+      : 0;
+    const refundableRemainingUSD = Math.max(0, Math.min(
+      effectiveTotal,
+      originalPaidUSD - previouslyRefundedUSD
+    ));
+    if (requestedRefundUSD > refundableRemainingUSD + 0.01) {
+      throw new Error(
+        'El reembolso excede el importe todavía reembolsable. Máximo disponible: USD ' +
+        refundableRemainingUSD.toFixed(2) + '. Revise los reembolsos previos y vuelva a intentar.'
+      );
+    }
+
     // En una anulación total posterior a una devolución parcial, SOLO se
     // registra lo que todavía quedaba pendiente. Así, 2 Polar ya devueltas
     // no vuelven a entrar al Kardex y únicamente retorna el producto restante.
