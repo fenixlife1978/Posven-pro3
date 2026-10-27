@@ -1,7 +1,7 @@
 import { localDbTransaction, localDbExecute } from '@/lib/local-db/client';
 
 export const DEMO_LIMIT = 10;
-export const DEMO_TRACKED_MODULES = ['Dashboard', 'Ventas', 'Inventario', 'Compras', 'CxC', 'CxP', 'Reportes', 'Configuración', 'Usuarios', 'Proveedores', 'Contabilidad', 'Control Global', 'Productos creados'] as const;
+export const DEMO_TRACKED_MODULES = ['Ventas', 'Productos creados'] as const;
 export type DemoTrackedModule = typeof DEMO_TRACKED_MODULES[number];
 const ENSURE_DEMO_SCHEMA = "CREATE TABLE IF NOT EXISTS demo_action_counts (module TEXT PRIMARY KEY NOT NULL, actions INTEGER NOT NULL DEFAULT 0 CHECK(actions >= 0))";
 
@@ -14,7 +14,7 @@ async function ensureDemoSchema(): Promise<void> {
 export async function reserveDemoAction(moduleName: string): Promise<boolean> {
   if (!DEMO_TRACKED_MODULES.includes(moduleName as DemoTrackedModule)) return false;
   await ensureDemoSchema();
-  // Seed all counters and check the global lock in the SAME SQLite transaction
+  // Seed both trial counters and check the global lock in the SAME SQLite transaction
   // as the increment. Concurrent requests cannot slip through after another
   // category reaches 10/10.
   const statements = [
@@ -50,7 +50,7 @@ export async function getDemoActionCounts(): Promise<Record<DemoTrackedModule, n
   return counts;
 }
 
-/** Once any one demo allowance is exhausted, all write operations are blocked. */
+/** Once 10 sales OR 10 newly registered products are reached, all demo write operations are blocked. */
 export async function isDemoExhausted(): Promise<{ exhausted: boolean; module?: DemoTrackedModule; counts: Record<DemoTrackedModule, number> }> {
   const counts = await getDemoActionCounts();
   const module = DEMO_TRACKED_MODULES.find((name) => counts[name] >= DEMO_LIMIT);
