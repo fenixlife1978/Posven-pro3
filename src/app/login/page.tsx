@@ -102,7 +102,7 @@ export default function LoginPage() {
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-surface-warm flex items-center justify-center">
-        {isDemoBuild && <div role="status" className="fixed top-0 inset-x-0 z-50 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center text-xs sm:text-sm font-black">POSVEN-PRO3 · VERSIÓN DEMO — Máximo 10 acciones por módulo. Adquiere la versión completa.</div>}
+        {isDemoBuild && <div role="status" className="fixed top-0 inset-x-0 z-50 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center text-xs sm:text-sm font-black">POSVEN-PRO3 · VERSIÓN DEMO — Cada módulo permite hasta 10 acciones. Al llegar a 10 en cualquiera, se bloquea toda la DEMO. Adquiere la versión completa.</div>}
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-brand-gold border-t-transparent rounded-full animate-spin" />
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-ink/40 text-center px-6">{statusMessage}</p>
