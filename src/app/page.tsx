@@ -92,7 +92,7 @@ export default function LicoreriaPOS() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isDemoBuild, setIsDemoBuild] = useState(false);
-  const [demoCounts, setDemoCounts] = useState<Record<string, number>>({ 'Ventas': 0, 'Productos creados': 0, 'Compras': 0 });
+  const [demoCounts, setDemoCounts] = useState<Record<string, number>>({ 'Dashboard': 0, 'Ventas': 0, 'Inventario': 0, 'Compras': 0, 'CxC': 0, 'CxP': 0, 'Reportes': 0, 'Configuración': 0, 'Usuarios': 0, 'Proveedores': 0, 'Contabilidad': 0, 'Control Global': 0, 'Productos creados': 0 });
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -759,10 +759,10 @@ export default function LicoreriaPOS() {
         {isDemoBuild && (
           <div role="status" aria-label="Límites de la versión DEMO" className="shrink-0 bg-amber-300 text-amber-950 border-b-2 border-amber-500 px-3 py-2 text-center">
             <div className="text-xs sm:text-sm font-black tracking-wide">POSVEN PRO · VERSIÓN DEMO — PRUEBA DEL SISTEMA</div>
-            <div className="mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] sm:text-xs font-bold">
-              <span>Ventas: {Math.min(10, demoCounts['Ventas'] || 0)}/10</span>
-              <span>Productos creados: {Math.min(10, demoCounts['Productos creados'] || 0)}/10</span>
-              <span>Compras: {Math.min(10, demoCounts['Compras'] || 0)}/10</span>
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[10px] sm:text-xs font-bold">
+              {Object.entries(demoCounts).map(([moduleName, actions]) => (
+                <span key={moduleName} className={Number(actions) >= 10 ? 'text-red-800 font-black' : ''}>{moduleName}: {Math.min(10, Number(actions) || 0)}/10</span>
+              ))}
             </div>
             <div className="mt-1 text-[10px] sm:text-xs font-bold">Esta es una aplicación de demostración: cada módulo permite hasta 10 acciones. Al alcanzar el límite en un módulo, el sistema se bloquea automáticamente. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.</div>
           </div>
