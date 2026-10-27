@@ -446,6 +446,8 @@ export default function LicoreriaPOS() {
     setShowCxPAlert(false);
   };
 
+  const demoExhaustedModule = Object.entries(demoCounts).find(([, actions]) => Number(actions) >= 10)?.[0];
+
   const menuGroups = [
     {
       id: 'operaciones',
@@ -762,7 +764,7 @@ export default function LicoreriaPOS() {
               <span>Productos creados: {Math.min(10, demoCounts['Productos creados'] || 0)}/10</span>
               <span>Compras: {Math.min(10, demoCounts['Compras'] || 0)}/10</span>
             </div>
-            <div className="mt-1 text-[10px] sm:text-xs font-bold">Al llegar cualquiera a 10/10, la prueba se bloquea. Adquiere la versión COMPLETA para continuar sin interrupciones.</div>
+            <div className="mt-1 text-[10px] sm:text-xs font-bold">Esta es una aplicación de demostración: cada módulo permite hasta 10 acciones. Al alcanzar el límite en un módulo, el sistema se bloquea automáticamente. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.</div>
           </div>
         )}
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-3 sm:px-7 py-3.5 flex items-center gap-2 sm:gap-6 no-print min-w-0 overflow-hidden">
@@ -846,6 +848,22 @@ export default function LicoreriaPOS() {
 
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black/60 z-[45] backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />
+      )}
+
+      {isDemoBuild && demoExhaustedModule && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" role="alertdialog" aria-modal="true" aria-labelledby="demo-lock-title">
+          <div className="w-full max-w-xl overflow-hidden rounded-2xl border-2 border-amber-500 bg-white shadow-2xl">
+            <div className="bg-amber-400 px-6 py-5 text-center text-amber-950">
+              <div className="text-xs font-black uppercase tracking-[0.2em]">PosVEN Pro · Versión de demostración</div>
+              <h2 id="demo-lock-title" className="mt-2 text-xl font-black uppercase">Límite de prueba alcanzado</h2>
+            </div>
+            <div className="space-y-4 p-6 text-center">
+              <p className="text-sm font-bold text-ink">Se alcanzaron las 10 acciones permitidas en el módulo «{demoExhaustedModule}». Por seguridad, la DEMO ha bloqueado las operaciones del sistema.</p>
+              <p className="text-sm text-ink/70">Adquiere la versión COMPLETA de PosVEN Pro para continuar trabajando sin límites ni interrupciones.</p>
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-950">Tus datos locales se conservan. El bloqueo no significa que debas borrar ni reinstalar la aplicación.</div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* CARTEL DE NOTIFICACIÓN CXP (CENTRAL) */}
