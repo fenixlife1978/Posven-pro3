@@ -41,7 +41,29 @@ export const runtime = 'nodejs';
 
 const DEMO_MODULE_BY_OPERATION: Record<string, string> = {
   sale: 'Ventas',
+  returnOrCancellation: 'Ventas',
   createPurchase: 'Compras',
+  deletePurchase: 'Compras',
+  inventory: 'Inventario',
+  inventoryStockSync: 'Inventario',
+  applyInventoryMovements: 'Inventario',
+  debtPayment: 'CxC',
+  globalCustomerPayment: 'CxC',
+  customerDebt: 'CxC',
+  reverseDebtPayment: 'CxC',
+  deleteCustomerDebt: 'CxC',
+  deleteCustomerAndDebts: 'CxC',
+  globalProviderPayment: 'CxP',
+  supplierDebt: 'CxP',
+  configPatch: 'Configuración',
+  catalogPatch: 'Configuración',
+  terminalPatch: 'Control Global',
+  terminalUpsert: 'Control Global',
+  terminalDelete: 'Control Global',
+  cashMovement: 'Ventas',
+  zClosure: 'Ventas',
+  factoryReset: 'Control Global',
+  repairReturnInventoryAndCxc: 'Control Global',
 };
 
 async function resolveDemoModule(operation: string, body: any): Promise<string | undefined> {
@@ -51,15 +73,36 @@ async function resolveDemoModule(operation: string, body: any): Promise<string |
     if (changes.some((change: any) => !change?.before && change?.after?.id)) return 'Productos creados';
     return undefined;
   }
-  if (operation === 'upsert' && String(body?.table || '') === 'productos') {
-    const records = Array.isArray(body?.records) ? body.records : [];
-    for (const record of records) {
-      const id = String(record?.id || '').trim();
-      if (!id) return 'Productos creados';
-      const existing = await getRecord('productos', id);
-      if (!existing) return 'Productos creados';
+  if (['upsert', 'recordsSync'].includes(operation)) {
+    const tableName = String(body?.table || '');
+    const tableModule: Record<string, string> = {
+      productos: 'Productos creados',
+      movimientos: 'Inventario',
+      ventas: 'Ventas',
+      compras: 'Compras',
+      cxc: 'CxC',
+      cxp: 'CxP',
+      clientes: 'CxC',
+      proveedores: 'CxP',
+      terminales: 'Control Global',
+      devoluciones: 'Ventas',
+      anulaciones: 'Ventas',
+      reportesZ: 'Ventas',
+      caja: 'Ventas',
+      libroDiario: 'Contabilidad',
+    };
+    const moduleName = tableModule[tableName];
+    if (moduleName === 'Productos creados') {
+      const records = Array.isArray(body?.records) ? body.records : [];
+      for (const record of records) {
+        const id = String(record?.id || '').trim();
+        if (!id) return moduleName;
+        const existing = await getRecord('productos', id);
+        if (!existing) return moduleName;
+      }
+      return undefined;
     }
-    return undefined;
+    return moduleName;
   }
   return DEMO_MODULE_BY_OPERATION[operation];
 }
