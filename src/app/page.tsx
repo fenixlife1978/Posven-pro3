@@ -92,7 +92,7 @@ export default function LicoreriaPOS() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isDemoBuild, setIsDemoBuild] = useState(false);
-  const [demoCounts, setDemoCounts] = useState<Record<string, number>>({ 'Dashboard': 0, 'Ventas': 0, 'Inventario': 0, 'Compras': 0, 'CxC': 0, 'CxP': 0, 'Reportes': 0, 'Configuración': 0, 'Usuarios': 0, 'Proveedores': 0, 'Contabilidad': 0, 'Control Global': 0, 'Productos creados': 0 });
+  const [demoCounts, setDemoCounts] = useState<Record<string, number>>({ 'Ventas': 0, 'Productos creados': 0 });
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -764,7 +764,7 @@ export default function LicoreriaPOS() {
                 <span key={moduleName} className={Number(actions) >= 10 ? 'text-red-800 font-black' : ''}>{moduleName}: {Math.min(10, Number(actions) || 0)}/10</span>
               ))}
             </div>
-            <div className="mt-1 text-[10px] sm:text-xs font-bold">Esta es una aplicación de demostración: cada módulo permite hasta 10 acciones. En cuanto cualquier módulo llegue a 10/10, se bloquearán las operaciones de toda la DEMO, aunque los demás contadores estén por debajo de 10. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.</div>
+            <div className="mt-1 text-[10px] sm:text-xs font-bold">Esta DEMO permite registrar hasta 10 ventas o 10 productos nuevos, lo que ocurra primero. Al llegar a 10 ventas o al registrar el producto número 10, se bloquea todo el sistema. Las demás operaciones no consumen estos límites. Adquiere la versión COMPLETA para seguir trabajando sin interrupciones.</div>
           </div>
         )}
         <header className="sticky top-0 z-30 bg-surface-warm/85 backdrop-blur-md border-b border-line px-3 sm:px-7 py-3.5 flex items-center gap-2 sm:gap-6 no-print min-w-0 overflow-hidden">
@@ -858,7 +858,7 @@ export default function LicoreriaPOS() {
               <h2 id="demo-lock-title" className="mt-2 text-xl font-black uppercase">Límite de prueba alcanzado</h2>
             </div>
             <div className="space-y-4 p-6 text-center">
-              <p className="text-sm font-bold text-ink">El módulo «{demoExhaustedModule}» alcanzó 10/10 acciones. Se activó el bloqueo global de la DEMO: todas las operaciones quedan bloqueadas, aunque otros módulos no hayan agotado sus 10 acciones.</p>
+              <p className="text-sm font-bold text-ink">Se alcanzó primero el límite de 10 {demoExhaustedModule === 'Ventas' ? 'ventas' : 'productos nuevos registrados'}. Se activó el bloqueo global de la DEMO y todas las operaciones quedan bloqueadas.</p>
               <p className="text-sm text-ink/70">Adquiere la versión COMPLETA de PosVEN Pro para desbloquear el sistema y continuar trabajando sin interrupciones.</p>
               <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-950">Tus datos locales se conservan. El bloqueo no significa que debas borrar ni reinstalar la aplicación.</div>
             </div>
