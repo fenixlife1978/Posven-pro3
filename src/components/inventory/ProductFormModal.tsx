@@ -231,6 +231,8 @@ interface ProductFormModalProps {
 
 export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLists }: ProductFormModalProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'precios' | 'presentaciones' | 'kit'>('general');
+  const [listEditor, setListEditor] = useState<{ listName: 'categorias' | 'marcas' | 'departamentos' | 'presentaciones' } | null>(null);
+  const [listEditorValue, setListEditorValue] = useState('');
   const [datos, setDatos] = useState<any>({
     codigo: producto?.codigo || '',
     nombre: producto?.nombre || '',
@@ -352,9 +354,21 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
   };
 
   const handleAddListItem = (listName: 'categorias' | 'marcas' | 'departamentos' | 'presentaciones') => {
-    const newVal = prompt(`Ingrese nueva opción para ${listName.toUpperCase()}:`);
-    const value = String(newVal || '').trim();
+    // window.prompt no es fiable/está deshabilitado en el renderizador Electron.
+    // Abrimos un formulario React propio para que el alta funcione en escritorio.
+    setListEditor({ listName });
+    setListEditorValue('');
+  };
+
+  const saveListItem = () => {
+    if (!listEditor) return;
+    const listName = listEditor.listName;
+    const value = listEditorValue.trim();
     if (!value) return;
+    if (listName === 'categorias' && !datos.departamento) {
+      alert('Seleccione o cree primero un departamento.');
+      return;
+    }
     if (listName === 'categorias') {
       const associations = [...(state.categoriasPorDepartamento || DEFAULT_CATEGORY_ASSOCIATIONS)];
       if (!associations.some(item => item.departamento === datos.departamento && item.categoria.toLocaleLowerCase('es') === value.toLocaleLowerCase('es'))) associations.push({ departamento: datos.departamento, categoria: value });
@@ -657,6 +671,18 @@ export function ProductFormModal({ producto, state, onClose, onSave, onUpdateLis
         </div>
         <div className="modal-foot p-5 bg-surface-soft border-t border-line flex justify-end gap-3"><Button variant="secondary" className="px-8 font-black uppercase text-[10px]" onClick={onClose}>Cerrar</Button><Button type="button" className="bg-brand-gold hover:bg-brand-gold-deep text-ink px-10 font-black uppercase text-[10px] shadow-lg" onClick={handleSave}>{producto ? 'ACTUALIZAR' : 'CREAR PRODUCTO'}</Button></div>
       </div>
+      {listEditor && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Crear opción de catálogo">
+          <form className="w-full max-w-md rounded-xl border border-line bg-white p-5 shadow-2xl space-y-4" onSubmit={e => { e.preventDefault(); saveListItem(); }}>
+            <h4 className="text-sm font-black uppercase text-ink">Crear {listEditor.listName === 'categorias' ? 'categoría' : listEditor.listName === 'departamentos' ? 'departamento' : listEditor.listName === 'presentaciones' ? 'unidad de medida base' : 'marca'}</h4>
+            <Input autoFocus value={listEditorValue} onChange={e => setListEditorValue(e.target.value)} placeholder={listEditor.listName === 'presentaciones' ? 'Ej.: Unidad, Kg, Litro, Gramo, ml' : 'Escriba el nombre'} />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setListEditor(null)}>Cancelar</Button>
+              <Button type="submit" className="bg-brand-gold text-ink font-black" disabled={!listEditorValue.trim()}>Guardar</Button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
