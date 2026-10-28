@@ -605,7 +605,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
   };
 
-  const ejecutarCierreZ = (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
+  const ejecutarCierreZ = async (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
     const data = reportSnapshot;
     if (!data) return;
     const ahora = Utils.ahora();
@@ -661,29 +661,44 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
 
-    updateState({
-      reportesZ: [...(state.reportesZ || []), nuevoZ],
-      terminales: Utils.patchTerminal(state.terminales, termId, (() => {
-        const terminal = state.terminales.find(t => t.id === termId);
-        const sesion = terminal?.cashData;
-        const historial = Array.isArray(terminal?.cashHistory) ? terminal.cashHistory : [];
-        const cierreSesion = sesion
-          ? { ...sesion, closeDate: ahora, closeNotes: 'Cierre por Corte Z ' + nuevoZ.id }
-          : null;
-        return {
-          ultimoZ: numeroZ,
-          fechaUltimoZ: ahora,
-          acumuladoHistorico: data.acumuladoHistoricoUSD,
-          fondoCajaHoyBS: 0,
-          fondoCajaHoyUSD: 0,
-          isCashOpen: false,
-          cashData: null,
-          cashHistory: cierreSesion ? [cierreSesion, ...historial] : historial,
-        };
-      })())
-    });
+    const terminalActual = state.terminales.find(t => String(t.id) === String(termId));
+    if (!terminalActual) {
+      toast({ variant: 'destructive', title: 'No se pudo cerrar la caja', description: 'No se encontró la terminal asignada. No se confirmó ningún corte Z.' });
+      return;
+    }
+    const sesion = terminalActual.cashData;
+    const historial = Array.isArray(terminalActual.cashHistory) ? terminalActual.cashHistory : [];
+    const cierreSesion = sesion
+      ? { ...sesion, closeDate: ahora, closeNotes: 'Cierre por Corte Z ' + nuevoZ.id }
+      : null;
+    const terminalPatch = {
+      ultimoZ: numeroZ,
+      fechaUltimoZ: ahora,
+      acumuladoHistorico: data.acumuladoHistoricoUSD,
+      fondoCajaHoyBS: 0,
+      fondoCajaHoyUSD: 0,
+      isCashOpen: false,
+      cashData: null,
+      cashHistory: cierreSesion ? [cierreSesion, ...historial] : historial,
+    };
 
-    toast({ title: `Corte Z ${nuevoZ.id} ejecutado`, description: `Diferencia Bs. ${Utils.fmtBS(diff.bs)} · USD ${Utils.fmtUSD(diff.usd)}` });
+    // No mostramos éxito ni cerramos el modal hasta recibir confirmación real
+    // del endpoint transaccional de Turso.
+    let zPersistido: any;
+    try {
+      zPersistido = await Store.createZClosure({ terminalId: termId, report: nuevoZ, terminalPatch });
+    } catch (error: any) {
+      console.error('[POS] Turso rechazó el cierre Z:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Corte Z NO confirmado',
+        description: String(error?.message || 'Turso no confirmó el cierre. La caja no se marcará como cerrada.'),
+      });
+      return;
+    }
+    const zConfirmado = zPersistido.report;
+
+    toast({ title: `Corte Z ${zConfirmado.id} confirmado en Turso`, description: `Diferencia Bs. ${Utils.fmtBS(diff.bs)} · USD ${Utils.fmtUSD(diff.usd)}` });
 
     // Después de confirmar el arqueo, el Z NO desaparece sin comprobante:
     // se muestra inmediatamente la vista previa térmica 80mm del Reporte Z,
@@ -697,11 +712,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const session = tc.cashData;
     setReportSnapshot({
       ...data,
-      ...nuevoZ,
-      numeroZ: nuevoZ.numeroZ,
+      ...zConfirmado,
+      numeroZ: zConfirmado.numeroZ,
       empresa: state.empresa,
       generatedAt: ahora,
-      closedAt: ahora,
+      closedAt: zConfirmado.closedAt || ahora,
       closedBy: data.cajeroNombre,
       openedAt: session?.openDate || session?.openedAt || session?.fechaApertura || data.openedAt,
       openedBy: session?.openedBy || session?.usuarioApertura || data.cajeroNombre,
