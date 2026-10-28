@@ -305,17 +305,17 @@ function terminalPrefix(terminal: any, terminalId?: string): string {
 // terminales con el mismo prefijo, no permitimos que ambas cajas compartan
 // la misma serie: añadimos una parte estable del terminalId solo en ese caso.
 // Así no se rompe la numeración de cajas que ya tienen prefijos únicos.
-async function terminalUniquePrefix(tx: any, terminal: any, terminalId?: string): Promise<string> {
+async function terminalUniquePrefix(_tx: any, terminal: any, terminalId?: string): Promise<string> {
   const base = terminalPrefix(terminal, terminalId);
-  if (!terminalId || base === 'GLOBAL') return base;
-  const duplicate = await tx.execute({
-    sql: "SELECT id FROM terminales WHERE id<>? AND json_extract(data_json,'$.prefijoCaja')=? LIMIT 1",
-    args: [String(terminalId), base],
-  });
-  if (duplicate.rows.length) {
-    return base + '-' + String(terminalId).replace(/[^A-Z0-9]/gi, '').slice(-6).toUpperCase();
+  if (!terminalId || base === 'GLOBAL') {
+    throw new Error('La caja no tiene un identificador único. No se puede generar un correlativo Z seguro.');
   }
-  return base;
+  // Cada caja obtiene un espacio de nombres propio, siempre. No dependemos de
+  // que prefijoCaja esté completo/único en terminales migradas o antiguas.
+  // Así dos cajas nunca comparten IDs de reportes aunque tengan el mismo prefijo visible.
+  const suffix = String(terminalId).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  if (!suffix) throw new Error('El identificador de la caja no permite generar un correlativo independiente.');
+  return base + '-' + suffix.slice(-12);
 }
 
 function terminalSeries(prefix: string, label: string, number: number, width = 6) {
