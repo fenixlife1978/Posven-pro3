@@ -994,26 +994,35 @@ export async function createZClosureTransaction(params: {
     // ID provisional enviado por el navegador y construimos uno exclusivo de
     // esta terminal para evitar que dos cajas puedan sobrescribirse.
     let report = { ...clean(params.report), id: terminalSeries(prefix, 'Z', expectedNumber, 6), terminalId: params.terminalId, numeroZ: expectedNumber };
-    const canonical = await tx.execute(txSelect('reportesZ', report.id));
-    if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
+    const canonicalResult = await tx.execute(txSelect('reportesZ', report.id));
+    const existingReport = rowFromDb(canonicalResult.rows[0]);
+    let reportAlreadySaved = false;
+    if (existingReport) {
+      // Recuperación idempotente: el reporte pudo guardarse en un intento previo
+      // aunque el cliente no recibiera la respuesta. No volver a insertarlo ni
+      // dejar la caja abierta por ese reintento.
+      if (String(existingReport.terminalId || '') !== String(params.terminalId)) {
+        throw new Error('El correlativo Z está ocupado por otra terminal. No se modificó la caja.');
+      }
+      report = existingReport;
+      reportAlreadySaved = true;
+    }
 
-    // El cierre Z debe cerrar la caja en la misma transacción que guarda
-    // el reporte y avanza el correlativo. No dependemos de que el navegador
-    // envíe correctamente isCashOpen/cashData: un parche incompleto nunca
-    // puede dejar la caja abierta después de un Z confirmado.
+    // Guardar reporte y cerrar terminal de forma atómica. Si el reporte ya
+    // existía, la operación solo repara el estado de caja/correlativo.
     const closedAt = String(report.closedAt || report.fecha || report.generatedAt || new Date().toISOString());
     const updatedTerminal = {
       ...current,
       ...clean(params.terminalPatch),
       id: params.terminalId,
-      ultimoZ: expectedNumber,
+      ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ || expectedNumber)),
       fechaUltimoZ: closedAt,
       isCashOpen: false,
       cashData: null,
       fondoCajaHoyBS: 0,
       fondoCajaHoyUSD: 0,
     };
-    await tx.execute(rowStatement('reportesZ', report));
+    if (!reportAlreadySaved) await tx.execute(rowStatement('reportesZ', report));
     await tx.execute(rowStatement('terminales', updatedTerminal));
     return { report, terminal: updatedTerminal };
   });
