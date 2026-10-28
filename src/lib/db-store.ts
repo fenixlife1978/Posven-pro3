@@ -1368,6 +1368,30 @@ async function getSaleById(saleId: string): Promise<any | null> {
 export const Store = {
   ensurePurchaseHistory,
   applyInventoryMovementsTransaction,
+  /**
+   * Corte Z autoritativo: no actualizar el estado visual ni confirmar al cajero
+   * hasta que Turso haya guardado reporte y terminal en una sola transacción.
+   */
+  async createZClosure(params: { terminalId: string; report: any; terminalPatch: Record<string, any> }): Promise<any> {
+    if (typeof window === 'undefined') throw new Error('El cierre Z debe ejecutarse desde el POS.');
+    const result = await tryTursoOperation('zClosure', params);
+    if (!result?.report || !result?.terminal) throw new Error('Turso no confirmó el cierre Z. La caja permanece sin cambios.');
+    const previousReports = (cache.reportesZ || []) as any[];
+    const previousTerminals = (cache.terminales || []) as any[];
+    applyPatch({
+      reportesZ: mergeById(previousReports, [result.report]),
+      terminales: mergeById(previousTerminals, [result.terminal]),
+      ultimoZ: Number(result.report.numeroZ) || 0,
+      fechaUltimoZ: String(result.report.closedAt || result.report.fecha || ''),
+      acumuladoHistorico: Number(result.report.acumuladoHistoricoUSD ?? cache.acumuladoHistorico) || 0,
+      fondoCajaHoyBS: Number(result.terminal.fondoCajaHoyBS) || 0,
+      fondoCajaHoyUSD: Number(result.terminal.fondoCajaHoyUSD) || 0,
+      isCashOpen: !!result.terminal.isCashOpen,
+      cashData: result.terminal.cashData || null,
+      cashHistory: result.terminal.cashHistory || [],
+    });
+    return result;
+  },
   async createCashMovementTransaction(params: {
     operationId: string;
     movement: any;
