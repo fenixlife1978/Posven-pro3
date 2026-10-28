@@ -113,9 +113,25 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
 
   if (!open || !report) return null;
 
-  const reconciled = Math.abs(diff.bs) < 0.01 && Math.abs(diff.usd) < 0.01;
+  // No declarar conciliado si hay medios con importe esperado que aún no
+  // fueron contados. Los campos vacíos no equivalen a un conteo real de cero.
+  const missingRequired = rows.filter((row) => {
+    const raw = String(real[row.method] ?? "").trim();
+    return Math.abs(row.system) >= 0.01 && raw === "";
+  });
+  const invalidEntered = rows.filter((row) => {
+    const raw = String(real[row.method] ?? "").trim();
+    if (!raw) return false;
+    const amount = Number(raw.replace(",", "."));
+    return !Number.isFinite(amount) || amount < 0;
+  });
+  const reconciled = missingRequired.length === 0 && invalidEntered.length === 0 &&
+    Math.abs(diff.bs) < 0.01 && Math.abs(diff.usd) < 0.01;
   const positive = diff.bs > 0.01 || diff.usd > 0.01;
-  const result = reconciled ? "ARQUEO CONCILIADO" : positive ? "SOBRANTE" : "FALTANTE";
+  const result = reconciled ? "ARQUEO CONCILIADO"
+    : missingRequired.length ? "ARQUEO PENDIENTE"
+    : invalidEntered.length ? "REVISE LOS MONTOS"
+    : positive ? "SOBRANTE" : "FALTANTE";
 
   return (
     <div className="fixed inset-0 z-[220] bg-black/60 flex items-center justify-center p-3">
@@ -193,7 +209,11 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
               Diferencia Bs.: <b>{money(diff.bs, "BS")}</b> · Diferencia USD: <b>{money(diff.usd, "USD")}</b>
             </div>
             <div className="text-[10px] text-ink/50 mt-1">
-              El monto real se introduce por cada medio de pago. El sistema no convierte pagos electrónicos a efectivo.
+              {missingRequired.length > 0
+                ? `Faltan por contar ${missingRequired.length} medio(s) con monto esperado. Un campo vacío no se considera conciliado.`
+                : invalidEntered.length > 0
+                  ? "Hay montos inválidos o negativos. Corríjalos antes de ejecutar Z."
+                  : "El monto real se introduce por cada medio de pago. El sistema no convierte pagos electrónicos a efectivo."}
             </div>
           </div>
         </div>
@@ -201,8 +221,13 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
         <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2">
           <button onClick={onCancel} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px]">Cancelar</button>
           <button
-            onClick={() => onConfirm(real, diff)}
-            className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md"
+            onClick={() => {
+              if (missingRequired.length > 0 || invalidEntered.length > 0) return;
+              onConfirm(real, diff);
+            }}
+            disabled={missingRequired.length > 0 || invalidEntered.length > 0}
+            title={missingRequired.length > 0 ? "Ingrese el monto real de cada medio que tiene un monto esperado." : invalidEntered.length > 0 ? "Corrija los montos inválidos." : "Guardar arqueo y ejecutar Z"}
+            className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Guardar y ejecutar Z
           </button>
