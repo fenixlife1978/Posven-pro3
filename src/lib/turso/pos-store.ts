@@ -983,11 +983,11 @@ export async function createZClosureTransaction(params: {
     if (!current) throw new Error('La terminal ya no existe en Turso.');
     assertTerminalAccess(params.user, current);
 
+    // El navegador puede tener un correlativo desactualizado por caché o por
+    // una sesión previa. Turso es la autoridad: asignamos siempre el siguiente
+    // número dentro de la transacción, en lugar de bloquear el cierre por el
+    // número provisional que envió el cliente.
     const expectedNumber = Number(current.ultimoZ || 0) + 1;
-    const requestedNumber = Number(params.report?.numeroZ || expectedNumber);
-    if (requestedNumber !== expectedNumber) {
-      throw new Error('El número Z cambió en otra caja. Actualice y vuelva a generar el corte.');
-    }
 
     const prefix = await terminalUniquePrefix(tx, current, params.terminalId);
     // El servidor es la autoridad final del correlativo Z. Ignoramos cualquier
