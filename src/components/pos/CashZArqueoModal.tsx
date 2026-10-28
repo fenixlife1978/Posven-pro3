@@ -135,7 +135,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
 
   return (
     <div className="fixed inset-0 z-[220] bg-black/60 flex items-center justify-center p-3">
-      <div className="bg-white w-full max-w-[1500px] max-h-[94vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="bg-white w-full max-w-[98vw] max-h-[94vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         <div className="px-5 py-4 bg-ink text-white flex items-center justify-between">
           <div>
             <h3 className="text-base font-black uppercase italic">Arqueo previo al Corte Z</h3>
@@ -162,7 +162,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
                   "Total Monto Sistema",
                   "Monto Real",
                   "DIF. (+/-)",
-                ].map((h) => <th key={h} className="p-2 border border-line text-left font-black uppercase">{h}</th>)}
+                ].map((h) => <th key={h} className="p-1 border border-line text-left font-black uppercase break-words">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -172,23 +172,23 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
                 const rowDiff = n === null || !Number.isFinite(n) ? null : Number((n - row.system).toFixed(2));
                 return (
                   <tr key={row.method}>
-                    <td className="p-2 border border-line font-black">{label(row.method)}</td>
-                    <td className="p-2 border border-line text-right">{money(row.method === "efectivo_bs" ? row.opening : 0, "BS")}</td>
-                    <td className="p-2 border border-line text-right">{money(row.method === "efectivo_usd" ? row.opening : 0, "USD")}</td>
-                    <td className="p-2 border border-line text-right">{money(row.sales, row.currency)}</td>
-                    <td className="p-2 border border-line text-right">{money(row.cxc, row.currency)}</td>
-                    <td className="p-2 border border-line text-right">{money(row.dev, row.currency)}</td>
-                    <td className="p-2 border border-line text-right">{money(row.plus, row.currency)}</td>
-                    <td className="p-2 border border-line text-right">{money(row.minus, row.currency)}</td>
-                    <td className="p-2 border border-line text-right font-black">{money(row.system, row.currency)}</td>
-                    <td className="p-1 border border-line">
+                    <td className="p-1 border border-line font-black break-words">{label(row.method)}</td>
+                    <td className="p-1 border border-line text-right break-words">{money(row.method === "efectivo_bs" ? row.opening : 0, "BS")}</td>
+                    <td className="p-1 border border-line text-right break-words">{money(row.method === "efectivo_usd" ? row.opening : 0, "USD")}</td>
+                    <td className="p-1 border border-line text-right break-words">{money(row.sales, row.currency)}</td>
+                    <td className="p-1 border border-line text-right break-words">{money(row.cxc, row.currency)}</td>
+                    <td className="p-1 border border-line text-right break-words">{money(row.dev, row.currency)}</td>
+                    <td className="p-1 border border-line text-right break-words">{money(row.plus, row.currency)}</td>
+                    <td className="p-1 border border-line text-right break-words">{money(row.minus, row.currency)}</td>
+                    <td className="p-1 border border-line text-right font-black break-words">{money(row.system, row.currency)}</td>
+                    <td className="p-1 border border-line min-w-0">
                       <input
                         type="text"
                         inputMode="decimal"
                         value={raw}
                         onChange={(e) => setReal((prev) => ({ ...prev, [row.method]: e.target.value }))}
                         placeholder={row.currency === "BS" ? "Bs." : "USD"}
-                        className="w-32 px-2 py-1.5 border border-line rounded-lg text-right font-bold"
+                        className="w-full min-w-0 px-1 py-1 border border-line rounded text-right font-bold text-[10px]"
                       />
                     </td>
                     <td className={`p-2 border border-line text-right font-black ${rowDiff === null ? "text-ink/30" : rowDiff > 0.005 ? "text-status-success" : rowDiff < -0.005 ? "text-status-danger" : "text-ink"}`}>
@@ -200,7 +200,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
             </tbody>
           </table>
 
-          <div className={`mt-4 rounded-xl border p-4 ${reconciled ? "bg-status-success/10 border-status-success/20" : "bg-surface-soft border-line"}`}>
+          <div className={`mt-2 rounded-xl border p-3 ${reconciled ? "bg-status-success/10 border-status-success/20" : "bg-surface-soft border-line"}`}>
             <div className="flex items-center gap-2 font-black text-sm">
               {reconciled ? <CheckCircle2 className="w-5 h-5 text-status-success" /> : <AlertTriangle className="w-5 h-5 text-brand-gold-deep" />}
               {result}
