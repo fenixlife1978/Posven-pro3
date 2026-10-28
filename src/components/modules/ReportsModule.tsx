@@ -7,7 +7,7 @@ import { FileText, TrendingUp, Calendar, Printer, ArrowLeft, Monitor } from 'luc
 import { exportarPDFVentasDetallado } from '@/lib/pdf-generator';
 import ZReportPreview80mm from '@/components/pos/ZReportPreview80mm';
 
-export default function ReportsModule({ state }: { state: AppState }) {
+export default function ReportsModule({ state }: { state: AppState }) {\n  const isAdmin = state.user?.rol === 'administrador';
   useEffect(() => {
     // El listener realtime mantiene solo los últimos 100 cortes; al abrir Reportes
     // se recupera el histórico completo para filtros y exportaciones.
@@ -104,9 +104,11 @@ export default function ReportsModule({ state }: { state: AppState }) {
         >
           <div className="flex items-center gap-2"><TrendingUp className="w-4 h-4"/> Análisis de Rentabilidad</div>
         </button>
-        <button onClick={() => setTab('z')} className="px-6 py-3 text-sm font-black uppercase tracking-widest border-b-2 border-transparent text-ink hover:text-brand-gold">
-          <div className="flex items-center gap-2"><Monitor className="w-4 h-4"/> Historial de Cortes Z</div>
-        </button>
+        {isAdmin && (
+          <button onClick={() => setTab('z')} className={`px-6 py-3 text-sm font-black uppercase tracking-widest border-b-2 transition-all ${tab === 'z' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-ink hover:text-brand-gold'}`}>
+            <div className="flex items-center gap-2"><Monitor className="w-4 h-4"/> Historial de Cortes Z</div>
+          </button>
+        )}
       </div>
 
       {/* Contenido Ventas */}
@@ -233,7 +235,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
       )}
 
       {/* Historial de Cortes Z por caja */}
-      {tab === 'z' && (
+      {isAdmin && tab === 'z' && (
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="card p-5 bg-white border-line flex flex-wrap gap-6 items-end shadow-sm">
             <div className="form-group mb-0">
