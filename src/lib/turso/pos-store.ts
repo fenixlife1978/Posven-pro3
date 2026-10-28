@@ -997,7 +997,22 @@ export async function createZClosureTransaction(params: {
     const canonical = await tx.execute(txSelect('reportesZ', report.id));
     if (canonical.rows.length) throw new Error('El corte Z de esta terminal ya fue registrado.');
 
-    const updatedTerminal = { ...current, ...clean(params.terminalPatch), ultimoZ: expectedNumber, id: params.terminalId };
+    // El cierre Z debe cerrar la caja en la misma transacción que guarda
+    // el reporte y avanza el correlativo. No dependemos de que el navegador
+    // envíe correctamente isCashOpen/cashData: un parche incompleto nunca
+    // puede dejar la caja abierta después de un Z confirmado.
+    const closedAt = String(report.closedAt || report.fecha || report.generatedAt || new Date().toISOString());
+    const updatedTerminal = {
+      ...current,
+      ...clean(params.terminalPatch),
+      id: params.terminalId,
+      ultimoZ: expectedNumber,
+      fechaUltimoZ: closedAt,
+      isCashOpen: false,
+      cashData: null,
+      fondoCajaHoyBS: 0,
+      fondoCajaHoyUSD: 0,
+    };
     await tx.execute(rowStatement('reportesZ', report));
     await tx.execute(rowStatement('terminales', updatedTerminal));
     return { report, terminal: updatedTerminal };
