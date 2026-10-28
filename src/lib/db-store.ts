@@ -830,7 +830,9 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
 async function ensureReportRange(name: string, desde: string, hasta: string, terminalId = 'all'): Promise<void> {
   if (!desde || !hasta) return;
   const key = `report-range:${name}:${terminalId}:${desde}:${hasta}`;
-  if (SINCE_STAMP[key] === 'done') return;
+  // El historial Z se vuelve a consultar para reflejar cierres recién confirmados
+  // y recuperar datos del servidor incluso si una consulta anterior devolvió vacío.
+  if (name !== 'reportesZ' && SINCE_STAMP[key] === 'done') return;
 
   try {
     // En Turso evitamos las consultas compuestas de servidor Turso para el historial.
