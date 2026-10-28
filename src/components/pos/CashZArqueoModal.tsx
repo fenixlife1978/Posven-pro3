@@ -135,8 +135,8 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
 
   return (
     <div className="fixed inset-0 z-[220] bg-black/60 flex items-center justify-center p-3">
-      <div className="bg-white w-full max-w-[1100px] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="px-3 py-2 bg-ink text-white flex items-center justify-between">
+      <div className="bg-white w-full max-w-[98vw] max-h-[94vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="px-5 py-4 bg-ink text-white flex items-center justify-between">
           <div>
             <h3 className="text-base font-black uppercase italic">Arqueo previo al Corte Z</h3>
             <p className="text-[9px] text-white/60 font-bold uppercase mt-1">
@@ -146,8 +146,8 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
           <button onClick={onCancel} className="p-2 text-white/60 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="p-2 sm:p-3 overflow-y-auto overflow-x-hidden">
-          <table className="w-full table-fixed text-[9px] leading-tight border-collapse">
+        <div className="p-4 overflow-auto">
+          <table className="min-w-[1250px] w-full text-xs border-collapse">
             <thead className="bg-surface-soft text-ink">
               <tr>
                 {[
@@ -218,8 +218,8 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
           </div>
         </div>
 
-        <div className="p-2 bg-surface-soft border-t border-line flex justify-end gap-2">
-          <button onClick={onCancel} className="px-3 h-8 rounded-lg border border-line text-ink font-black uppercase text-[9px]">Cancelar</button>
+        <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2">
+          <button onClick={onCancel} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px]">Cancelar</button>
           <button
             onClick={() => {
               if (missingRequired.length > 0 || invalidEntered.length > 0) return;
@@ -227,7 +227,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
             }}
             disabled={missingRequired.length > 0 || invalidEntered.length > 0}
             title={missingRequired.length > 0 ? "Ingrese el monto real de cada medio que tiene un monto esperado." : invalidEntered.length > 0 ? "Corrija los montos inválidos." : "Guardar arqueo y ejecutar Z"}
-            className="px-3 h-8 rounded-lg bg-status-danger text-white font-black uppercase text-[9px] shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Guardar y ejecutar Z
           </button>
