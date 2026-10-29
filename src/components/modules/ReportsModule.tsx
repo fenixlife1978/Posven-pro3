@@ -7,7 +7,8 @@ import { FileText, TrendingUp, Calendar, Printer, ArrowLeft, Monitor } from 'luc
 import { exportarPDFVentasDetallado } from '@/lib/pdf-generator';
 import ZReportPreview80mm from '@/components/pos/ZReportPreview80mm';
 
-export default function ReportsModule({ state }: { state: AppState }) {\n  const isAdmin = state.user?.rol === 'administrador';
+export default function ReportsModule({ state }: { state: AppState }) {
+  const isAdmin = state.user?.rol === 'administrador';
   useEffect(() => {
     // El listener realtime mantiene solo los últimos 100 cortes; al abrir Reportes
     // se recupera el histórico completo para filtros y exportaciones.
