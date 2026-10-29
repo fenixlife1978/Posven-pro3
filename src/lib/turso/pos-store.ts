@@ -1018,23 +1018,41 @@ export async function createZClosureTransaction(params: {
     let canonicalResult = await tx.execute(txSelect('reportesZ', report.id));
     let existingReport = rowFromDb(canonicalResult.rows[0]);
     let reportAlreadySaved = false;
+
+    // Resolver cualquier colisión heredada, no solo un único intento.
+    // El ID alternativo incluye el ID completo de la caja y un nonce estable
+    // de búsqueda; nunca se reutiliza un registro perteneciente a otra caja.
     if (existingReport && String(existingReport.terminalId || '') !== String(params.terminalId)) {
-      // Compatibilidad con reportes creados por versiones anteriores que
-      // podían usar prefijos/correlativos compartidos. Nunca sobrescribir el
-      // registro de otra caja: migrar el intento actual a un ID inequívoco.
       const rawId = String(params.terminalId);
       const exactSuffix = Array.from({ length: rawId.length }, (_, i) =>
         rawId.charCodeAt(i).toString(16).padStart(4, '0')
       ).join('').toUpperCase();
-      report = { ...report, id: terminalSeries(prefix + '-T' + exactSuffix, 'Z', expectedNumber, 6) };
-      canonicalResult = await tx.execute(txSelect('reportesZ', report.id));
-      existingReport = rowFromDb(canonicalResult.rows[0]);
+      let resolved = false;
+      for (let attempt = 0; attempt < 1000; attempt++) {
+        const candidateId = terminalSeries(prefix + '-T' + exactSuffix + (attempt ? '-R' + attempt : ''), 'Z', expectedNumber, 6);
+        const candidateResult = await tx.execute(txSelect('reportesZ', candidateId));
+        const candidate = rowFromDb(candidateResult.rows[0]);
+        if (!candidate) {
+          report = { ...report, id: candidateId };
+          existingReport = null;
+          resolved = true;
+          break;
+        }
+        if (String(candidate.terminalId || '') === String(params.terminalId)) {
+          report = candidate;
+          existingReport = candidate;
+          resolved = true;
+          break;
+        }
+      }
+      if (!resolved) {
+        throw new Error('No se pudo reservar un identificador Z exclusivo para esta caja tras 1000 intentos. No se modificó ninguna caja.');
+      }
     }
+
     if (existingReport) {
-      // Reintento idempotente: si ya existe el Z de ESTA caja, reutilizarlo.
-      // Si sigue perteneciendo a otra caja, fallar sin modificar ningún dato.
       if (String(existingReport.terminalId || '') !== String(params.terminalId)) {
-        throw new Error('Conflicto de identificador Z incluso con aislamiento por caja. No se modificó ninguna caja.');
+        throw new Error('Conflicto de integridad Z: el reporte existente pertenece a otra caja. No se modificó ninguna caja.');
       }
       report = existingReport;
       reportAlreadySaved = true;
