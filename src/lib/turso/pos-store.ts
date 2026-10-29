@@ -310,12 +310,16 @@ async function terminalUniquePrefix(_tx: any, terminal: any, terminalId?: string
   if (!terminalId || base === 'GLOBAL') {
     throw new Error('La caja no tiene un identificador único. No se puede generar un correlativo Z seguro.');
   }
-  // Cada caja obtiene un espacio de nombres propio, siempre. No dependemos de
-  // que prefijoCaja esté completo/único en terminales migradas o antiguas.
-  // Así dos cajas nunca comparten IDs de reportes aunque tengan el mismo prefijo visible.
-  const suffix = String(terminalId).replace(/[^A-Z0-9]/gi, '').toUpperCase();
-  if (!suffix) throw new Error('El identificador de la caja no permite generar un correlativo independiente.');
-  return base + '-' + suffix.slice(-12);
+  // Codificación reversible e inyectiva del ID exacto: no usamos solo los
+  // últimos caracteres ni un hash que pudiera colisionar entre cajas.
+  // El correlativo numérico sigue siendo local a current.ultimoZ; este sufijo
+  // solo crea el espacio de nombres único del reporte persistido.
+  const rawId = String(terminalId);
+  if (!rawId) throw new Error('El identificador de la caja no permite generar un correlativo independiente.');
+  const suffix = Array.from({ length: rawId.length }, (_, i) =>
+    rawId.charCodeAt(i).toString(16).padStart(4, '0')
+  ).join('').toUpperCase();
+  return base + '-T' + suffix;
 }
 
 function terminalSeries(prefix: string, label: string, number: number, width = 6) {
