@@ -1015,15 +1015,26 @@ export async function createZClosureTransaction(params: {
     // ID provisional enviado por el navegador y construimos uno exclusivo de
     // esta terminal para evitar que dos cajas puedan sobrescribirse.
     let report = { ...clean(params.report), id: terminalSeries(prefix, 'Z', expectedNumber, 6), terminalId: params.terminalId, numeroZ: expectedNumber };
-    const canonicalResult = await tx.execute(txSelect('reportesZ', report.id));
-    const existingReport = rowFromDb(canonicalResult.rows[0]);
+    let canonicalResult = await tx.execute(txSelect('reportesZ', report.id));
+    let existingReport = rowFromDb(canonicalResult.rows[0]);
     let reportAlreadySaved = false;
+    if (existingReport && String(existingReport.terminalId || '') !== String(params.terminalId)) {
+      // Compatibilidad con reportes creados por versiones anteriores que
+      // podían usar prefijos/correlativos compartidos. Nunca sobrescribir el
+      // registro de otra caja: migrar el intento actual a un ID inequívoco.
+      const rawId = String(params.terminalId);
+      const exactSuffix = Array.from({ length: rawId.length }, (_, i) =>
+        rawId.charCodeAt(i).toString(16).padStart(4, '0')
+      ).join('').toUpperCase();
+      report = { ...report, id: terminalSeries(prefix + '-T' + exactSuffix, 'Z', expectedNumber, 6) };
+      canonicalResult = await tx.execute(txSelect('reportesZ', report.id));
+      existingReport = rowFromDb(canonicalResult.rows[0]);
+    }
     if (existingReport) {
-      // Recuperación idempotente: el reporte pudo guardarse en un intento previo
-      // aunque el cliente no recibiera la respuesta. No volver a insertarlo ni
-      // dejar la caja abierta por ese reintento.
+      // Reintento idempotente: si ya existe el Z de ESTA caja, reutilizarlo.
+      // Si sigue perteneciendo a otra caja, fallar sin modificar ningún dato.
       if (String(existingReport.terminalId || '') !== String(params.terminalId)) {
-        throw new Error('El correlativo Z está ocupado por otra terminal. No se modificó la caja.');
+        throw new Error('Conflicto de identificador Z incluso con aislamiento por caja. No se modificó ninguna caja.');
       }
       report = existingReport;
       reportAlreadySaved = true;
