@@ -305,21 +305,38 @@ function terminalPrefix(terminal: any, terminalId?: string): string {
 // terminales con el mismo prefijo, no permitimos que ambas cajas compartan
 // la misma serie: añadimos una parte estable del terminalId solo en ese caso.
 // Así no se rompe la numeración de cajas que ya tienen prefijos únicos.
-async function terminalUniquePrefix(_tx: any, terminal: any, terminalId?: string): Promise<string> {
+async function terminalUniquePrefix(tx: any, terminal: any, terminalId?: string): Promise<string> {
   const base = terminalPrefix(terminal, terminalId);
   if (!terminalId || base === 'GLOBAL') {
-    throw new Error('La caja no tiene un identificador único. No se puede generar un correlativo Z seguro.');
+    throw new Error('La caja no tiene un identificador único. No se puede generar un correlativo seguro.');
   }
-  // Codificación reversible e inyectiva del ID exacto: no usamos solo los
-  // últimos caracteres ni un hash que pudiera colisionar entre cajas.
-  // El correlativo numérico sigue siendo local a current.ultimoZ; este sufijo
-  // solo crea el espacio de nombres único del reporte persistido.
+
+  // Conservamos el correlativo legible (p. ej. CAJA01-Z-000001) cuando el
+  // prefijo de caja ya es único. Si existen cajas con el mismo prefijo,
+  // agregamos un sufijo derivado del ID para aislar sus series.
+  const result = await tx.execute({ sql: 'SELECT id,data_json FROM terminales', args: [] });
+  const terminals = result.rows.map((row: any) => rowFromDb(row)).filter(Boolean);
+  const samePrefix = terminals.filter((item: any) =>
+    String(item.id) !== String(terminalId) &&
+    terminalPrefix(item, String(item.id)) === base
+  );
+  if (samePrefix.length === 0) return base;
+
   const rawId = String(terminalId);
-  if (!rawId) throw new Error('El identificador de la caja no permite generar un correlativo independiente.');
-  const suffix = Array.from({ length: rawId.length }, (_, i) =>
-    rawId.charCodeAt(i).toString(16).padStart(4, '0')
-  ).join('').toUpperCase();
-  return base + '-T' + suffix;
+  const compactId = rawId.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  if (!compactId) throw new Error('El identificador de la caja no permite generar un correlativo independiente.');
+  let suffix = compactId.slice(-6);
+  const suffixCollision = samePrefix.some((item: any) =>
+    String(item.id).replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(-6) === suffix
+  );
+  if (suffixCollision) {
+    // Codificación inyectiva del ID exacto, solo en el caso excepcional de
+    // que dos cajas compartan también los últimos seis caracteres.
+    suffix = Array.from({ length: rawId.length }, (_, i) =>
+      rawId.charCodeAt(i).toString(16).padStart(4, '0')
+    ).join('').toUpperCase();
+  }
+  return base + '-' + suffix;
 }
 
 function terminalSeries(prefix: string, label: string, number: number, width = 6) {
