@@ -381,7 +381,9 @@ export async function listRecords(
   const where = filters.length ? ' WHERE ' + filters.join(' AND ') : '';
   // productos no tiene columna fecha; se ordena por updated_at. Las demás
   // tablas operativas sí conservan fecha para ordenar cronológicamente.
-  const orderBy = table === 'productos' ? 'updated_at DESC' : "COALESCE(fecha,'') DESC";
+  const orderBy = table === 'productos'
+    ? 'updated_at DESC, id DESC'
+    : "COALESCE(fecha,'') DESC, id DESC";
   const result = await tursoExecute({
     sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
     args,
