@@ -130,6 +130,23 @@ async function tryTursoRead(table: string, options: { limit?: number; offset?: n
 }
 
 
+async function tryTursoReadAll(
+  table: string,
+  options: { terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {},
+  pageSize = 500,
+): Promise<any[] | null> {
+  const all: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await tryTursoRead(table, { ...options, limit: pageSize, offset });
+    if (page === null) return null;
+    all.push(...page);
+    if (page.length < pageSize) return all;
+    offset += page.length;
+  }
+}
+
+
 function operationDocId(prefix: string, operationId: string): string {
   const input = prefix + '|' + operationId;
   let h = 2166136261;
@@ -1235,9 +1252,12 @@ function init() {
   void (async () => {
     for (const name of ['cxc', 'cxp']) {
       try {
-        const tursoItems = await tryTursoRead(name, { limit: 2000 });
-        if (tursoItems !== null) {
-          applyPatch({ [name]: tursoItems.filter((x: any) => ['pendiente', 'parcial'].includes(String(x?.estado || ''))) });
+        const [pendientes, parciales] = await Promise.all([
+          tryTursoReadAll(name, { estado: 'pendiente' }),
+          tryTursoReadAll(name, { estado: 'parcial' }),
+        ]);
+        if (pendientes !== null && parciales !== null) {
+          applyPatch({ [name]: mergeById(pendientes, parciales) });
           continue;
         }
         const col = COLLECTIONS[name];
