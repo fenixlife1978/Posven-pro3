@@ -368,7 +368,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 cantidad: diferencia, stockAntes, stockDespues: nuevoStock,
                 fecha: Utils.ahora(),
                 referencia: `CONTEO FISICO | ${a.motivo}`,
-                terminalId: 'ADMIN'
+                terminalId: 'ADMIN',
+                costoUnitarioUSD: Number(producto.costoUSD) || 0,
+                costoUnitarioBs: (Number(producto.costoUSD) || 0) * Number(state.tasa || 0),
+                tasaBCV: Number(state.tasa) || 0
               } as Movimiento;
             }).filter((m): m is Movimiento => Boolean(m));
             if (!movimientos.length) { setShowConteoFisico(false); return; }
@@ -389,7 +392,8 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
       {showAjuste && (
         <ModalAjuste 
-          producto={state.productos.find(p => p.id === showAjuste)!} 
+          producto={state.productos.find(p => p.id === showAjuste)!}
+          tasaBCV={Number(state.tasa) || 0}
           onClose={() => setShowAjuste(null)}
           onSave={async (mov, nuevoCosto) => {
             const productoOriginal = state.productos.find(p => p.id === mov.productoId);
@@ -1181,7 +1185,7 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
   );
 }
 
-function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose: () => void, onSave: (m: Movimiento, nuevoCosto?: number) => void }) {
+function ModalAjuste({ producto, tasaBCV, onClose, onSave }: { producto: Product, tasaBCV: number, onClose: () => void, onSave: (m: Movimiento, nuevoCosto?: number) => void }) {
   const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida'>('ajuste_entrada');
   const [cantidad, setCantidad] = useState<string>('1');
   const [nuevoCosto, setNuevoCosto] = useState<string>(String(producto.costoUSD));
@@ -1222,7 +1226,10 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
         : motivoTipo === 'colaboracion'
           ? 'COLABORACIÓN'
           : motivo).toUpperCase(),
-      terminalId: 'ADMIN'
+      terminalId: 'ADMIN',
+      costoUnitarioUSD: Number(producto.costoUSD) || 0,
+      costoUnitarioBs: (Number(producto.costoUSD) || 0) * Number(tasaBCV || 0),
+      tasaBCV: Number(tasaBCV) || 0
     };
 
     onSave(mov, movimientoTipo === 'ajuste_entrada' ? pCosto : undefined);
