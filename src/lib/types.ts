@@ -129,6 +129,10 @@ export interface Movimiento {
   fecha: string;
   referencia: string;
   terminalId?: string;
+  /** Snapshot histórico capturado al registrar el movimiento; no se recalcula con valores actuales. */
+  costoUnitarioUSD?: number;
+  costoUnitarioBs?: number;
+  tasaBCV?: number;
 }
 
 export interface SaleItem {
@@ -141,6 +145,9 @@ export interface SaleItem {
   factorPresentacion?: number;
   cantidadGramos?: number;
   ventaLibreBS?: boolean;
+  costoUnitarioUSD?: number;
+  costoUnitarioBs?: number;
+  tasaBCV?: number;
 }
 
 export interface PurchaseItem {
