@@ -72,6 +72,9 @@ export async function GET(request: Request) {
       offset: Number(url.searchParams.get('offset') || 0),
       terminalId: url.searchParams.get('terminalId') || undefined,
       estado: url.searchParams.get('estado') || undefined,
+      fechaDesde: url.searchParams.get('fechaDesde') || undefined,
+      fechaHasta: url.searchParams.get('fechaHasta') || undefined,
+      productoId: url.searchParams.get('productoId') || undefined,
     });
     return NextResponse.json({ ok: true, records });
   } catch (error: any) {
