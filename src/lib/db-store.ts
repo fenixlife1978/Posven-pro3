@@ -844,21 +844,37 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
   if (name !== 'reportesZ' && SINCE_STAMP[key] === 'done') return;
 
   try {
-    // En Turso evitamos las consultas compuestas de servidor Turso para el historial.
-    const tursoItems = await tryTursoRead(name, { limit: 2000, ...(terminalId !== 'all' ? { terminalId } : {}) });
-    if (tursoItems !== null) {
-      const start = String(desde) + 'T00:00:00';
-      const endDate = new Date(String(hasta) + 'T00:00:00');
-      endDate.setDate(endDate.getDate() + 1);
-      const end = endDate.toISOString().slice(0, 19);
+    // Turso filtra en SQL y pagina todo el intervalo para no descargar
+    // registros ajenos al reporte ni truncar historiales extensos.
+    const start = String(desde) + 'T00:00:00';
+    const endDate = new Date(String(hasta) + 'T00:00:00');
+    endDate.setDate(endDate.getDate() + 1);
+    const end = endDate.toISOString().slice(0, 19);
+    let offset = 0;
+    let loaded = 0;
+    while (true) {
+      const tursoItems = await tryTursoRead(name, {
+        limit: 1000,
+        offset,
+        fechaDesde: start,
+        fechaHasta: end,
+        ...(terminalId !== 'all' ? { terminalId } : {}),
+      });
+      if (tursoItems === null) break;
       const items = tursoItems.filter((item: any) => {
         const fecha = String(item?.fecha || '');
-        const terminalOk = terminalId === 'all' || String(item?.terminalId || '') === terminalId;
-        return fecha >= start && fecha < end && terminalOk;
+        return fecha >= start && fecha < end;
       });
-      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
-      SINCE_STAMP[key] = 'done';
-      return;
+      if (items.length) {
+        applyPatch({ [name]: mergeById((cache as any)[name], items) });
+        loaded += items.length;
+      }
+      if (tursoItems.length < 1000) {
+        SINCE_STAMP[key] = 'done';
+        console.info('[db-store] Rango Turso cargado:', name, loaded, 'registros');
+        return;
+      }
+      offset += tursoItems.length;
     }
 
     if (!db || !COLLECTIONS[name]) return;
