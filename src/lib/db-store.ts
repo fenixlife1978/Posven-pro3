@@ -895,11 +895,11 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
     }
 
     if (!db || !COLLECTIONS[name]) return;
-    const start = String(desde) + 'T00:00:00.000';
-    const endDate = new Date(String(hasta) + 'T00:00:00.000');
-    endDate.setDate(endDate.getDate() + 1);
-    const end = endDate.toISOString().slice(0, 23);
-    const filters: any[] = [where('fecha', '>=', start), where('fecha', '<', end)];
+    const firebaseStart = String(desde) + 'T00:00:00.000';
+    const firebaseEndDate = new Date(String(hasta) + 'T00:00:00.000');
+    firebaseEndDate.setDate(firebaseEndDate.getDate() + 1);
+    const firebaseEnd = firebaseEndDate.toISOString().slice(0, 23);
+    const filters: any[] = [where('fecha', '>=', firebaseStart), where('fecha', '<', firebaseEnd)];
     if (terminalId !== 'all') filters.push(where('terminalId', '==', terminalId));
 
     let cursor: QueryDocumentSnapshot | null = null;
