@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AppState, Movimiento, Product } from "@/lib/types";
-import { Utils } from "@/lib/db-store";
+import { Store, Utils } from "@/lib/db-store";
 import { Download, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,15 +19,29 @@ export default function PeriodicInventoryExitsReport({ state }: { state: AppStat
   const [category, setCategory] = useState("");
   const [search, setSearch] = useState("");
   const [manual, setManual] = useState<Record<string, HistoricalValues>>({});
+  const [source, setSource] = useState<{ movimientos: Movimiento[]; productos: Product[] }>({ movimientos: [], productos: [] });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  const rows = useMemo(() => (state.movimientos || [])
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError("");
+    Store.loadPeriodicInventoryExits(from, to)
+      .then(data => { if (active) setSource(data); })
+      .catch(error => { if (active) { setSource({ movimientos: [], productos: [] }); setLoadError(String(error?.message || error)); } })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [from, to]);
+
+  const rows = useMemo(() => (source.movimientos || [])
     .filter(m => Number(m.cantidad) < 0 && m.fecha && m.fecha.slice(0, 10) >= from && m.fecha.slice(0, 10) <= to)
-    .map(m => ({ movement: m, product: (state.productos || []).find(p => p.id === m.productoId) }))
+    .map(m => ({ movement: m, product: (source.productos || []).find(p => p.id === m.productoId) }))
     .filter((row): row is { movement: Movimiento; product: Product } => Boolean(row.product))
     .filter(row => !category || row.product.categoria === category)
     .filter(row => !search || [row.product.codigo, row.product.nombre, row.movement.referencia].some(v => String(v || "").toLowerCase().includes(search.toLowerCase())))
     .sort((a, b) => a.movement.fecha.localeCompare(b.movement.fecha)),
-  [state.movimientos, state.productos, from, to, category, search]);
+  [source.movimientos, source.productos, category, search]);
 
   const historical = (m: Movimiento): HistoricalValues => {
     const saved = manual[m.id];
@@ -98,10 +112,11 @@ export default function PeriodicInventoryExitsReport({ state }: { state: AppStat
         <h3 className="font-black text-sm uppercase text-ink">Resumen periódico de movimientos de salida</h3>
         <p className="text-xs text-ink/50 mt-1">Consulta de solo lectura del Kardex para preparar la importación de movimientos en SICOVEN.</p>
       </div>
+      {loadError && <p className="text-sm font-bold text-red-700">{loadError}</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Desde</Label><Input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} className="h-10 bg-white" /></div>
         <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Hasta</Label><Input type="date" value={to} min={from} onChange={e => setTo(e.target.value)} className="h-10 bg-white" /></div>
-        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Categoría</Label><select className="form-select h-10 w-full" value={category} onChange={e => setCategory(e.target.value)}><option value="">Todas</option>{Array.from(new Set((state.productos || []).map(p => p.categoria).filter(Boolean))).sort().map(value => <option key={value} value={value}>{value}</option>)}</select></div>
+        <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Categoría</Label><select className="form-select h-10 w-full" value={category} onChange={e => setCategory(e.target.value)}><option value="">Todas</option>{Array.from(new Set((source.productos || []).map(p => p.categoria).filter(Boolean))).sort().map(value => <option key={value} value={value}>{value}</option>)}</select></div>
         <div className="form-group mb-0"><Label className="text-[10px] font-black uppercase">Buscar</Label><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Código, producto o referencia" className="h-10 bg-white" /></div>
       </div>
     </Card>
@@ -113,7 +128,7 @@ export default function PeriodicInventoryExitsReport({ state }: { state: AppStat
     <Card className="overflow-hidden bg-white border-line shadow-sm rounded-xl">
       <div className="p-4 bg-ink text-white flex flex-wrap justify-between gap-2 items-center">
         <div><h4 className="font-black text-xs uppercase">Revisión previa de movimientos</h4><p className="text-[10px] text-white/60">Solo se aceptan snapshots históricos del movimiento; los datos ausentes requieren revisión manual.</p></div>
-        <div className="flex gap-2"><Button variant="secondary" onClick={() => download("csv")} disabled={!rows.length || pending > 0} className="font-black uppercase text-[10px]"><Download className="w-4 h-4" /> CSV</Button><Button onClick={() => download("json")} disabled={!rows.length || pending > 0} className="bg-brand-gold text-ink hover:bg-brand-gold-deep font-black uppercase text-[10px]"><FileSpreadsheet className="w-4 h-4" /> JSON</Button></div>
+        <div className="flex gap-2"><Button variant="secondary" onClick={() => download("csv")} disabled={loading || !!loadError || !rows.length || pending > 0} className="font-black uppercase text-[10px]"><Download className="w-4 h-4" /> CSV</Button><Button onClick={() => download("json")} disabled={loading || !!loadError || !rows.length || pending > 0} className="bg-brand-gold text-ink hover:bg-brand-gold-deep font-black uppercase text-[10px]"><FileSpreadsheet className="w-4 h-4" /> JSON</Button></div>
       </div>
       <div className="table-wrap"><Table><TableHeader><TableRow className="bg-surface-soft">
         <TableHead className="text-[10px] font-black uppercase">Fecha</TableHead><TableHead className="text-[10px] font-black uppercase">Código / Producto</TableHead><TableHead className="text-[10px] font-black uppercase">Concepto</TableHead><TableHead className="text-[10px] font-black uppercase text-right">Cantidad</TableHead><TableHead className="text-[10px] font-black uppercase">Referencia</TableHead><TableHead className="text-[10px] font-black uppercase">Costo unit. Bs.</TableHead><TableHead className="text-[10px] font-black uppercase">Tasa BCV</TableHead>
@@ -127,7 +142,7 @@ export default function PeriodicInventoryExitsReport({ state }: { state: AppStat
           <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={historical(m).costBs} onChange={e => setValue(m.id, "costBs", e.target.value)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right" /></TableCell>
           <TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={historical(m).rate} onChange={e => setValue(m.id, "rate", e.target.value)} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right" /></TableCell>
         </TableRow>)}
-        {!rows.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
+        {loading && <TableRow><TableCell colSpan={7} className="py-16 text-center font-bold">Consultando historial completo en Turso…</TableCell></TableRow>}{!loading && !loadError && !rows.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
       </TableBody></Table></div>
       <div className="p-4 border-t border-line text-xs"><span className="text-ink/50">Costo total revisado: <b className="text-ink">{rows.reduce((sum, row) => sum + Math.abs(row.movement.cantidad) * (Number(historical(row.movement).costBs) || 0), 0).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs.</b></span><p className={pending ? "text-amber-700 font-bold" : "text-status-success font-bold"}>{pending ? "Complete los datos históricos pendientes para habilitar la exportación." : "Revisión completa: exportación habilitada."}</p></div>
     </Card>
