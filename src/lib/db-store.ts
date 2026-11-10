@@ -99,7 +99,7 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
-async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
+async function tryTursoRead(table: string, options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
   let response: Response;
   try {
@@ -108,6 +108,10 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
     if (options.limit) params.set('limit', String(options.limit));
     if (options.terminalId) params.set('terminalId', String(options.terminalId));
     if (options.estado) params.set('estado', String(options.estado));
+    if (options.offset) params.set('offset', String(options.offset));
+    if (options.fechaDesde) params.set('fechaDesde', String(options.fechaDesde));
+    if (options.fechaHasta) params.set('fechaHasta', String(options.fechaHasta));
+    if (options.productoId) params.set('productoId', String(options.productoId));
     response = await fetch('/api/turso/store?' + params.toString(), {
       method: 'GET',
       credentials: 'include',
@@ -755,15 +759,20 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
     // Turso es la fuente operativa durante la migración. No debemos volver a
     // consultar servidor Turso para X/Z porque eso agrega latencia y puede devolver
     // un estado histórico distinto al de la caja actual.
-    const tursoItems = await tryTursoRead(name, { limit: 2000, terminalId });
-    if (tursoItems !== null) {
-      const items = tursoItems
-        .filter((item: any) => String(item?.fecha || '') > cutoff)
-        .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item?.terminalId || '') === terminalId);
+    let offset = 0;
+    let totalLoaded = 0;
+    while (true) {
+      const tursoItems = await tryTursoRead(name, { limit: 1000, offset, terminalId, fechaDesde: cutoff });
+      if (tursoItems === null) break;
+      const items = tursoItems.filter((item: any) => String(item?.fecha || '') > cutoff);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
-      SINCE_STAMP[key] = 'done';
-      console.info("[db-store] Ventana Turso de reporte cargada:", name, items.length, "registros");
-      return;
+      totalLoaded += items.length;
+      if (tursoItems.length < 1000) {
+        SINCE_STAMP[key] = 'done';
+        console.info("[db-store] Ventana Turso de reporte cargada:", name, totalLoaded, "registros");
+        return;
+      }
+      offset += tursoItems.length;
     }
 
     // Fallback únicamente cuando Turso no está configurado (503).
@@ -909,13 +918,8 @@ const SINCE_STAMP: Record<string, string> = {};
 // Kardex de un producto (where + orden). Si falta el índice compuesto, carga y filtra en memoria.
 async function kardex(productoId: string, max = 100): Promise<any[]> {
   try {
-    const tursoItems = await tryTursoRead('movimientos', { limit: Math.max(max * 4, max) });
-    if (tursoItems !== null) {
-      return tursoItems
-        .filter((m: any) => String(m?.productoId || '') === String(productoId))
-        .sort((a: any, b: any) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
-        .slice(0, max);
-    }
+    const tursoItems = await tryTursoRead('movimientos', { limit: max, productoId });
+    if (tursoItems !== null) return tursoItems;
     if (!db) return [];
     try {
       const snap = await getDocs(query(
