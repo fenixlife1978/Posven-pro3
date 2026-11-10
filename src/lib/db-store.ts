@@ -864,6 +864,11 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
     // Turso filtra en SQL y pagina todo el intervalo para no descargar
     // registros ajenos al reporte ni truncar historiales extensos.
     const start = String(desde) + 'T00:00:00';
+    // listRecords usa fechaDesde con operador estricto (>); consultar desde
+    // el día anterior evita perder registros exactamente a las 00:00 del inicio.
+    const queryStartDate = new Date(String(desde) + 'T00:00:00.000Z');
+    queryStartDate.setUTCDate(queryStartDate.getUTCDate() - 1);
+    const queryStart = queryStartDate.toISOString().slice(0, 10) + 'T00:00:00';
     const endDate = new Date(String(hasta) + 'T00:00:00');
     endDate.setDate(endDate.getDate() + 1);
     const end = endDate.toISOString().slice(0, 19);
@@ -873,7 +878,7 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
       const tursoItems = await tryTursoRead(name, {
         limit: 1000,
         offset,
-        fechaDesde: start,
+        fechaDesde: queryStart,
         fechaHasta: end,
         ...(terminalId !== 'all' ? { terminalId } : {}),
       });
