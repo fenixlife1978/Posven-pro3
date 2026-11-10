@@ -15,3 +15,9 @@ preload.js
 README*
 CHANGELOG*
 LICENSE*
+*.msi
+*.asar
+*.nsis.7z
+.next/cache
+.npm
+.yarn
