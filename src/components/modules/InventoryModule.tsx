@@ -50,6 +50,7 @@ import {
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
 import { PriceLabelsModal } from '@/components/inventory/PriceLabelsModal';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
+import PeriodicInventoryExitsReport from '@/components/modules/PeriodicInventoryExitsReport';
 
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
@@ -77,7 +78,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     if (activeTab !== 'productos') {
       void Store.ensureLoaded('movimientos');
     }
-    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones') {
+    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones' || activeTab === 'reporte_salidas_periodicas') {
       void Store.ensureLoaded('ventas');
     }
   }, [activeTab]);
@@ -273,6 +274,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
       case 'historial_ajustes': return <HistorialAjustes state={state} />;
       case 'kardex': return <ReporteKardex state={state} selectedId={selectedKardexId} onSelect={setSelectedKardexId} />;
       case 'consumo_colab': return <ReporteConsumo state={state} />;
+      case 'reporte_salidas_periodicas': return <PeriodicInventoryExitsReport state={state} />;
       default: return null;
     }
   };
@@ -287,6 +289,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink font-black'}`}>Kardex Fiscal</button>
         <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : 'text-ink font-black'}`}>Ajustes</button>
         <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : 'text-ink font-black'}`}>Consumo / Colaboraciones</button>
+        <button onClick={() => setActiveTab('reporte_salidas_periodicas')} className={`tab ${activeTab === 'reporte_salidas_periodicas' ? 'active' : 'text-ink font-black'}`}>Salidas periódicas SICOVEN</button>
       </div>
 
       <div className="animate-in fade-in duration-300">
