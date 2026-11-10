@@ -1616,7 +1616,7 @@ export const Store = {
       }
       if (terminalRef && terminalRemote) tx.set(terminalRef, { proximoPagoProveedor: nextCounter + 1 }, { merge: true });
 
-      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: effectiveTerminalId }, { merge: false });
+      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: terminalId || payment?.terminalId || journal?.terminalId || 'ADMIN' }, { merge: false });
       result = nextResult;
     });
 
@@ -1755,7 +1755,7 @@ export const Store = {
         operationId: opId,
         fecha: payment?.fecha || new Date().toISOString(),
         referencia: nextResult.receiptId,
-        terminalId: effectiveTerminalId
+        terminalId: terminalId || payment?.terminalId || journal?.terminalId || 'ADMIN'
       }, { merge: false });
 
       nextResult.debts = nextResult.debts.map((d: any) => d);
