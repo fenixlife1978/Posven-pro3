@@ -407,6 +407,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
             if (productoOriginal.isKit && productoOriginal.kitType === 'stock_componentes' && productoOriginal.kitItems) {
               productoOriginal.kitItems.forEach(ki => {
                 const cantidadImpacto = mov.cantidad * ki.cantidad;
+                const componente = state.productos.find(p => p.id === ki.productoId);
+                const costoComponenteUSD = Number(componente?.costoUSD) || 0;
+                const tasaMovimiento = Number(state.tasa) || 0;
                 movimientos.push({
                   ...mov,
                   id: Store.uid(),
@@ -416,7 +419,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   stockDespues: 0,
                   fecha: ahora,
                   referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`,
-                  terminalId: 'ADMIN'
+                  terminalId: 'ADMIN',
+                  costoUnitarioUSD: costoComponenteUSD,
+                  costoUnitarioBs: costoComponenteUSD * tasaMovimiento,
+                  tasaBCV: tasaMovimiento
                 });
               });
             } else {
