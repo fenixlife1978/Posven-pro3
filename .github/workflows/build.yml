@@ -6,11 +6,6 @@ on:
       - main
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - main
-      - master
-      - turso-migration
   workflow_dispatch:
 
 concurrency:
