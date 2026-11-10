@@ -757,6 +757,9 @@ export async function createSaleTransaction(params: {
         fecha: now,
         referencia: saleType + ' ' + reciboId + (deduction.references.length > 1 ? ' - SALIDA AGRUPADA' : ''),
         terminalId: terminalId || 'GLOBAL',
+        costoUnitarioUSD: Number(p.costoUSD) || 0,
+        costoUnitarioBs: (Number(p.costoUSD) || 0) * Number(tasa),
+        tasaBCV: Number(tasa),
       });
     }
 
@@ -765,7 +768,7 @@ export async function createSaleTransaction(params: {
       .reduce((s, p) => s + (Number(p.montoUSD) || 0) * 0.03, 0);
 
     const sale = {
-      id: reciboId, fecha: now, cliente: clientName, items: cart.map(x => ({ ...x })),
+      id: reciboId, fecha: now, cliente: clientName, items: cart.map((x: any) => { const product = products.get(String(x.productoId)); return { ...x, ...(product && !x.ventaLibreBS ? { costoUnitarioUSD: Number(product.costoUSD) || 0, costoUnitarioBs: (Number(product.costoUSD) || 0) * Number(tasa), tasaBCV: Number(tasa) } : {}) }; }),
       subtotalUSD: totals.total, descuentoUSD: 0, totalUSD: totals.total, totalBS: totals.total * tasa,
       metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
       estado: 'completada', type: saleType, received: totalPaid,
