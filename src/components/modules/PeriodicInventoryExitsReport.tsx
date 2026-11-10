@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type HistoricalValues = { costBs: string; rate: string };
+type HistoricalValues = { costBs: string; rate: string; productCode: string; productName: string };
 
 export default function PeriodicInventoryExitsReport(_props: { state: AppState }) {
   const today = Utils.hoy();
@@ -52,11 +52,13 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
     return {
       costBs: saved?.costBs ?? costBs,
       rate: saved?.rate ?? (Number(m.tasaBCV) > 0 ? String(m.tasaBCV) : ""),
+      productCode: saved?.productCode ?? "",
+      productName: saved?.productName ?? "",
     };
   };
 
   const pending = rows.filter(({ movement, product }) =>
-    !String(product?.codigo || "").trim() ||
+    !String(product?.codigo || manual[movement.id]?.productCode || "").trim() ||
     !(Number(historical(movement).costBs) > 0) ||
     !(Number(historical(movement).rate) > 0)
   ).length;
@@ -66,8 +68,8 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
     setManual(prev => ({ ...prev, [id]: { ...historical(rows.find(r => r.movement.id === id)!.movement), ...prev[id], [field]: value } }));
 
   const exportRows = () => rows.map(({ movement: m, product: p }) => ({
-    productCode: p?.codigo || "",
-    productName: p?.nombre || "PRODUCTO NO LOCALIZADO",
+    productCode: p?.codigo || historical(m).productCode,
+    productName: p?.nombre || historical(m).productName || "PRODUCTO NO LOCALIZADO",
     date: m.fecha.slice(0, 10),
     type: "SALIDA",
     concept: m.tipo === "venta" ? "VENTA" : m.tipo === "consumo" || m.tipo === "colaboracion" ? "AUTOCONSUMO" : "OTRA SALIDA",
@@ -79,7 +81,7 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
 
   const download = (format: "csv" | "json") => {
     if (!rows.length || pending) {
-      alert("Complete los códigos, costos unitarios históricos y tasas BCV pendientes antes de exportar.");
+      alert("Complete los códigos, nombres, costos unitarios históricos y tasas BCV pendientes antes de exportar.");
       return;
     }
     const data = exportRows();
@@ -134,7 +136,7 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
       </TableRow></TableHeader><TableBody>
         {rows.map(({ movement: m, product: p }) => <TableRow key={m.id} className="border-b border-line/30">
           <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0, 10)}</TableCell>
-          <TableCell className="min-w-48"><p className="text-xs font-black">{p?.codigo || "SIN CÓDIGO"}</p><p className="text-[10px] text-ink/50">{p?.nombre || "Producto no localizado en catálogo"}</p></TableCell>
+          <TableCell className="min-w-48">{p ? <><p className="text-xs font-black">{p.codigo}</p><p className="text-[10px] text-ink/50">{p.nombre}</p></> : <div className="space-y-1"><Input value={historical(m).productCode} onChange={e => setValue(m.id, "productCode", e.target.value)} placeholder="Código SICOVEN" className="h-8 min-w-28 bg-white" /><Input value={historical(m).productName} onChange={e => setValue(m.id, "productName", e.target.value)} placeholder="Nombre del producto" className="h-8 min-w-28 bg-white" /></div>}</TableCell>
           <TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo === "venta" ? "VENTA" : m.tipo === "consumo" || m.tipo === "colaboracion" ? "AUTOCONSUMO" : "OTRA SALIDA"}</p></TableCell>
           <TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell>
           <TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
