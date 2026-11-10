@@ -1408,6 +1408,31 @@ async function getSaleById(saleId: string): Promise<any | null> {
 }
 
 export const Store = {
+  /**
+   * Lectura íntegra y acotada de salidas para el informe SICOVEN.
+   * No depende del estado parcial de la interfaz ni de la paginación visual.
+   */
+  async loadPeriodicInventoryExits(from: string, to: string): Promise<{ movimientos: Movimiento[]; productos: Product[] }> {
+    const start = new Date(from + 'T00:00:00.000Z');
+    start.setUTCDate(start.getUTCDate() - 1);
+    const fechaDesde = start.toISOString().slice(0, 10);
+    const fechaHasta = to + 'T23:59:59.999';
+    const [movimientos, productos] = await Promise.all([
+      tryTursoReadAll('movimientos', { fechaDesde, fechaHasta }, 500),
+      tryTursoReadAll('productos', {}, 500),
+    ]);
+    if (movimientos === null || productos === null) {
+      throw new Error('No fue posible consultar el historial completo en Turso. No se utilizará información parcial.');
+    }
+    const filtered = movimientos.filter((m: any) => {
+      const date = String(m?.fecha || '').slice(0, 10);
+      return Number(m?.cantidad) < 0 && date >= from && date <= to;
+    });
+    return {
+      movimientos: filtered.map(sanitizeRecord).filter(Boolean) as Movimiento[],
+      productos: productos.map(sanitizeRecord).filter(Boolean) as Product[],
+    };
+  },
   ensurePurchaseHistory,
   applyInventoryMovementsTransaction,
   /**
