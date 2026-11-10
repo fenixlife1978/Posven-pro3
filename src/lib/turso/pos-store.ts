@@ -2017,7 +2017,7 @@ export async function createPurchaseTransaction(params:any){
     if(existing.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una compra con la misma factura, proveedor y fecha.');
     const debtRows=await tx.execute({sql:"SELECT id,data_json FROM cxp WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]});
     if(debtRows.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una cuenta por pagar para esta factura y proveedor.');
-    const ids=[...new Set(items.map((i:any)=>String(i.productoId||'')).filter(Boolean))], itemBy=new Map<string,any>(); for(const i of items){const pid=String(i.productoId),p=itemBy.get(pid);itemBy.set(pid,p?{...p,cantidad:(Number(p.cantidad)||0)+(Number(i.cantidad)||0),subtotalUSD:(Number(p.subtotalUSD)||0)+(Number(i.subtotalUSD)||0)}:{...i});}
+    const ids: string[] = Array.from(new Set<string>(items.map((i:any)=>String(i.productoId||'')).filter((id:string)=>Boolean(id)))), itemBy=new Map<string,any>(); for(const i of items){const pid=String(i.productoId),p=itemBy.get(pid);itemBy.set(pid,p?{...p,cantidad:(Number(p.cantidad)||0)+(Number(i.cantidad)||0),subtotalUSD:(Number(p.subtotalUSD)||0)+(Number(i.subtotalUSD)||0)}:{...i});}
     const statements:TursoStatement[]=[rowStatement('compras',purchase)];
     const updatedProducts:any[]=[];
     for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en Turso.');const i=itemBy.get(pid),qty=Number(i.cantidad)||0,cost=Number(i.costoUnitarioUSD)||0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
@@ -2084,7 +2084,7 @@ export async function deletePurchaseTransaction(params:any){
     if(!purchase&&!purchases.length&&!debts.length&&!deleted.length)
       throw new Error('La compra ya no existe en Turso.');
 
-    const affected=[...new Set(deleted.map((d:any)=>String(d.productoId||'')).filter(Boolean))];
+    const affected: string[] = Array.from(new Set<string>(deleted.map((d:any)=>String(d.productoId||'')).filter((id:string)=>Boolean(id))));
     const statements:TursoStatement[]=[];
     const updatedProducts:any[]=[];
     const updatedMovements:any[]=[];
