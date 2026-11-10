@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 
 type HistoricalValues = { costBs: string; rate: string };
 
-export default function PeriodicInventoryExitsReport({ state }: { state: AppState }) {
+export default function PeriodicInventoryExitsReport(_props: { state: AppState }) {
   const today = Utils.hoy();
   const [from, setFrom] = useState(today.slice(0, 8) + "01");
   const [to, setTo] = useState(today);
