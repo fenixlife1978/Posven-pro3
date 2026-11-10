@@ -59,6 +59,7 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
 
   const pending = rows.filter(({ movement, product }) =>
     !String(product?.codigo || manual[movement.id]?.productCode || "").trim() ||
+    !String(product?.nombre || manual[movement.id]?.productName || "").trim() ||
     !(Number(historical(movement).costBs) > 0) ||
     !(Number(historical(movement).rate) > 0)
   ).length;
