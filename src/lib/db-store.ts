@@ -1237,7 +1237,7 @@ function init() {
     if (usingTurso || !legacyRealtime) return;
     teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap) => {
       const val = snap.val() || {};
-      const items = Object.values(val).filter(Boolean);
+      const items = Object.values(val).filter((item): item is Product => Boolean(item));
       applyPatch({ productos: items });
     }, (err) => { if (err?.code !== 'permission-denied') console.warn("sincronización de productos:", err); }));
   })();
