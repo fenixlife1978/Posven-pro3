@@ -40,7 +40,7 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
     .filter(row => !category || row.product?.categoria === category)
     .filter(row => !search || [row.product?.codigo, row.product?.nombre, row.movement.referencia].some(v => String(v || "").toLowerCase().includes(search.toLowerCase())))
     .sort((a, b) => a.movement.fecha.localeCompare(b.movement.fecha)),
-  [source.movimientos, source.productos, category, search]);
+  [source.movimientos, source.productos, from, to, category, search]);
 
   const historical = (m: Movimiento): HistoricalValues => {
     const saved = manual[m.id];
@@ -125,7 +125,7 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <Card className="p-4 bg-white border-line"><p className="text-[10px] uppercase font-black text-ink/40">Movimientos de salida</p><p className="text-2xl font-black text-ink">{rows.length}</p></Card>
       <Card className="p-4 bg-white border-line"><p className="text-[10px] uppercase font-black text-ink/40">Unidades de salida</p><p className="text-2xl font-black text-ink">{units.toLocaleString("es-VE")}</p></Card>
-      <Card className="p-4 border border-amber-200 bg-amber-50"><p className="text-[10px] uppercase font-black text-ink/50">Datos históricos pendientes</p><p className="text-2xl font-black text-amber-700">{pending}</p><p className="text-[10px] text-ink/50">Código, costo unitario y/o tasa BCV</p></Card>
+      <Card className="p-4 border border-amber-200 bg-amber-50"><p className="text-[10px] uppercase font-black text-ink/50">Datos históricos pendientes</p><p className="text-2xl font-black text-amber-700">{pending}</p><p className="text-[10px] text-ink/50">Código, nombre, costo unitario y/o tasa BCV</p></Card>
     </div>
     <Card className="overflow-hidden bg-white border-line shadow-sm rounded-xl">
       <div className="p-4 bg-ink text-white flex flex-wrap justify-between gap-2 items-center">
