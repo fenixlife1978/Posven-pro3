@@ -696,11 +696,12 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     if (!currentAdminResult.rows.length) throw new Error('El administrador que inició la restauración ya no está activo.');
     const currentAdmin = currentAdminResult.rows[0];
     const seedResult = await tx.execute({
-      sql: "SELECT id,username FROM users WHERE is_seed_admin=1 LIMIT 1",
+      sql: "SELECT id,username,email FROM users WHERE is_seed_admin=1 LIMIT 1",
       args: [],
     });
     if (!seedResult.rows.length) throw new Error('No se encontró el administrador semilla local. Inicie sesión nuevamente antes de restaurar.');
     const seedAdminId = String(seedResult.rows[0].id);
+    const seedAdminEmail = String(seedResult.rows[0].email || '').toLowerCase();
 
 
     const clearTables = [
@@ -779,6 +780,7 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       if (!username || username === 'admin' || user?.isSeedAdmin || user?.is_seed_admin) continue;
       if (id === String(currentAdmin.id) || id === seedAdminId ||
           username === String(currentAdmin.username || '').toLowerCase() ||
+          (seedAdminEmail && String(user?.email || '').trim().toLowerCase() === seedAdminEmail) ||
           (currentAdmin.email && String(user?.email || '').trim().toLowerCase() === String(currentAdmin.email).toLowerCase())) continue;
       if (!['administrador','cajero'].includes(role)) { skippedUsers++; continue; }
 
