@@ -592,7 +592,7 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     'devoluciones','anulaciones','terminales','libroDiario','reportesZ','compras',
   ];
   const requiredBackupCatalogs = [
-    'categorias','departamentos','categoriasPorDepartamento','marcas','presentaciones',
+    'categorias','departamentos','marcas','presentaciones',
     'productCategories','productUnits','productColors','productSizes',
     'brands','groups','subgroups','lines','suppliers',
   ];
@@ -658,7 +658,7 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     { key: 'compras', table: 'compras' },
   ];
   const catalogNames = [
-    'categorias','departamentos','marcas','presentaciones',
+    'categorias','departamentos','categoriasPorDepartamento','marcas','presentaciones',
     'productCategories','productUnits','productColors','productSizes',
     'brands','groups','subgroups','lines','suppliers',
   ];
