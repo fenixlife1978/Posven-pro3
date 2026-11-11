@@ -613,6 +613,7 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
       importedUsers,
       skippedUsersWithoutHash,
       preservedAdmin: String(seed.rows[0].username || 'admin'),
+      preservedAdminId: String(seed.rows[0].id),
       totalRows,
     };
   });
