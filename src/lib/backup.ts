@@ -36,78 +36,16 @@ export interface BackupFile {
   };
 }
 
-async function readLocalTable(table: string, pageSize = 2000): Promise<any[]> {
-  const allRecords: any[] = [];
-  for (let offset = 0; ; offset += pageSize) {
-    const response = await fetch(
-      '/api/pos/store?table=' + encodeURIComponent(table) + '&limit=' + pageSize + '&offset=' + offset,
-      { credentials: 'include', cache: 'no-store' }
-    );
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || body?.ok === false) {
-      throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde la base local.');
-    }
-    const page = Array.isArray(body?.records) ? body.records : [];
-    allRecords.push(...page);
-    if (allRecords.length > 200000) throw new Error('La tabla ' + table + ' supera el límite seguro del respaldo.');
-    if (page.length < pageSize) break;
-  }
-  return allRecords;
-}
-
-async function readLocalSpecial(kind: 'config' | 'catalog', name = ''): Promise<any> {
-  const params = new URLSearchParams({ special: kind });
-  if (name) params.set('name', name);
-  const response = await fetch('/api/pos/store?' + params.toString(), {
+export async function crearRespaldo(): Promise<BackupFile> {
+  const response = await fetch('/api/pos/backup', {
     credentials: 'include',
     cache: 'no-store',
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error || 'No se pudo leer ' + kind + ' desde la base local.');
+  if (!response.ok || body?.ok !== true || body?.backup?.app !== 'posven-pro') {
+    throw new Error(body?.error || 'No se pudo generar un respaldo SQLite consistente.');
   }
-  return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
-}
-
-export async function crearRespaldo(): Promise<BackupFile> {
-  const data: Record<string, unknown> = {};
-  const sqliteTables: Record<string, number> = {};
-  const catalogs: Record<string, number> = {};
-
-  for (const key of COLLECTION_KEYS) {
-    const table = TABLE_MAP[key] || key;
-    const rows = await readLocalTable(table);
-    data[key] = rows;
-    sqliteTables[table] = rows.length;
-  }
-
-  for (const key of CATALOG_KEYS) {
-    const rows = await readLocalSpecial('catalog', key);
-    data[key] = rows;
-    catalogs[key] = rows.length;
-  }
-
-  const config = await readLocalSpecial('config');
-  for (const key of CONFIG_KEYS) {
-    if (config[key] !== undefined) data[key] = config[key];
-  }
-
-  const usersResponse = await fetch('/api/pos/backup', { credentials: 'include', cache: 'no-store' });
-  const usersBody = await usersResponse.json().catch(() => ({}));
-  if (!usersResponse.ok || usersBody?.ok === false) {
-    throw new Error(usersBody?.error || 'No se pudieron incluir los usuarios en el respaldo.');
-  }
-  const users = Array.isArray(usersBody?.users) ? usersBody.users : [];
-  data.users = users;
-  sqliteTables.users = users.length;
-
-  return {
-    app: 'posven-pro',
-    version: 3,
-    createdAt: new Date().toISOString(),
-    data,
-    meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
-  };
+  return body.backup as BackupFile;
 }
 
 export function descargarRespaldo(backup: BackupFile) {
