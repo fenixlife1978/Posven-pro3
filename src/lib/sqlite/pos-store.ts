@@ -1159,7 +1159,7 @@ export async function createSaleTransaction(params: {
       metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
       estado: 'completada', type: saleType, received: totalPaid,
       change: Math.max(0, totalPaid - totals.total), payments: payments.map(x => ({ ...x })),
-      terminalId, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', effectiveCajeroId,
+      terminalId, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: effectiveCajeroId,
       baseImponibleUSD: Math.round(totals.base * 100) / 100,
       ivaUSD: Math.round(totals.iva * 100) / 100, exentoUSD: Math.round(totals.exento * 100) / 100,
       igtfUSD: Math.round(igtf * 100) / 100, tasa,
