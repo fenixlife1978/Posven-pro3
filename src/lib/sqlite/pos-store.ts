@@ -552,6 +552,11 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
       wantRows: false,
     });
     await tx.execute({
+      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      args: [String(currentAdmin.id)],
+      wantRows: false,
+    });
+    await tx.execute({
       sql: "INSERT INTO app_config(id,data_json,updated_at) VALUES('general',? ,CURRENT_TIMESTAMP)",
       args: [JSON.stringify({
         isInitialized: false,
@@ -695,6 +700,7 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       args: [],
     });
     if (!seedResult.rows.length) throw new Error('No se encontró el administrador semilla local. Inicie sesión nuevamente antes de restaurar.');
+    const seedAdminId = String(seedResult.rows[0].id);
 
 
     const clearTables = [
@@ -707,8 +713,8 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       await tx.execute({ sql: 'DELETE FROM ' + name, args: [], wantRows: false });
     }
     await tx.execute({
-      sql: "DELETE FROM users WHERE is_seed_admin=0",
-      args: [],
+      sql: "DELETE FROM users WHERE is_seed_admin=0 AND id<>?",
+      args: [String(currentAdmin.id)],
       wantRows: false,
     });
     await tx.execute({
@@ -755,9 +761,8 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       wantRows: false,
     });
 
-    // Only portable scrypt hashes can be imported. Older POSVEN2 exports may
-    // contain user metadata without hashes; those accounts are reported as
-    // skipped instead of being assigned an unknown or insecure password.
+    // Portable scrypt hashes are preserved. POSVEN2 exports do not include
+    // password hashes, so those users receive cryptographically random temporary passwords.
     let importedUsers = 0;
     let skippedUsers = 0;
     const temporaryCredentials: Array<{ username: string; password: string; rol: string }> = [];
@@ -765,8 +770,11 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       const username = String(user?.username || user?.email || '').trim().toLowerCase();
       const sourceHash = String(user?.password_hash || user?.passwordHash || '');
       const role = String(user?.rol || user?.role || '').toLowerCase();
+      const id = String(user?.id || user?.uid || ('usr_' + randomBytes(18).toString('hex'))).trim();
       if (!username || username === 'admin' || user?.isSeedAdmin || user?.is_seed_admin) continue;
-      if (username === String(currentAdmin.username || '').toLowerCase() || String(user?.id || user?.uid || '') === String(currentAdmin.id) || (currentAdmin.email && String(user?.email || '').trim().toLowerCase() === String(currentAdmin.email).toLowerCase())) continue;
+      if (id === String(currentAdmin.id) || id === seedAdminId ||
+          username === String(currentAdmin.username || '').toLowerCase() ||
+          (currentAdmin.email && String(user?.email || '').trim().toLowerCase() === String(currentAdmin.email).toLowerCase())) continue;
       if (!['administrador','cajero'].includes(role)) { skippedUsers++; continue; }
 
       // POSVEN2 deliberately excludes password hashes from its export. Keep
@@ -775,7 +783,6 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       const hasPortableHash = /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/i.test(sourceHash);
       const temporaryPassword = hasPortableHash ? null : randomBytes(18).toString('base64url');
       const passwordHash = hasPortableHash ? sourceHash : hashPassword(String(temporaryPassword));
-      const id = String(user?.id || user?.uid || ('usr_' + randomBytes(18).toString('hex'))).trim();
       const email = String(user?.email || '').trim().toLowerCase() || null;
       const nombre = String(user?.nombre || username).trim();
       const blocked = user?.accesoBloqueado === true || Number(user?.acceso_bloqueado || 0) === 1;
