@@ -351,6 +351,85 @@ export async function getRecord(table: SQLiteStoreTable, id: string): Promise<an
   return rowFromDb(result.rows[0]);
 }
 
+export async function exportBackupSnapshot() {
+  assertSQLiteReady();
+  return sqliteInteractiveTransaction(async tx => {
+    const data: Record<string, any> = {};
+    const sqliteTables: Record<string, number> = {};
+    const catalogs: Record<string, number> = {};
+    const entries = [
+      { key: 'productos', table: 'productos' },
+      { key: 'movimientos', table: 'movimientos' },
+      { key: 'ventas', table: 'ventas' },
+      { key: 'cxc', table: 'cxc' },
+      { key: 'cxp', table: 'cxp' },
+      { key: 'clientes', table: 'clientes' },
+      { key: 'proveedores', table: 'proveedores' },
+      { key: 'devoluciones', table: 'devoluciones' },
+      { key: 'anulaciones', table: 'anulaciones' },
+      { key: 'terminales', table: 'terminales' },
+      { key: 'libroDiario', table: 'libro_diario' },
+      { key: 'reportesZ', table: 'reportes_z' },
+      { key: 'cashHistory', table: 'caja' },
+      { key: 'compras', table: 'compras' },
+    ] as const;
+
+    for (const entry of entries) {
+      const result = await tx.execute({
+        sql: 'SELECT id,data_json FROM ' + entry.table + ' ORDER BY rowid',
+        args: [],
+      });
+      const rows = result.rows.map(rowFromDb).filter(Boolean);
+      data[entry.key] = rows;
+      sqliteTables[entry.key === 'cashHistory' ? 'caja' : entry.key] = rows.length;
+      if (rows.length > 200000) throw new Error('El respaldo supera el límite de 200.000 registros en ' + entry.key + '.');
+    }
+
+    const catalogResult = await tx.execute({
+      sql: 'SELECT nombre,lista_json FROM catalogos ORDER BY nombre',
+      args: [],
+    });
+    for (const row of catalogResult.rows) {
+      let list: any[] = [];
+      try {
+        const parsed = JSON.parse(String(row.lista_json || '[]'));
+        if (Array.isArray(parsed)) list = parsed;
+      } catch {}
+      const name = String(row.nombre || '');
+      if (!name) continue;
+      data[name] = list;
+      catalogs[name] = list.length;
+    }
+
+    const configResult = await tx.execute({
+      sql: "SELECT data_json FROM app_config WHERE id='general' LIMIT 1",
+      args: [],
+    });
+    let config: Record<string, any> = {};
+    try {
+      const parsed = JSON.parse(String(configResult.rows[0]?.data_json || '{}'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed;
+    } catch {}
+    data.config = config;
+    for (const [key, value] of Object.entries(config)) data[key] = value;
+
+    const usersResult = await tx.execute({
+      sql: 'SELECT id,username,email,nombre,rol,password_hash,acceso_bloqueado,is_seed_admin,fecha_creacion,data_json FROM users ORDER BY lower(nombre),lower(username)',
+      args: [],
+    });
+    data.users = usersResult.rows;
+    sqliteTables.users = usersResult.rows.length;
+
+    return {
+      app: 'posven-pro',
+      version: 3,
+      createdAt: new Date().toISOString(),
+      data,
+      meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
+    };
+  });
+}
+
 export async function listRecords(
   table: SQLiteStoreTable,
   options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {},
