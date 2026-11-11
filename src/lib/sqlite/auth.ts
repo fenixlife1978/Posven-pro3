@@ -189,9 +189,9 @@ export async function getSessionUser(sessionId: string | null | undefined) {
   if (!sessionId) return null;
   const result = await sqliteExecute({
     sql: `SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
-      WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at > CURRENT_TIMESTAMP
+      WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at > ?
       LIMIT 1`,
-    args: [sessionId],
+    args: [sessionId, nowIso()],
   });
   if (!result.rows[0]) return null;
   const user = mapUser(result.rows[0]);
