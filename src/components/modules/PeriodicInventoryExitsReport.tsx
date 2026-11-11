@@ -58,8 +58,8 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
   };
 
   const pending = rows.filter(({ movement, product }) =>
-    !String(product?.codigo || manual[movement.id]?.productCode || "").trim() ||
-    !String(product?.nombre || manual[movement.id]?.productName || "").trim() ||
+    !(String(product?.codigo || "").trim() || String(manual[movement.id]?.productCode || "").trim()) ||
+    !(String(product?.nombre || "").trim() || String(manual[movement.id]?.productName || "").trim()) ||
     !(Number(historical(movement).costBs) > 0) ||
     !(Number(historical(movement).rate) > 0)
   ).length;
@@ -69,8 +69,8 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
     setManual(prev => ({ ...prev, [id]: { ...historical(rows.find(r => r.movement.id === id)!.movement), ...prev[id], [field]: value } }));
 
   const exportRows = () => rows.map(({ movement: m, product: p }) => ({
-    productCode: p?.codigo || historical(m).productCode,
-    productName: p?.nombre || historical(m).productName || "PRODUCTO NO LOCALIZADO",
+    productCode: String(p?.codigo || "").trim() || historical(m).productCode.trim(),
+    productName: String(p?.nombre || "").trim() || historical(m).productName.trim() || "PRODUCTO NO LOCALIZADO",
     date: m.fecha.slice(0, 10),
     type: "SALIDA",
     concept: m.tipo === "venta" ? "VENTA" : m.tipo === "consumo" || m.tipo === "colaboracion" ? "AUTOCONSUMO" : "OTRA SALIDA",
@@ -137,7 +137,7 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
       </TableRow></TableHeader><TableBody>
         {rows.map(({ movement: m, product: p }) => <TableRow key={m.id} className="border-b border-line/30">
           <TableCell className="text-xs font-bold whitespace-nowrap">{m.fecha.slice(0, 10)}</TableCell>
-          <TableCell className="min-w-48"><div className="space-y-1">{p?.codigo ? <p className="text-xs font-black">{p.codigo}</p> : <Input value={historical(m).productCode} onChange={e => setValue(m.id, "productCode", e.target.value)} placeholder="Código SICOVEN" className="h-8 min-w-28 bg-white" />}{p?.nombre ? <p className="text-[10px] text-ink/50">{p.nombre}</p> : <Input value={historical(m).productName} onChange={e => setValue(m.id, "productName", e.target.value)} placeholder="Nombre del producto" className="h-8 min-w-28 bg-white" />}</div></TableCell>
+          <TableCell className="min-w-48"><div className="space-y-1">{String(p?.codigo || "").trim() ? <p className="text-xs font-black">{p?.codigo}</p> : <Input value={historical(m).productCode} onChange={e => setValue(m.id, "productCode", e.target.value)} placeholder="Código SICOVEN" className="h-8 min-w-28 bg-white" />}{String(p?.nombre || "").trim() ? <p className="text-[10px] text-ink/50">{p?.nombre}</p> : <Input value={historical(m).productName} onChange={e => setValue(m.id, "productName", e.target.value)} placeholder="Nombre del producto" className="h-8 min-w-28 bg-white" />}</div></TableCell>
           <TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo === "venta" ? "VENTA" : m.tipo === "consumo" || m.tipo === "colaboracion" ? "AUTOCONSUMO" : "OTRA SALIDA"}</p></TableCell>
           <TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell>
           <TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
