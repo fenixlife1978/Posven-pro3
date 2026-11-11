@@ -61,10 +61,7 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // ============================================================
 // PUENTE DE OPERACIONES CRÍTICAS AL SERVIDOR LAN
 // ------------------------------------------------------------
-// SQLite local es la única persistencia operativa del servidor LAN.
-// Si no está configurado (HTTP 503), el flujo existente de servidor SQLite local continúa.
-// Si SQLite local sí está configurado pero falla por otra causa, NO hacemos fallback
-// a servidor SQLite local: evitar dos fuentes de verdad es obligatorio durante la migración.
+// SQLite local es la única persistencia operativa. Si el servidor LAN no responde, la operación falla sin usar otra base ni una cola local.
 // ============================================================
 async function tryLocalServerOperation(operation: string, payload: any): Promise<any | null> {
   if (typeof window === 'undefined') throw new Error('La operación debe ejecutarse desde la aplicación de escritorio conectada al servidor LAN.');
@@ -73,11 +70,12 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
     response = await fetch('/api/pos/store', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ operation, ...payload }),
+      signal: AbortSignal.timeout(15000),
     });
   } catch {
-    throw new Error('No se pudo contactar con SQLite local. La operación no fue enviada a servidor SQLite local para evitar duplicados.');
+    throw new Error('No se pudo contactar con el servidor LAN. La operación no se guardó ni quedó en cola.');
   }
-  if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. servidor SQLite local no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('El servidor SQLite local no está disponible. La operación fue rechazada.');
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('SQLite local rechazó la operación (' + response.status + ').')));
@@ -89,9 +87,9 @@ async function tryLocalServerSpecialRead(kind: 'config' | 'catalog', name = ''):
   const params = new URLSearchParams({ special: kind });
   if (kind === 'catalog') params.set('name', name);
   let response: Response;
-  try { response = await fetch('/api/pos/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
-  catch { throw new Error('No se pudo consultar SQLite local.'); }
-  if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. servidor SQLite local no se utilizará como respaldo.');
+  try { response = await fetch('/api/pos/store?' + params.toString(), { credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(10000) }); }
+  catch { throw new Error('No se pudo consultar el servidor LAN.'); }
+  if (response.status === 503) throw new Error('El servidor SQLite local no está disponible.');
   let body: any = null; try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
@@ -113,9 +111,10 @@ async function tryLocalServerRead(table: string, options: { limit?: number; offs
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
+      signal: AbortSignal.timeout(10000),
     });
   } catch {
-    throw new Error('No se pudo consultar SQLite local. No se usará servidor SQLite local como respaldo porque SQLite local está activo.');
+    throw new Error('No se pudo consultar el servidor LAN.');
   }
   if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. servidor SQLite local no se utilizará como respaldo.');
   let body: any = null;
@@ -1261,8 +1260,9 @@ async function getSaleById(saleId: string): Promise<any | null> {
       const response = await fetch('/api/pos/store?table=ventas&id=' + encodeURIComponent(id), {
         credentials: 'include',
         cache: 'no-store',
+        signal: AbortSignal.timeout(10000),
       });
-      if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible.');
+      if (response.status === 503) throw new Error('El servidor LAN no tiene una base SQLite disponible.');
       const body: any = await response.json();
       if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
       if (body?.record) return sanitizeRecord(body.record);
