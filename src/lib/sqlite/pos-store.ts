@@ -380,7 +380,15 @@ export async function exportBackupSnapshot() {
         sql: 'SELECT id,data_json FROM ' + entry.table + ' ORDER BY rowid',
         args: [],
       });
-      const rows = result.rows.map(rowFromDb).filter(Boolean);
+      const rows = result.rows.map(row => {
+        try {
+          const parsed = JSON.parse(String(row.data_json || '{}'));
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON no es un objeto.');
+          return { ...parsed, id: String(row.id) };
+        } catch {
+          throw new Error('No se puede exportar el registro ' + String(row.id) + ' de ' + entry.key + ': contenido JSON inválido.');
+        }
+      });
       data[entry.key] = rows;
       totalRows += rows.length;
       sqliteTables[entry.key === 'cashHistory' ? 'caja' : entry.key] = rows.length;
@@ -392,11 +400,14 @@ export async function exportBackupSnapshot() {
       args: [],
     });
     for (const row of catalogResult.rows) {
-      let list: any[] = [];
+      let list: any[];
       try {
         const parsed = JSON.parse(String(row.lista_json || '[]'));
-        if (Array.isArray(parsed)) list = parsed;
-      } catch {}
+        if (!Array.isArray(parsed)) throw new Error('Catálogo no es una lista.');
+        list = parsed;
+      } catch {
+        throw new Error('No se puede exportar el catálogo ' + String(row.nombre || '') + ': contenido JSON inválido.');
+      }
       const name = String(row.nombre || '');
       if (!name) continue;
       data[name] = list;
@@ -423,8 +434,11 @@ export async function exportBackupSnapshot() {
     let config: Record<string, any> = {};
     try {
       const parsed = JSON.parse(String(configResult.rows[0]?.data_json || '{}'));
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed;
-    } catch {}
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Configuración no es un objeto.');
+      config = parsed;
+    } catch {
+      throw new Error('No se puede exportar la configuración: contenido JSON inválido.');
+    }
     data.config = config;
     for (const [key, value] of Object.entries(config)) data[key] = value;
 
