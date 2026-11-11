@@ -357,6 +357,7 @@ export async function exportBackupSnapshot() {
     const data: Record<string, any> = {};
     const sqliteTables: Record<string, number> = {};
     const catalogs: Record<string, number> = {};
+    let totalRows = 0;
     const entries = [
       { key: 'productos', table: 'productos' },
       { key: 'movimientos', table: 'movimientos' },
@@ -381,6 +382,7 @@ export async function exportBackupSnapshot() {
       });
       const rows = result.rows.map(rowFromDb).filter(Boolean);
       data[entry.key] = rows;
+      totalRows += rows.length;
       sqliteTables[entry.key === 'cashHistory' ? 'caja' : entry.key] = rows.length;
       if (rows.length > 200000) throw new Error('El respaldo supera el límite de 200.000 registros en ' + entry.key + '.');
     }
@@ -398,6 +400,7 @@ export async function exportBackupSnapshot() {
       const name = String(row.nombre || '');
       if (!name) continue;
       data[name] = list;
+      totalRows += list.length;
       catalogs[name] = list.length;
     }
 
@@ -430,15 +433,21 @@ export async function exportBackupSnapshot() {
       args: [],
     });
     data.users = usersResult.rows;
+    totalRows += usersResult.rows.length;
     sqliteTables.users = usersResult.rows.length;
+    if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
 
-    return {
+    const snapshot = {
       app: 'posven-pro',
       version: 3,
       createdAt: new Date().toISOString(),
       data,
       meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
     };
+    if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > 60 * 1024 * 1024) {
+      throw new Error('El respaldo supera el tamaño seguro de 60 MB. Reduzca el histórico o genere una copia por período.');
+    }
+    return snapshot;
   });
 }
 
