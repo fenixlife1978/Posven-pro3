@@ -1,28 +1,5 @@
 'use client';
 
-const COLLECTION_KEYS = [
-  'productos', 'movimientos', 'ventas', 'cxc', 'cxp', 'clientes', 'proveedores',
-  'devoluciones', 'anulaciones', 'terminales', 'libroDiario', 'reportesZ',
-  'cashHistory', 'compras',
-] as const;
-
-const TABLE_MAP: Record<string, string> = {
-  cashHistory: 'caja',
-};
-
-const CATALOG_KEYS = [
-  'categorias', 'departamentos', 'marcas', 'presentaciones',
-  'productCategories', 'productUnits', 'productColors', 'productSizes',
-  'brands', 'groups', 'subgroups', 'lines', 'suppliers',
-] as const;
-
-const CONFIG_KEYS = [
-  'tasa', 'pinDevolucion', 'isInitialized', 'empresa',
-  'proximoRecibo', 'proximaDevolucion', 'proximaAnulacion',
-  'ultimoZ', 'fechaUltimoZ', 'acumuladoHistorico',
-  'fondoCajaHoyUSD', 'fondoCajaHoyBS', 'isCashOpen', 'cashData', 'config',
-] as const;
-
 export interface BackupFile {
   app: 'posven-pro';
   version: number;
