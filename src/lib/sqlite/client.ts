@@ -16,12 +16,19 @@ export type SQLiteResult = {
 // existing business services use async interactive transaction callbacks.
 // It prevents another HTTP request from entering the same connection while a
 // transaction callback is awaiting its next statement.
-let lockTail: Promise<void> = Promise.resolve();
+type LockState = { tail: Promise<void> };
+
+function getLockState(): LockState {
+  const root = globalThis as typeof globalThis & { __POSVEN_SQLITE_LOCK_STATE__?: LockState };
+  if (!root.__POSVEN_SQLITE_LOCK_STATE__) root.__POSVEN_SQLITE_LOCK_STATE__ = { tail: Promise.resolve() };
+  return root.__POSVEN_SQLITE_LOCK_STATE__;
+}
 
 async function withDatabaseLock<T>(work: () => T | Promise<T>): Promise<T> {
-  const previous = lockTail;
+  const state = getLockState();
+  const previous = state.tail;
   let release!: () => void;
-  lockTail = new Promise<void>(resolve => { release = resolve; });
+  state.tail = new Promise<void>(resolve => { release = resolve; });
   await previous;
   try {
     return await work();
