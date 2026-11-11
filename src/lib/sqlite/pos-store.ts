@@ -676,6 +676,8 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
   for (const name of catalogNames) {
     if (Array.isArray(data[name])) totalRows += data[name].length;
   }
+  const backupUsers = Array.isArray(data.users) ? data.users : [];
+  totalRows += backupUsers.length;
   if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
   if (Number(backup.version || 0) < 1 || Number(backup.version || 0) > 3) {
     throw new Error('La versión del respaldo no es compatible con POSVEN3.');
@@ -756,7 +758,6 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     // Only portable scrypt hashes can be imported. Older POSVEN2 exports may
     // contain user metadata without hashes; those accounts are reported as
     // skipped instead of being assigned an unknown or insecure password.
-    const backupUsers = Array.isArray(data.users) ? data.users : [];
     let importedUsers = 0;
     let skippedUsers = 0;
     const temporaryCredentials: Array<{ username: string; password: string; rol: string }> = [];
