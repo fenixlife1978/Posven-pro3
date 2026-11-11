@@ -1848,7 +1848,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                   };
                   await Store.applyInventoryMovementsTransaction({
                     operationId: 'POS-AJUSTE-' + Store.uid(),
-                    operationType: 'AJUSTE_INVENTARIO',
+                    operationType: 'AJUSTE-INVENTARIO-POS',
                     movements: [movement],
                     productPatches: {}
                   });
