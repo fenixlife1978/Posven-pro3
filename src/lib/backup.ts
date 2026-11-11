@@ -32,19 +32,27 @@ export interface BackupFile {
     sqliteTables: Record<string, number>;
     catalogs: Record<string, number>;
     source: 'sqlite-local';
+    complete: true;
   };
 }
 
-async function readLocalTable(table: string, limit = 10000): Promise<any[]> {
-  const response = await fetch('/api/pos/store?table=' + encodeURIComponent(table) + '&limit=' + limit, {
-    credentials: 'include',
-    cache: 'no-store',
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde la base local.');
+async function readLocalTable(table: string, pageSize = 2000): Promise<any[]> {
+  const allRecords: any[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await fetch(
+      '/api/pos/store?table=' + encodeURIComponent(table) + '&limit=' + pageSize + '&offset=' + offset,
+      { credentials: 'include', cache: 'no-store' }
+    );
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok === false) {
+      throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde la base local.');
+    }
+    const page = Array.isArray(body?.records) ? body.records : [];
+    allRecords.push(...page);
+    if (allRecords.length > 200000) throw new Error('La tabla ' + table + ' supera el límite seguro del respaldo.');
+    if (page.length < pageSize) break;
   }
-  return Array.isArray(body?.records) ? body.records : [];
+  return allRecords;
 }
 
 async function readLocalSpecial(kind: 'config' | 'catalog', name = ''): Promise<any> {
@@ -98,7 +106,7 @@ export async function crearRespaldo(): Promise<BackupFile> {
     version: 3,
     createdAt: new Date().toISOString(),
     data,
-    meta: { sqliteTables, catalogs, source: 'sqlite-local' },
+    meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
   };
 }
 
