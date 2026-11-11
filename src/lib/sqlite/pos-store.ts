@@ -507,6 +507,17 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       }
     }
   }
+  if (backup.meta?.source === 'sqlite-local' && backup.meta.complete !== true) {
+    throw new Error('El respaldo SQLite no está marcado como completo. Genere una nueva copia antes de restaurar.');
+  }
+  if (backup.meta?.sqliteTables) {
+    for (const [tableName, count] of Object.entries(backup.meta.sqliteTables)) {
+      const key = tableName === 'caja' ? 'cashHistory' : tableName;
+      if (Array.isArray(data[key]) && Number(count) !== data[key].length) {
+        throw new Error('El conteo SQLite no coincide en ' + tableName + '. La restauración fue cancelada.');
+      }
+    }
+  }
   if (backup.meta?.catalogs) {
     for (const [name, count] of Object.entries(backup.meta.catalogs)) {
       if (Array.isArray(data[name]) && Number(count) !== data[name].length) {
