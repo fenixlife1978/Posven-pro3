@@ -707,9 +707,7 @@ const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 async function loadCollection(name: string): Promise<any[]> {
   const serverItems = await tryLocalServerRead(name);
   if (serverItems !== null) return serverItems.map(sanitizeRecord).filter(Boolean);
-  if (!db) return [];
-  const snap = await getDocs(collection(db, name));
-  return snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
+  return [];
 }
 
 // Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
@@ -925,16 +923,7 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
       applyPatch({ [name]: mergeById((cache as any)[name], serverItems) });
       return serverItems.length;
     }
-    if (!db) return 0;
-    const last = cursors[name] || null;
-    const q = last
-      ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(last), limit(pageSize))
-      : query(collection(db, col), orderBy('fecha', 'desc'), limit(pageSize));
-    const snap = await getDocs(q);
-    const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
-    cursors[name] = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
-    applyPatch({ [name]: mergeById((cache as any)[name], items) });
-    return items.length;
+    return 0;
   } catch (e) {
     console.error("loadMore " + name + ":", e);
     return 0;
@@ -1029,6 +1018,34 @@ let teardownFns: (() => void)[] = [];
 const masterSyncFns: Record<string, () => void> = {};
 const terminalSyncFns: Record<string, () => void> = {};
 
+function startSqlitePolling(key: string, task: () => Promise<void>, intervalMs = 5000): () => void {
+  let active = true;
+  let running = false;
+  let lastError = '';
+  const tick = async () => {
+    if (!active || running) return;
+    running = true;
+    try {
+      await task();
+      lastError = '';
+    } catch (error: any) {
+      const message = String(error?.message || error);
+      if (message !== lastError) {
+        console.warn('[SQLite LAN] Sincronización ' + key + ':', message);
+        lastError = message;
+      }
+    } finally {
+      running = false;
+    }
+  };
+  void tick();
+  const timer = window.setInterval(() => { void tick(); }, intervalMs);
+  return () => {
+    active = false;
+    window.clearInterval(timer);
+  };
+}
+
 function stopTerminalSync(): void {
   for (const key of ['main', 'sales']) {
     const unsub = terminalSyncFns[key];
@@ -1042,87 +1059,22 @@ function stopTerminalSync(): void {
 function startTerminalSync(terminalId?: string, all = false, initialItems: Terminal[] = []): () => void {
   if (typeof window === 'undefined') return () => {};
   stopTerminalSync();
+  if (initialItems.length > 0) applyPatch({ terminales: mergeById((cache as any).terminales, initialItems) });
 
-  if (initialItems.length > 0) {
-    applyPatch({ terminales: mergeById((cache as any).terminales, initialItems) });
-  }
-
-  // Cuando SQLite local está activo, la hidratación inicial sale de SQLite local y servidor SQLite local
-  // deja de ser fuente de lectura para terminales/ventas durante la migración.
-  // El cache local conserva la última vista mientras llega la respuesta.
-  void (async () => {
-    try {
-      const terminals = await tryLocalServerRead('terminales', all ? {} : { limit: 1, terminalId });
-      if (terminals !== null) {
-        applyPatch({ terminales: all ? terminals : mergeById((cache as any).terminales, terminals) });
-        const sales = await tryLocalServerRead('ventas', all ? { limit: 500 } : { limit: 500, terminalId });
-        if (sales !== null) applyPatch({ ventas: sales });
-        return;
-      }
-
-      if (!db) return;
-
-  const target = all
-    ? collection(db, COLLECTIONS.terminales)
-    : (terminalId ? doc(db, COLLECTIONS.terminales, terminalId) : null);
-
-  if (!target) return () => {};
-
-  const unsub = onSnapshot(
-    target as any,
-    (snap: any) => {
-      if (all) {
-        const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
-        applyPatch({ terminales: items });
-      } else if (snap.exists()) {
-        const item = sanitizeRecord(snap.data());
-        const id = String(item?.id || snap.id);
-        applyPatch({ terminales: mergeById((cache as any).terminales, [{ ...item, id }]) });
-      }
-    },
-    (err: any) => {
-      if (err?.code !== 'permission-denied') console.warn("Sync terminal:", err);
+  const refresh = async () => {
+    const [terminals, sales] = await Promise.all([
+      tryLocalServerRead('terminales', all ? {} : { limit: 1, terminalId }),
+      tryLocalServerRead('ventas', all ? { limit: 500 } : { limit: 500, terminalId }),
+    ]);
+    if (terminals !== null) {
+      applyPatch({ terminales: all ? terminals : mergeById((cache as any).terminales, terminals) });
     }
-  );
-  terminalSyncFns.main = unsub;
+    if (sales !== null) applyPatch({ ventas: sales });
+  };
 
-  // Historial operativo del POS: para un cajero cargamos las ventas de SU caja,
-  // no solo las últimas 50 ventas globales. Así un reinicio no puede dejar la
-  // pantalla mostrando únicamente operaciones antiguas de otra jornada/caja.
-  // Se usa solo un filtro de igualdad para evitar depender de un índice compuesto;
-  // el orden se hace en memoria.
-  const salesQuery = all
-    ? query(collection(db, COLLECTIONS.ventas), limit(500))
-    : (terminalId
-      ? query(collection(db, COLLECTIONS.ventas), where('terminalId', '==', terminalId), limit(500))
-      : null);
-
-  if (salesQuery) {
-    const salesUnsub = onSnapshot(
-      salesQuery,
-      (snap: any) => {
-        const items = snap.docs
-          .map((d: any) => sanitizeRecord({ ...d.data(), id: d.data()?.id || d.id }))
-          .filter(Boolean)
-          .sort((a: any, b: any) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
-        applyPatch({ ventas: items });
-      },
-      (err: any) => {
-        if (err?.code !== 'permission-denied') console.warn("Sync ventas terminal:", err);
-      }
-    );
-    terminalSyncFns.sales = salesUnsub;
-  }
-
-  return stopTerminalSync;
-    } catch (e) {
-      console.error('[db-store] Error hidratando terminal/ventas desde SQLite local:', e);
-    }
-  })();
-
+  terminalSyncFns.main = startSqlitePolling('terminales/ventas', refresh, 2500);
   return stopTerminalSync;
 }
-
 
 
 function stopMasterSync(name: string): void {
@@ -1140,43 +1092,17 @@ function stopMasterSync(name: string): void {
 }
 
 function startMasterSync(name: string): () => void {
-  if (typeof window === 'undefined') return () => {};
-  if (!COLLECTIONS[name]) return () => {};
+  if (typeof window === 'undefined' || !COLLECTIONS[name]) return () => {};
   if (masterSyncFns[name]) return () => stopMasterSync(name);
 
-  // Con SQLite local activo, clientes/proveedores deben salir de SQLite local. El listener
-  // servidor SQLite local se conserva únicamente como fallback cuando SQLite local no está configurado.
-  void (async () => {
-    try {
-      const serverItems = await tryLocalServerRead(name, { limit: 2000 });
-      if (serverItems !== null) {
-        applyPatch({ [name]: serverItems });
-        loadedAll[name] = true;
-        return;
-      }
-    } catch (e) {
-      console.error('[db-store] Error cargando ' + name + ' desde SQLite local:', e);
-      return;
+  const refresh = async () => {
+    const items = await tryLocalServerRead(name, { limit: 2000 });
+    if (items !== null) {
+      applyPatch({ [name]: items });
+      loadedAll[name] = true;
     }
-
-    if (!db) return;
-    const col = COLLECTIONS[name];
-    const unsub = onSnapshot(
-      collection(db, col),
-      (snap: any) => {
-        const items = snap.docs
-          .map((d: any) => sanitizeRecord(d.data()))
-          .filter(Boolean);
-        applyPatch({ [name]: items });
-        if (name === 'clientes' || name === 'proveedores') loadedAll[name] = true;
-      },
-      (err: any) => {
-        if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
-      }
-    );
-    masterSyncFns[name] = unsub;
-  })();
-
+  };
+  masterSyncFns[name] = startSqlitePolling(name, refresh, 5000);
   return () => stopMasterSync(name);
 }
 
@@ -1209,123 +1135,51 @@ function init() {
   started = true;
   if (typeof window === 'undefined') return;
 
-  // 1) CONFIG: SQLite local es la única fuente de verdad operacional.
-  // No condicionamos esta carga a servidor SQLite local: la tasa BCV y el resto de la
-  // configuración deben hidratarse directamente desde app_config/general
-  // aunque el cliente servidor SQLite local no exista o no esté inicializado.
-  void (async () => {
-    try {
-      const serverConfig = await tryLocalServerSpecialRead('config');
-      const patch: any = {};
-      for (const f of CONFIG_FIELDS) if (serverConfig?.[f] !== undefined) {
-        patch[f] = sanitizeRecord(serverConfig[f]);
-      }
-      if (Object.keys(patch).length) applyPatch(patch);
-      await loadCatalogs(true, String(serverConfig?.catalogosVersion || ''));
-    } catch (error) {
-      console.error('[db-store] Error cargando configuración desde SQLite local:', error);
+  // Toda la sincronización entre cajas consulta el servidor LAN y la misma SQLite.
+  // No hay listeners cloud, colas offline ni escrituras a bases externas.
+  let firstConfigLoad = true;
+  teardownFns.push(startSqlitePolling('configuración/catálogos', async () => {
+    const serverConfig = await tryLocalServerSpecialRead('config');
+    const patch: any = {};
+    for (const field of CONFIG_FIELDS) {
+      if (serverConfig?.[field] !== undefined) patch[field] = sanitizeRecord(serverConfig[field]);
     }
-  })();
+    if (Object.keys(patch).length) applyPatch(patch);
+    await loadCatalogs(firstConfigLoad, String(serverConfig?.catalogosVersion || ''));
+    firstConfigLoad = false;
+  }, 10000));
 
-  void (async () => {
-    const usingLocalSqlite = await bootstrapProductos();
-    if (usingLocalSqlite || !legacyRealtime) return;
-    teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap: any) => {
-      const val = snap.val() || {};
-      const items = Object.values(val).filter((item): item is Product => Boolean(item));
-      applyPatch({ productos: items });
-    }, (err: any) => { if (err?.code !== 'permission-denied') console.warn("sincronización de productos:", err); }));
-  })();
+  teardownFns.push(startSqlitePolling('productos', async () => {
+    const items = await tryLocalServerRead('productos', { limit: 5000 });
+    if (items !== null) applyPatch({ productos: items });
+  }, 5000));
 
-  // 3) LISTAS VIVAS ENTRE CAJAS.
-  // CxC/CxP: el POS solo necesita deuda ACTIVA en tiempo real. Mantener
-  // miles de deudas ya pagadas conectadas en cada terminal genera lecturas
-  // iniciales innecesarias. El histórico completo se hidrata únicamente
-  // cuando se entra al módulo que lo necesita.
-  // CxC/CxP: SQLite local es la fuente de lectura cuando está activo. servidor SQLite local
-  // conserva el listener únicamente como fallback mientras SQLite local no esté configurado.
-  void (async () => {
+  // CxC y CxP activas se actualizan silenciosamente en todas las cajas.
+  teardownFns.push(startSqlitePolling('CxC/CxP', async () => {
     for (const name of ['cxc', 'cxp']) {
-      try {
-        const [pendientes, parciales] = await Promise.all([
-          tryLocalServerReadAll(name, { estado: 'pendiente' }),
-          tryLocalServerReadAll(name, { estado: 'parcial' }),
-        ]);
-        if (pendientes !== null && parciales !== null) {
-          applyPatch({ [name]: mergeById(pendientes, parciales) });
-          continue;
-        }
-        const col = COLLECTIONS[name];
-        teardownFns.push(onSnapshot(
-          query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
-          (snap: any) => {
-            const currentArr = [...((cache as any)[name] || [])];
-            const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-            snap.docChanges().forEach((change: any) => {
-              const item = sanitizeRecord(change.doc.data());
-              const id = String(item?.id || change.doc.id);
-              if (change.type === 'removed') {
-                if (item && String(item.estado || '') !== 'pagada') map.delete(id);
-              } else if (item) map.set(id, item);
-            });
-            applyPatch({ [name]: [...map.values()] });
-          },
-          (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-        ));
-      } catch (e) {
-        console.error("[db-store] Error leyendo " + name + " desde SQLite local:", e);
+      const [pendientes, parciales] = await Promise.all([
+        tryLocalServerReadAll(name, { estado: 'pendiente' }),
+        tryLocalServerReadAll(name, { estado: 'parcial' }),
+      ]);
+      if (pendientes !== null && parciales !== null) {
+        applyPatch({ [name]: mergeById(pendientes, parciales) });
       }
     }
-  })();
+  }, 5000));
 
-  // Clientes/proveedores se sincronizan solo mientras el módulo que los necesita está abierto.
-  // Así evitamos descargar y mantener dos colecciones maestras completas en cada caja
-  // durante toda la jornada cuando el operador está trabajando en otro módulo.
-
-  // Terminales: el listener se activa bajo demanda.
-  // Un cajero escucha solo SU terminal; administradores pueden activar el
-  // listado completo cuando necesitan gestionar las cajas.
-  // Históricos de auditoría: solo mantenemos una ventana reciente en realtime.
-  // El histórico completo se carga bajo demanda al abrir el módulo correspondiente.
-  void (async () => {
+  // Devoluciones, anulaciones y Z recientes se reflejan en las demás terminales.
+  teardownFns.push(startSqlitePolling('devoluciones/anulaciones/Z', async () => {
     for (const name of ['devoluciones', 'anulaciones', 'reportesZ']) {
-      try {
-        const serverItems = await tryLocalServerRead(name, { limit: 100 });
-        if (serverItems !== null) {
-          applyPatch({ [name]: serverItems });
-          continue;
-        }
-        const col = COLLECTIONS[name];
-        teardownFns.push(onSnapshot(
-          query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
-          (snap: any) => {
-            const currentArr = [...((cache as any)[name] || [])];
-            const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-            snap.docChanges().forEach((change: any) => {
-              const item = sanitizeRecord(change.doc.data());
-              if (!item || !item.id) return;
-              if (change.type === 'removed') map.delete(String(item.id));
-              else map.set(String(item.id), item);
-            });
-            applyPatch({ [name]: [...map.values()] });
-          },
-          (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
-        ));
-      } catch (e) {
-        console.error("[db-store] Error leyendo " + name + " desde SQLite local:", e);
-      }
+      const items = await tryLocalServerRead(name, { limit: 100 });
+      if (items !== null) applyPatch({ [name]: items });
     }
-  })();
+  }, 5000));
 
-  // Históricos operativos: SQLite local es la única fuente de movimientos.
-  void (async () => {
-    try {
-      const serverItems = await tryLocalServerRead('movimientos', { limit: 50 });
-      if (serverItems !== null) applyPatch({ movimientos: serverItems });
-    } catch (e) {
-      console.error('[db-store] Error leyendo movimientos desde SQLite local:', e);
-    }
-  })();
+  teardownFns.push(startSqlitePolling('movimientos', async () => {
+    const items = await tryLocalServerRead('movimientos', { limit: 50 });
+    if (items !== null) applyPatch({ movimientos: items });
+  }, 7000));
+
 
   // 4) CARGA INICIAL: listas pequeñas completas + ventas/libroDiario COMPLETOS
   //    (cada caja filtra por su propio corte Z, así que ninguna puede perder datos
@@ -2157,7 +2011,7 @@ export const Store = {
     customerName?: string;
     customerCedula?: string;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    if (typeof window === 'undefined') return null;
     const serverResult = await tryLocalServerOperation('deleteCustomerAndDebts', params);
     if (serverResult) return serverResult;
     const { operationId, customerId, customerName, customerCedula } = params;
