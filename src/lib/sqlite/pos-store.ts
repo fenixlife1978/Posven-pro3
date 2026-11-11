@@ -423,13 +423,18 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
       throw new Error('No se pudo conservar el administrador semilla.');
     }
     await tx.execute({
-      sql: "DELETE FROM users WHERE is_seed_admin=0",
-      args: [],
+      sql: "DELETE FROM users WHERE is_seed_admin=0 AND id<>?",
+      args: [String(currentAdmin.id)],
       wantRows: false,
     });
     await tx.execute({
       sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE is_seed_admin=1",
       args: [],
+      wantRows: false,
+    });
+    await tx.execute({
+      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      args: [String(currentAdmin.id)],
       wantRows: false,
     });
     await tx.execute({
@@ -459,7 +464,7 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
   });
 }
 
-export async function restoreBackupTransaction(params: { user: { rol: string }; backup: any }) {
+export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any }) {
   assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
 
@@ -552,11 +557,18 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
   }
 
   return sqliteInteractiveTransaction(async tx => {
-    const seed = await tx.execute({
+    const currentAdminResult = await tx.execute({
+      sql: "SELECT id,username,email FROM users WHERE id=? AND rol='administrador' AND acceso_bloqueado=0 LIMIT 1",
+      args: [params.user.id],
+    });
+    if (!currentAdminResult.rows.length) throw new Error('El administrador que inició la restauración ya no está activo.');
+    const currentAdmin = currentAdminResult.rows[0];
+    const seedResult = await tx.execute({
       sql: "SELECT id,username FROM users WHERE is_seed_admin=1 LIMIT 1",
       args: [],
     });
-    if (!seed.rows.length) throw new Error('No se encontró el administrador semilla local. Inicie sesión nuevamente antes de restaurar.');
+    if (!seedResult.rows.length) throw new Error('No se encontró el administrador semilla local. Inicie sesión nuevamente antes de restaurar.');
+    const seedAdmin = seedResult.rows[0];
 
     const clearTables = [
       'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
@@ -628,6 +640,7 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
       const sourceHash = String(user?.password_hash || user?.passwordHash || '');
       const role = String(user?.rol || user?.role || '').toLowerCase();
       if (!username || username === 'admin' || user?.isSeedAdmin || user?.is_seed_admin) continue;
+      if (username === String(currentAdmin.username || '').toLowerCase() || String(user?.id || user?.uid || '') === String(currentAdmin.id) || (currentAdmin.email && String(user?.email || '').trim().toLowerCase() === String(currentAdmin.email).toLowerCase())) continue;
       if (!['administrador','cajero'].includes(role)) { skippedUsers++; continue; }
 
       // POSVEN2 deliberately excludes password hashes from its export. Keep
@@ -664,8 +677,8 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
       importedUsers,
       skippedUsers,
       temporaryCredentials,
-      preservedAdmin: String(seed.rows[0].username || 'admin'),
-      preservedAdminId: String(seed.rows[0].id),
+      preservedAdmin: String(currentAdmin.username || 'admin'),
+      preservedAdminId: String(currentAdmin.id),
       totalRows,
     };
   });
