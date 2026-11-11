@@ -123,7 +123,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'recordsSync': {
-        const allowed = new Set(['clientes', 'proveedores', 'movimientos', 'libroDiario']);
+        const allowed = new Set(['clientes', 'proveedores']);
         const target = String(body.table || '');
         if (!allowed.has(target)) throw new Error('Tabla no permitida para sincronización general.');
         if (target === 'proveedores' && user.rol !== 'administrador') throw new Error('Se requiere administrador.');
@@ -140,15 +140,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'inventoryStockSync': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await syncProductsStockFromKardex();
         return NextResponse.json({ ok: true, ...result });
       }
       case 'inventory': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador para ajustar inventario.');
         const result = await applyInventoryMovementsTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'sale': {
-        const result = await createSaleTransaction(body);
+        const result = await createSaleTransaction({ ...body, user });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'terminalPatch': {
@@ -164,7 +166,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'debtPayment': {
-        const result = await applyDebtPaymentTransaction(body);
+        const result = await applyDebtPaymentTransaction({ ...body, user });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'cashMovement': {
@@ -172,36 +174,43 @@ export async function POST(request: Request) {
           operationId: String(body.operationId || ''),
           movement: body.movement,
           terminalId: String(body.terminalId || body.movement?.terminalId || ''),
+          user,
         });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'globalProviderPayment': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await applyGlobalProviderPaymentTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'globalCustomerPayment': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await applyGlobalCustomerPaymentTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'customerDebt': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await createCustomerDebtTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'supplierDebt': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await createSupplierDebtTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'reverseDebtPayment': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result=await reverseDebtPaymentTransaction(body); return NextResponse.json({ok:true,...result});
       }
       case 'createPurchase': { const result=await createPurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deletePurchase': { const result=await deletePurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deleteCustomerDebt': { const result=await deleteCustomerDebtTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deleteCustomerAndDebts': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result=await deleteCustomerAndDebtsTransaction(body); return NextResponse.json({ok:true,...result});
       }
       case 'returnOrCancellation': {
-        const result = await processReturnOrCancellationTransaction(body);
+        const result = await processReturnOrCancellationTransaction({ ...body, user });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'repairReturnInventoryAndCxc': {
