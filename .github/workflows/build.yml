@@ -32,22 +32,11 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Synchronize native SQLite lockfile
-        shell: pwsh
-        run: |
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw 'No se pudo sincronizar package-lock.json.' }
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git commit -m "chore(sqlite): synchronize native dependency lockfile"
-            git push origin HEAD:${{ github.ref_name }}
-          }
+      - name: Regenerate npm lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
@@ -78,6 +67,14 @@ jobs:
           $found = Get-ChildItem -Path dist -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue
           if (-not $found -or $found.Count -eq 0) { throw 'No se generó ningún instalador .exe.' }
           $found | ForEach-Object { Write-Host "Instalador: $($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
+
+      - name: Upload synchronized npm lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: POSVEN3-SQLite-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload Windows installer as a downloadable Actions artifact
         uses: actions/upload-artifact@v4
