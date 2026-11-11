@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set('posven_session', '', {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: new URL(request.url).protocol === 'https:',
       path: '/',
       maxAge: 0,
     });
