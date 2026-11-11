@@ -963,11 +963,14 @@ export async function createSaleTransaction(params: {
   tasa: number;
   saleType?: string;
   credit?: { customer: any; debtId: string };
-  cajeroId?: string;
+  effectiveCajeroId?: string;
+  user: { id: string; rol: string };
 }) {
   assertSQLiteReady();
   const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now,
-    tasa, saleType = 'VENTA', credit, cajeroId } = params;
+    tasa, saleType = 'VENTA', credit, effectiveCajeroId } = params;
+  const effectiveCajeroId = params.user?.rol === 'cajero' ? params.user.id : effectiveCajeroId;
+  if (params.user?.rol === 'cajero' && !terminalId) throw new Error('El cajero debe operar desde su terminal asignada.');
 
   if (!cart?.length) throw new Error('La venta no contiene productos.');
   if (!(Number(tasa) > 0)) throw new Error('La tasa de la venta no es válida.');
@@ -983,6 +986,10 @@ export async function createSaleTransaction(params: {
       ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
       : null;
     if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
+    if (terminalId && terminal) {
+      assertTerminalAccess(params.user, terminal);
+      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. Abra la jornada antes de registrar ventas.');
+    }
 
     let nextNumber = Math.max(1, Number(terminal?.proximoRecibo ?? fallbackReceiptNumber ?? 1));
     const salePrefix = await terminalUniquePrefix(tx, terminal, terminalId);
@@ -1152,7 +1159,7 @@ export async function createSaleTransaction(params: {
       metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
       estado: 'completada', type: saleType, received: totalPaid,
       change: Math.max(0, totalPaid - totals.total), payments: payments.map(x => ({ ...x })),
-      terminalId, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId,
+      terminalId, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', effectiveCajeroId,
       baseImponibleUSD: Math.round(totals.base * 100) / 100,
       ivaUSD: Math.round(totals.iva * 100) / 100, exentoUSD: Math.round(totals.exento * 100) / 100,
       igtfUSD: Math.round(igtf * 100) / 100, tasa,
@@ -1536,6 +1543,8 @@ export async function applyDebtPaymentTransaction(params: {
   // CxP se procesa desde Administración y no depende de ninguna Caja/Terminal.
   // Solo CxC conserva la relación con la caja del cajero.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
+  if (collection === 'cxp' && params.user?.rol !== 'administrador') throw new Error('El pago a proveedores requiere administrador.');
+  if (collection === 'cxc' && params.user?.rol === 'cajero' && !terminalForOperation) throw new Error('El cobro de CxC del cajero requiere su terminal asignada.');
   if (!(Number(amountUSD) > 0)) return null;
   return sqliteInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
@@ -1567,6 +1576,10 @@ export async function applyDebtPaymentTransaction(params: {
 
     const terminal = terminalForOperation ? rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]) : null;
     if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
+    if (terminalForOperation && terminal) {
+      assertTerminalAccess(params.user, terminal);
+      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el cobro.');
+    }
     const field = collection==='cxc'?'proximoCobroDeuda':'proximoPagoProveedor';
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
@@ -1799,7 +1812,9 @@ export async function processReturnOrCancellationTransaction(params:any){
     terminalId,
     refundItems = [],
     fullCancellation = false,
+    user,
   } = params;
+  if (user?.rol === 'cajero' && !terminalId) throw new Error('El cajero debe procesar la devolución desde su terminal asignada.');
 
   return sqliteInteractiveTransaction(async tx => {
     const opCheck = await tx.execute({
@@ -1817,6 +1832,10 @@ export async function processReturnOrCancellationTransaction(params:any){
       ? rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0])
       : null;
     if(terminalId && !terminal) throw new Error('La terminal de la operación ya no existe.');
+    if(terminalId && terminal) {
+      assertTerminalAccess(user, terminal);
+      if(terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar una devolución o anulación.');
+    }
 
     // ============================================================
     // REGLA MAESTRA DE DEVOLUCIONES/ANULACIONES
@@ -2355,9 +2374,11 @@ export async function createCashMovementTransaction(params: {
   operationId: string;
   movement: any;
   terminalId?: string;
+  user: { id: string; rol: string };
 }) {
   assertSQLiteReady();
   const { operationId, movement, terminalId } = params;
+  if (params.user?.rol === 'cajero' && !terminalId) throw new Error('El cajero debe registrar movimientos desde su caja asignada.');
   if (!movement?.id) throw new Error('El movimiento de caja no tiene id.');
   return sqliteInteractiveTransaction(async tx => {
     const opId = String(operationId || movement.id);
@@ -2370,6 +2391,10 @@ export async function createCashMovementTransaction(params: {
       ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
       : null;
     if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
+    if (terminalId && terminal) {
+      assertTerminalAccess(params.user, terminal);
+      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el movimiento.');
+    }
     const canonicalMovement = {
       ...movement,
       terminalId: terminalId || movement.terminalId || 'GLOBAL',
