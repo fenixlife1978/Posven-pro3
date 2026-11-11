@@ -29,14 +29,14 @@ export interface BackupFile {
   createdAt: string;
   data: Record<string, unknown>;
   meta?: {
-    tursoTables: Record<string, number>;
+    sqliteTables: Record<string, number>;
     catalogs: Record<string, number>;
-    source: 'turso';
+    source: 'sqlite-local';
   };
 }
 
 async function readTursoTable(table: string, limit = 10000): Promise<any[]> {
-  const response = await fetch('/api/turso/store?table=' + encodeURIComponent(table) + '&limit=' + limit, {
+  const response = await fetch('/api/pos/store?table=' + encodeURIComponent(table) + '&limit=' + limit, {
     credentials: 'include',
     cache: 'no-store',
   });
@@ -50,7 +50,7 @@ async function readTursoTable(table: string, limit = 10000): Promise<any[]> {
 async function readTursoSpecial(kind: 'config' | 'catalog', name = ''): Promise<any> {
   const params = new URLSearchParams({ special: kind });
   if (name) params.set('name', name);
-  const response = await fetch('/api/turso/store?' + params.toString(), {
+  const response = await fetch('/api/pos/store?' + params.toString(), {
     credentials: 'include',
     cache: 'no-store',
   });
@@ -63,14 +63,14 @@ async function readTursoSpecial(kind: 'config' | 'catalog', name = ''): Promise<
 
 export async function crearRespaldo(): Promise<BackupFile> {
   const data: Record<string, unknown> = {};
-  const tursoTables: Record<string, number> = {};
+  const sqliteTables: Record<string, number> = {};
   const catalogs: Record<string, number> = {};
 
   for (const key of COLLECTION_KEYS) {
     const table = TABLE_MAP[key] || key;
     const rows = await readTursoTable(table);
     data[key] = rows;
-    tursoTables[table] = rows.length;
+    sqliteTables[table] = rows.length;
   }
 
   for (const key of CATALOG_KEYS) {
@@ -89,7 +89,7 @@ export async function crearRespaldo(): Promise<BackupFile> {
   if (usersResponse.ok) {
     const users = Array.isArray(usersBody?.usuarios) ? usersBody.usuarios : (Array.isArray(usersBody?.users) ? usersBody.users : []);
     data.users = users;
-    tursoTables.users = users.length;
+    sqliteTables.users = users.length;
   }
 
   return {
@@ -97,7 +97,7 @@ export async function crearRespaldo(): Promise<BackupFile> {
     version: 3,
     createdAt: new Date().toISOString(),
     data,
-    meta: { tursoTables, catalogs, source: 'turso' },
+    meta: { sqliteTables, catalogs, source: 'sqlite-local' },
   };
 }
 
@@ -150,7 +150,7 @@ async function restaurarBackupTurso(
   };
 
   const post = async (payload: Record<string, unknown>) => {
-    const response = await fetch('/api/turso/backup', {
+    const response = await fetch('/api/pos/backup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
