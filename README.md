@@ -30,7 +30,7 @@ Los respaldos de seguridad previos a una restauración se guardan en `data/backu
 5. Se recomienda reservar la IP del servidor en el router para evitar que cambie. Si cambia, el cliente permite volver a configurar la dirección.
 6. En Windows Firewall permite conexiones privadas entrantes al puerto 4580.
 
-La computadora servidor debe permanecer encendida y con POSVEN3 abierto mientras operen las cajas cliente.
+La computadora servidor debe permanecer encendida y con POSVEN3 abierto mientras operen las cajas cliente. Mantén el puerto 4580 dentro de una red privada confiable, protegida con WPA2/WPA3; no configures reenvío del puerto hacia Internet. El tráfico LAN usa HTTP local, por lo que no debe utilizarse en redes públicas o no confiables.
 
 ## Usuarios
 
