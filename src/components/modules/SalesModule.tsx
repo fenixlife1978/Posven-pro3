@@ -665,6 +665,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const terminalActual = state.terminales.find(t => String(t.id) === String(termId));
     if (!terminalActual) {
       toast({ variant: 'destructive', title: 'No se pudo cerrar la caja', description: 'No se encontró la terminal asignada. No se confirmó ningún corte Z.' });
+      closingZRef.current = false;
       return;
     }
     const sesion = terminalActual.cashData;
