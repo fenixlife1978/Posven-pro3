@@ -537,23 +537,13 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
       throw new Error('No se pudo conservar el administrador semilla.');
     }
     await tx.execute({
-      sql: "DELETE FROM users WHERE is_seed_admin=0 AND id<>?",
-      args: [String(currentAdmin.id)],
+      sql: "DELETE FROM users WHERE is_seed_admin=0",
+      args: [],
       wantRows: false,
     });
     await tx.execute({
       sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE is_seed_admin=1",
       args: [],
-      wantRows: false,
-    });
-    await tx.execute({
-      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE id=?",
-      args: [String(currentAdmin.id)],
-      wantRows: false,
-    });
-    await tx.execute({
-      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE id=?",
-      args: [String(currentAdmin.id)],
       wantRows: false,
     });
     await tx.execute({
