@@ -141,8 +141,8 @@ export default function PeriodicInventoryExitsReport(_props: { state: AppState }
           <TableCell><p className="text-[10px] font-black uppercase">SALIDA</p><p className="text-[10px] text-ink/50">{m.tipo === "venta" ? "VENTA" : m.tipo === "consumo" || m.tipo === "colaboracion" ? "AUTOCONSUMO" : "OTRA SALIDA"}</p></TableCell>
           <TableCell className="text-right font-black text-status-danger">{Math.abs(m.cantidad)}</TableCell>
           <TableCell className="text-[10px] min-w-36">{m.referencia || m.id}</TableCell>
-          <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={historical(m).costBs} onChange={e => setValue(m.id, "costBs", e.target.value)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right" /></TableCell>
-          <TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={historical(m).rate} onChange={e => setValue(m.id, "rate", e.target.value)} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right" /></TableCell>
+          <TableCell className="min-w-36"><Input type="number" min="0" step="0.0001" value={historical(m).costBs} onChange={e => setValue(m.id, "costBs", e.target.value)} disabled={Number(m.costoUnitarioBs) > 0 || (Number(m.costoUnitarioUSD) > 0 && Number(m.tasaBCV) > 0)} placeholder="Requerido" className="h-9 min-w-28 bg-white text-right" /></TableCell>
+          <TableCell className="min-w-32"><Input type="number" min="0" step="0.0001" value={historical(m).rate} onChange={e => setValue(m.id, "rate", e.target.value)} disabled={Number(m.tasaBCV) > 0} placeholder="Requerida" className="h-9 min-w-24 bg-white text-right" /></TableCell>
         </TableRow>)}
         {loading && <TableRow><TableCell colSpan={7} className="py-16 text-center font-bold">Consultando historial completo en Turso…</TableCell></TableRow>}{!loading && !loadError && !rows.length && <TableRow><TableCell colSpan={7} className="py-16 text-center text-ink/30 font-black uppercase">No hay salidas para los filtros seleccionados</TableCell></TableRow>}
       </TableBody></Table></div>
