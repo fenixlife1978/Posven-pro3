@@ -31,7 +31,6 @@ export type AISalesIntelOutput = z.infer<typeof AISalesIntelOutputSchema>;
 export async function getAISalesIntel(input: AISalesIntelInput): Promise<AISalesIntelOutput> {
   const { output } = await ai.generate({
     model: 'googleai/gemini-2.5-flash',
-    input: input,
     output: { schema: AISalesIntelOutputSchema },
     prompt: `Actúa como un experto analista de inventarios para una licorería en Venezuela.
     Basado en estos datos de ventas: ${JSON.stringify(input.salesData)} 

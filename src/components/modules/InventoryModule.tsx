@@ -50,6 +50,7 @@ import {
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
 import { PriceLabelsModal } from '@/components/inventory/PriceLabelsModal';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
+import PeriodicInventoryExitsReport from '@/components/modules/PeriodicInventoryExitsReport';
 
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
@@ -77,7 +78,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     if (activeTab !== 'productos') {
       void Store.ensureLoaded('movimientos');
     }
-    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones') {
+    if (activeTab === 'reporte_ventas' || activeTab === 'reporte_devoluciones' || activeTab === 'reporte_salidas_periodicas') {
       void Store.ensureLoaded('ventas');
     }
   }, [activeTab]);
@@ -273,6 +274,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
       case 'historial_ajustes': return <HistorialAjustes state={state} />;
       case 'kardex': return <ReporteKardex state={state} selectedId={selectedKardexId} onSelect={setSelectedKardexId} />;
       case 'consumo_colab': return <ReporteConsumo state={state} />;
+      case 'reporte_salidas_periodicas': return <PeriodicInventoryExitsReport state={state} />;
       default: return null;
     }
   };
@@ -287,6 +289,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
         <button onClick={() => setActiveTab('kardex')} className={`tab ${activeTab === 'kardex' ? 'active' : 'text-ink font-black'}`}>Kardex Fiscal</button>
         <button onClick={() => setActiveTab('historial_ajustes')} className={`tab ${activeTab === 'historial_ajustes' ? 'active' : 'text-ink font-black'}`}>Ajustes</button>
         <button onClick={() => setActiveTab('consumo_colab')} className={`tab ${activeTab === 'consumo_colab' ? 'active' : 'text-ink font-black'}`}>Consumo / Colaboraciones</button>
+        <button onClick={() => setActiveTab('reporte_salidas_periodicas')} className={`tab ${activeTab === 'reporte_salidas_periodicas' ? 'active' : 'text-ink font-black'}`}>Salidas periódicas SICOVEN</button>
       </div>
 
       <div className="animate-in fade-in duration-300">
@@ -365,7 +368,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 cantidad: diferencia, stockAntes, stockDespues: nuevoStock,
                 fecha: Utils.ahora(),
                 referencia: `CONTEO FISICO | ${a.motivo}`,
-                terminalId: 'ADMIN'
+                terminalId: 'ADMIN',
+                costoUnitarioUSD: Number(producto.costoUSD) || 0,
+                costoUnitarioBs: (Number(producto.costoUSD) || 0) * Number(state.tasa || 0),
+                tasaBCV: Number(state.tasa) || 0
               } as Movimiento;
             }).filter((m): m is Movimiento => Boolean(m));
             if (!movimientos.length) { setShowConteoFisico(false); return; }
@@ -386,7 +392,8 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
       {showAjuste && (
         <ModalAjuste 
-          producto={state.productos.find(p => p.id === showAjuste)!} 
+          producto={state.productos.find(p => p.id === showAjuste)!}
+          tasaBCV={Number(state.tasa) || 0}
           onClose={() => setShowAjuste(null)}
           onSave={async (mov, nuevoCosto) => {
             const productoOriginal = state.productos.find(p => p.id === mov.productoId);
@@ -400,6 +407,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
             if (productoOriginal.isKit && productoOriginal.kitType === 'stock_componentes' && productoOriginal.kitItems) {
               productoOriginal.kitItems.forEach(ki => {
                 const cantidadImpacto = mov.cantidad * ki.cantidad;
+                const componente = state.productos.find(p => p.id === ki.productoId);
+                const costoComponenteUSD = Number(componente?.costoUSD) || 0;
+                const tasaMovimiento = Number(state.tasa) || 0;
                 movimientos.push({
                   ...mov,
                   id: Store.uid(),
@@ -409,7 +419,10 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   stockDespues: 0,
                   fecha: ahora,
                   referencia: `${mov.tipo.replace('_', ' ').toUpperCase()} KIT: ${productoOriginal.nombre} - REF: ${mov.referencia}`,
-                  terminalId: 'ADMIN'
+                  terminalId: 'ADMIN',
+                  costoUnitarioUSD: costoComponenteUSD,
+                  costoUnitarioBs: costoComponenteUSD * tasaMovimiento,
+                  tasaBCV: tasaMovimiento
                 });
               });
             } else {
@@ -1178,7 +1191,7 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
   );
 }
 
-function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose: () => void, onSave: (m: Movimiento, nuevoCosto?: number) => void }) {
+function ModalAjuste({ producto, tasaBCV, onClose, onSave }: { producto: Product, tasaBCV: number, onClose: () => void, onSave: (m: Movimiento, nuevoCosto?: number) => void }) {
   const [tipo, setTipo] = useState<'ajuste_entrada' | 'ajuste_salida'>('ajuste_entrada');
   const [cantidad, setCantidad] = useState<string>('1');
   const [nuevoCosto, setNuevoCosto] = useState<string>(String(producto.costoUSD));
@@ -1219,7 +1232,10 @@ function ModalAjuste({ producto, onClose, onSave }: { producto: Product, onClose
         : motivoTipo === 'colaboracion'
           ? 'COLABORACIÓN'
           : motivo).toUpperCase(),
-      terminalId: 'ADMIN'
+      terminalId: 'ADMIN',
+      costoUnitarioUSD: Number(producto.costoUSD) || 0,
+      costoUnitarioBs: (Number(producto.costoUSD) || 0) * Number(tasaBCV || 0),
+      tasaBCV: Number(tasaBCV) || 0
     };
 
     onSave(mov, movimientoTipo === 'ajuste_entrada' ? pCosto : undefined);

@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Store } from '@/lib/db-store';
+import { Store, Utils } from '@/lib/db-store';
 import { Product, getProductBarcode, getProductPrice, AppState } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
 import { ProductFormModal } from './ProductFormModal';

@@ -1,6 +1,6 @@
 'use client';
 
-import { AppState, Terminal, Movimiento } from './types';
+import { AppState, Terminal, Movimiento, Product } from './types';
 import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
 // Turso es la única base de datos operativa. Estos nombres se conservan únicamente
 // para que los caminos legacy de sincronización no vuelvan a escribir en servidor Turso.
@@ -99,7 +99,7 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
-async function tryTursoRead(table: string, options: { limit?: number; terminalId?: string; estado?: string } = {}): Promise<any[] | null> {
+async function tryTursoRead(table: string, options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
   let response: Response;
   try {
@@ -108,6 +108,10 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
     if (options.limit) params.set('limit', String(options.limit));
     if (options.terminalId) params.set('terminalId', String(options.terminalId));
     if (options.estado) params.set('estado', String(options.estado));
+    if (options.offset) params.set('offset', String(options.offset));
+    if (options.fechaDesde) params.set('fechaDesde', String(options.fechaDesde));
+    if (options.fechaHasta) params.set('fechaHasta', String(options.fechaHasta));
+    if (options.productoId) params.set('productoId', String(options.productoId));
     response = await fetch('/api/turso/store?' + params.toString(), {
       method: 'GET',
       credentials: 'include',
@@ -123,6 +127,23 @@ async function tryTursoRead(table: string, options: { limit?: number; terminalId
     throw new Error(String(body?.error || ('Turso rechazó la lectura (' + response.status + ').')));
   }
   return Array.isArray(body?.records) ? body.records : [];
+}
+
+
+async function tryTursoReadAll(
+  table: string,
+  options: { terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {},
+  pageSize = 500,
+): Promise<any[] | null> {
+  const all: any[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await tryTursoRead(table, { ...options, limit: pageSize, offset });
+    if (page === null) return null;
+    all.push(...page);
+    if (page.length < pageSize) return all;
+    offset += page.length;
+  }
 }
 
 
@@ -525,8 +546,8 @@ function mergeById<T extends { id?: any }>(existing: T[] | undefined, incoming: 
 // caja leyó. Si otra caja lo cambió entretanto, abortamos en lugar de
 // pisar silenciosamente su modificación con un array local antiguo.
 async function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
-  const previousIds = new Set((prevArr || []).filter(x => x && x.id).map(x => String(x.id)));
-  const records = (newArr || []).filter(x => x && x.id).map(sanitizeRecord);
+  const previousIds = new Set((prevArr || []).filter((x: any) => x && x.id).map(x => String(x.id)));
+  const records = (newArr || []).filter((x: any) => x && x.id).map(sanitizeRecord);
   const currentIds = new Set(records.map((x: any) => String(x.id)));
   const deletedIds = [...previousIds].filter(id => !currentIds.has(id));
   if (records.length === 0 && deletedIds.length === 0) return;
@@ -567,7 +588,7 @@ async function applyInventoryMovementsTransaction(params: {
 
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
   let result: any = null;
-  await runTransaction(db, async tx => {
+  await runTransaction(db, async (tx: any) => {
     const operationRef = await claimOperation(tx, operationType, operationId);
     const remoteProducts = new Map<string, any>();
     for (const pid of productIds) {
@@ -632,7 +653,7 @@ async function applyInventoryMovementsTransaction(params: {
 // ============================================================
 function syncLegacyRealtimeProducts(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
   if (!legacyRealtime) return Promise.resolve();
-  const prevById = new Map((prevArr || []).filter(x => x && x.id).map(x => [String(x.id), x]));
+  const prevById = new Map((prevArr || []).filter((x: any) => x && x.id).map(x => [String(x.id), x]));
   const newList = newArr || [];
   const updates: Record<string, any> = {};
   const removals: string[] = [];
@@ -654,7 +675,7 @@ function syncLegacyRealtimeProducts(prevArr: any[] | undefined, newArr: any[] | 
   const payload: Record<string, any> = { ...updates };
   removals.forEach(id => { payload[id] = null; });
   return update(rootRef, payload)
-    .catch(e => console.error('sincronización de productos:', e));
+    .catch((e: any) => console.error('sincronización de productos:', e));
 }
 
 async function bootstrapProductos(): Promise<boolean> {
@@ -698,7 +719,7 @@ async function loadCollection(name: string): Promise<any[]> {
   if (tursoItems !== null) return tursoItems.map(sanitizeRecord).filter(Boolean);
   if (!db) return [];
   const snap = await getDocs(collection(db, name));
-  return snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
+  return snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
 }
 
 // Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
@@ -720,7 +741,7 @@ async function loadAll(name: string): Promise<void> {
 // compartan la misma carga (evita que la segunda retorne "ya cargado"
 // cuando en realidad la primera aún no terminó — race condition que
 // causaba Reportes X/Z en $0 tras reinicio).
-const loadingPromises: Record<string, Promise<void>> = {};
+const loadingPromises: Partial<Record<string, Promise<void>>> = {};
 async function ensureLoaded(name: string): Promise<void> {
   if (loadedAll[name]) return;
   if (loadingPromises[name]) return loadingPromises[name];
@@ -755,15 +776,20 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
     // Turso es la fuente operativa durante la migración. No debemos volver a
     // consultar servidor Turso para X/Z porque eso agrega latencia y puede devolver
     // un estado histórico distinto al de la caja actual.
-    const tursoItems = await tryTursoRead(name, { limit: 2000, terminalId });
-    if (tursoItems !== null) {
-      const items = tursoItems
-        .filter((item: any) => String(item?.fecha || '') > cutoff)
-        .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item?.terminalId || '') === terminalId);
+    let offset = 0;
+    let totalLoaded = 0;
+    while (true) {
+      const tursoItems = await tryTursoRead(name, { limit: 1000, offset, terminalId, fechaDesde: cutoff });
+      if (tursoItems === null) break;
+      const items = tursoItems.filter((item: any) => String(item?.fecha || '') > cutoff);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
-      SINCE_STAMP[key] = 'done';
-      console.info("[db-store] Ventana Turso de reporte cargada:", name, items.length, "registros");
-      return;
+      totalLoaded += items.length;
+      if (tursoItems.length < 1000) {
+        SINCE_STAMP[key] = 'done';
+        console.info("[db-store] Ventana Turso de reporte cargada:", name, totalLoaded, "registros");
+        return;
+      }
+      offset += tursoItems.length;
     }
 
     // Fallback únicamente cuando Turso no está configurado (503).
@@ -789,7 +815,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
           : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
         snap = await getDocs(fallbackQuery);
       }
-      const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean)
+      const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean)
         .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item.terminalId || '') === terminalId);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
@@ -835,29 +861,50 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
   if (name !== 'reportesZ' && SINCE_STAMP[key] === 'done') return;
 
   try {
-    // En Turso evitamos las consultas compuestas de servidor Turso para el historial.
-    const tursoItems = await tryTursoRead(name, { limit: 2000, ...(terminalId !== 'all' ? { terminalId } : {}) });
-    if (tursoItems !== null) {
-      const start = String(desde) + 'T00:00:00';
-      const endDate = new Date(String(hasta) + 'T00:00:00');
-      endDate.setDate(endDate.getDate() + 1);
-      const end = endDate.toISOString().slice(0, 19);
+    // Turso filtra en SQL y pagina todo el intervalo para no descargar
+    // registros ajenos al reporte ni truncar historiales extensos.
+    const start = String(desde) + 'T00:00:00';
+    // listRecords usa fechaDesde con operador estricto (>); consultar desde
+    // el día anterior evita perder registros exactamente a las 00:00 del inicio.
+    const queryStartDate = new Date(String(desde) + 'T00:00:00.000Z');
+    queryStartDate.setUTCDate(queryStartDate.getUTCDate() - 1);
+    const queryStart = queryStartDate.toISOString().slice(0, 10) + 'T00:00:00';
+    const endDate = new Date(String(hasta) + 'T00:00:00');
+    endDate.setDate(endDate.getDate() + 1);
+    const end = endDate.toISOString().slice(0, 19);
+    let offset = 0;
+    let loaded = 0;
+    while (true) {
+      const tursoItems = await tryTursoRead(name, {
+        limit: 1000,
+        offset,
+        fechaDesde: queryStart,
+        fechaHasta: end,
+        ...(terminalId !== 'all' ? { terminalId } : {}),
+      });
+      if (tursoItems === null) break;
       const items = tursoItems.filter((item: any) => {
         const fecha = String(item?.fecha || '');
-        const terminalOk = terminalId === 'all' || String(item?.terminalId || '') === terminalId;
-        return fecha >= start && fecha < end && terminalOk;
+        return fecha >= start && fecha < end;
       });
-      if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
-      SINCE_STAMP[key] = 'done';
-      return;
+      if (items.length) {
+        applyPatch({ [name]: mergeById((cache as any)[name], items) });
+        loaded += items.length;
+      }
+      if (tursoItems.length < 1000) {
+        SINCE_STAMP[key] = 'done';
+        console.info('[db-store] Rango Turso cargado:', name, loaded, 'registros');
+        return;
+      }
+      offset += tursoItems.length;
     }
 
     if (!db || !COLLECTIONS[name]) return;
-    const start = String(desde) + 'T00:00:00.000';
-    const endDate = new Date(String(hasta) + 'T00:00:00.000');
-    endDate.setDate(endDate.getDate() + 1);
-    const end = endDate.toISOString().slice(0, 23);
-    const filters: any[] = [where('fecha', '>=', start), where('fecha', '<', end)];
+    const firebaseStart = String(desde) + 'T00:00:00.000';
+    const firebaseEndDate = new Date(String(hasta) + 'T00:00:00.000');
+    firebaseEndDate.setDate(firebaseEndDate.getDate() + 1);
+    const firebaseEnd = firebaseEndDate.toISOString().slice(0, 23);
+    const filters: any[] = [where('fecha', '>=', firebaseStart), where('fecha', '<', firebaseEnd)];
     if (terminalId !== 'all') filters.push(where('terminalId', '==', terminalId));
 
     let cursor: QueryDocumentSnapshot | null = null;
@@ -866,7 +913,7 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
         ? query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
         : query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), limit(1000));
       const snap = await getDocs(q);
-      const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
+      const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
       cursor = snap.docs[snap.docs.length - 1];
@@ -894,7 +941,7 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
       ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(last), limit(pageSize))
       : query(collection(db, col), orderBy('fecha', 'desc'), limit(pageSize));
     const snap = await getDocs(q);
-    const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
+    const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
     cursors[name] = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
     applyPatch({ [name]: mergeById((cache as any)[name], items) });
     return items.length;
@@ -909,13 +956,8 @@ const SINCE_STAMP: Record<string, string> = {};
 // Kardex de un producto (where + orden). Si falta el índice compuesto, carga y filtra en memoria.
 async function kardex(productoId: string, max = 100): Promise<any[]> {
   try {
-    const tursoItems = await tryTursoRead('movimientos', { limit: Math.max(max * 4, max) });
-    if (tursoItems !== null) {
-      return tursoItems
-        .filter((m: any) => String(m?.productoId || '') === String(productoId))
-        .sort((a: any, b: any) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
-        .slice(0, max);
-    }
+    const tursoItems = await tryTursoRead('movimientos', { limit: max, productoId });
+    if (tursoItems !== null) return tursoItems;
     if (!db) return [];
     try {
       const snap = await getDocs(query(
@@ -924,13 +966,13 @@ async function kardex(productoId: string, max = 100): Promise<any[]> {
         orderBy('fecha', 'desc'),
         limit(max)
       ));
-      return snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
+      return snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
     } catch (e: any) {
       if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
         await ensureLoaded('movimientos');
         return (cache.movimientos || [])
           .filter(m => m.productoId === productoId)
-          .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+          .sort((a: any, b: any) => String(b.fecha).localeCompare(String(a.fecha)))
           .slice(0, max);
       }
       throw e;
@@ -1131,14 +1173,14 @@ function startMasterSync(name: string): () => void {
     const col = COLLECTIONS[name];
     const unsub = onSnapshot(
       collection(db, col),
-      (snap) => {
+      (snap: any) => {
         const items = snap.docs
-          .map(d => sanitizeRecord(d.data()))
+          .map((d: any) => sanitizeRecord(d.data()))
           .filter(Boolean);
         applyPatch({ [name]: items });
         if (name === 'clientes' || name === 'proveedores') loadedAll[name] = true;
       },
-      (err) => {
+      (err: any) => {
         if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
       }
     );
@@ -1198,11 +1240,11 @@ function init() {
   void (async () => {
     const usingTurso = await bootstrapProductos();
     if (usingTurso || !legacyRealtime) return;
-    teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap) => {
+    teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap: any) => {
       const val = snap.val() || {};
-      const items = Object.values(val).filter(Boolean);
+      const items = Object.values(val).filter((item): item is Product => Boolean(item));
       applyPatch({ productos: items });
-    }, (err) => { if (err?.code !== 'permission-denied') console.warn("sincronización de productos:", err); }));
+    }, (err: any) => { if (err?.code !== 'permission-denied') console.warn("sincronización de productos:", err); }));
   })();
 
   // 3) LISTAS VIVAS ENTRE CAJAS.
@@ -1215,18 +1257,21 @@ function init() {
   void (async () => {
     for (const name of ['cxc', 'cxp']) {
       try {
-        const tursoItems = await tryTursoRead(name, { limit: 2000 });
-        if (tursoItems !== null) {
-          applyPatch({ [name]: tursoItems.filter((x: any) => ['pendiente', 'parcial'].includes(String(x?.estado || ''))) });
+        const [pendientes, parciales] = await Promise.all([
+          tryTursoReadAll(name, { estado: 'pendiente' }),
+          tryTursoReadAll(name, { estado: 'parcial' }),
+        ]);
+        if (pendientes !== null && parciales !== null) {
+          applyPatch({ [name]: mergeById(pendientes, parciales) });
           continue;
         }
         const col = COLLECTIONS[name];
         teardownFns.push(onSnapshot(
           query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
-          (snap) => {
+          (snap: any) => {
             const currentArr = [...((cache as any)[name] || [])];
             const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-            snap.docChanges().forEach(change => {
+            snap.docChanges().forEach((change: any) => {
               const item = sanitizeRecord(change.doc.data());
               const id = String(item?.id || change.doc.id);
               if (change.type === 'removed') {
@@ -1235,7 +1280,7 @@ function init() {
             });
             applyPatch({ [name]: [...map.values()] });
           },
-          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+          (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
         ));
       } catch (e) {
         console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
@@ -1263,10 +1308,10 @@ function init() {
         const col = COLLECTIONS[name];
         teardownFns.push(onSnapshot(
           query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
-          (snap) => {
+          (snap: any) => {
             const currentArr = [...((cache as any)[name] || [])];
             const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-            snap.docChanges().forEach(change => {
+            snap.docChanges().forEach((change: any) => {
               const item = sanitizeRecord(change.doc.data());
               if (!item || !item.id) return;
               if (change.type === 'removed') map.delete(String(item.id));
@@ -1274,7 +1319,7 @@ function init() {
             });
             applyPatch({ [name]: [...map.values()] });
           },
-          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+          (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
         ));
       } catch (e) {
         console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
@@ -1368,6 +1413,31 @@ async function getSaleById(saleId: string): Promise<any | null> {
 }
 
 export const Store = {
+  /**
+   * Lectura íntegra y acotada de salidas para el informe SICOVEN.
+   * No depende del estado parcial de la interfaz ni de la paginación visual.
+   */
+  async loadPeriodicInventoryExits(from: string, to: string): Promise<{ movimientos: Movimiento[]; productos: Product[] }> {
+    const start = new Date(from + 'T00:00:00.000Z');
+    start.setUTCDate(start.getUTCDate() - 1);
+    const fechaDesde = start.toISOString().slice(0, 10);
+    const fechaHasta = to + 'T23:59:59.999';
+    const [movimientos, productos] = await Promise.all([
+      tryTursoReadAll('movimientos', { fechaDesde, fechaHasta }, 500),
+      tryTursoReadAll('productos', {}, 500),
+    ]);
+    if (movimientos === null || productos === null) {
+      throw new Error('No fue posible consultar el historial completo en Turso. No se utilizará información parcial.');
+    }
+    const filtered = movimientos.filter((m: any) => {
+      const date = String(m?.fecha || '').slice(0, 10);
+      return Number(m?.cantidad) < 0 && date >= from && date <= to;
+    });
+    return {
+      movimientos: filtered.map(sanitizeRecord).filter(Boolean) as Movimiento[],
+      productos: productos.map(sanitizeRecord).filter(Boolean) as Product[],
+    };
+  },
   ensurePurchaseHistory,
   applyInventoryMovementsTransaction,
   /**
@@ -1433,7 +1503,7 @@ export const Store = {
     if (tursoResult) return tursoResult;
 
     let result: any = null;
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, operationType, operationId);
       const saleRef = doc(db, 'ventas', String(saleId));
       const saleSnap = await tx.get(saleRef);
@@ -1486,7 +1556,7 @@ export const Store = {
     payment: any;
     journal?: any;
     terminalId?: string;
-  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string }> {
+  }): Promise<{ appliedUSD: number; appliedBS?: number; debts: any[]; receiptId?: string; queuedOffline?: boolean }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
@@ -1500,9 +1570,9 @@ export const Store = {
 
     const effectiveTerminalId = String(terminalId || '').trim();
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
-    let result = { appliedUSD: 0, debts: [] as any[] };
+    let result = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
     const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
       const terminalRef = effectiveTerminalId ? doc(db, 'terminales', effectiveTerminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1510,7 +1580,7 @@ export const Store = {
       if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Turso.');
       // concurrencia. Todo el resultado se reconstruye en cada intento para no
       // duplicar appliedUSD/debts en memoria.
-      const nextResult = { appliedUSD: 0, debts: [] as any[], receiptId: '' as string };
+      const nextResult = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
       const nextCounter = Number(terminalRemote?.proximoPagoProveedor) || 1;
       nextResult.receiptId = terminalRemote
         ? terminalSeries(terminalPrefix(terminalRemote, terminalId), 'CXP', nextCounter, 6)
@@ -1518,9 +1588,9 @@ export const Store = {
       const snap = await tx.get(q);
 
       const docs = snap.docs
-        .map(d => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
-        .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
-        .sort((a, b) => {
+        .map((d: any) => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
+        .filter((x: any) => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
+        .sort((a: any, b: any) => {
           const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
           return fecha !== 0 ? fecha : String(a.data.id || '').localeCompare(String(b.data.id || ''));
         });
@@ -1561,6 +1631,7 @@ export const Store = {
         tx.set(item.ref, sanitizeRecord(updated), { merge: true });
         nextResult.debts.push({ ...updated, appliedUSD: pago });
         nextResult.appliedUSD += pago;
+        nextResult.appliedBS += pago * (Number(payment.tasaAplicada) || 1);
       }
 
       if (nextResult.appliedUSD <= 0.001) {
@@ -1576,7 +1647,7 @@ export const Store = {
       }
       if (terminalRef && terminalRemote) tx.set(terminalRef, { proximoPagoProveedor: nextCounter + 1 }, { merge: true });
 
-      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: effectiveTerminalId }, { merge: false });
+      tx.set(operationRef, { tipo: 'PAGO-CXP-GLOBAL', operationId: opId, fecha: payment?.fecha || new Date().toISOString(), referencia: nextResult.receiptId, terminalId: terminalId || payment?.terminalId || journal?.terminalId || 'ADMIN' }, { merge: false });
       result = nextResult;
     });
 
@@ -1593,9 +1664,10 @@ export const Store = {
     amountUSD: number;
     amountBS?: number;
     payment: any;
+    paymentParts?: any[];
     journal?: any;
     terminalId?: string;
-  }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string }> {
+  }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string; queuedOffline?: boolean }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
@@ -1618,7 +1690,7 @@ export const Store = {
     let result = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
     const opId = String(operationId || payment?.id || ('CXC-GLOBAL|' + customerLabel + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
 
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-CXC-GLOBAL', opId);
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1633,9 +1705,9 @@ export const Store = {
 
       const snap = await tx.get(q);
       const docs = snap.docs
-        .map(d => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
-        .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
-        .sort((a, b) => {
+        .map((d: any) => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
+        .filter((x: any) => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
+        .sort((a: any, b: any) => {
           const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
           return fecha !== 0 ? fecha : String(a.data.id || '').localeCompare(String(b.data.id || ''));
         });
@@ -1715,7 +1787,7 @@ export const Store = {
         operationId: opId,
         fecha: payment?.fecha || new Date().toISOString(),
         referencia: nextResult.receiptId,
-        terminalId: effectiveTerminalId
+        terminalId: terminalId || payment?.terminalId || journal?.terminalId || 'ADMIN'
       }, { merge: false });
 
       nextResult.debts = nextResult.debts.map((d: any) => d);
@@ -1790,7 +1862,7 @@ export const Store = {
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     const opId = String(operationId || payment?.id || (collectionName + '|' + debtId + '|' + amountUSD + '|' + payment?.metodo + '|' + payment?.fecha));
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-DEUDA', opId);
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1884,7 +1956,7 @@ export const Store = {
     const debtRef = doc(db, 'cxp', debt.id);
     let result: any = null;
     const opId = String(operationId || debt.id);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'DEUDA-CXP', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda de proveedor ya existe en otra caja. Actualice y vuelva a intentar.');
@@ -2115,7 +2187,7 @@ export const Store = {
     const customerRef = doc(db, 'clientes', customerId);
     let result: any = null;
     const opId = String(operationId || customerId);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'ELIMINAR-CLIENTE', opId);
       const customerSnap = await tx.get(customerRef);
       if (!customerSnap.exists()) throw new Error('El cliente ya no existe o fue eliminado en otra caja.');
@@ -2152,12 +2224,12 @@ export const Store = {
         debtsSnap = await tx.get(query(collection(db, 'cxc')));
       }
       const debts = debtsSnap.docs;
-      const active = debts.find(d => {
+      const active = debts.find((d: any) => {
         const debt = d.data() as any;
         return debt.estado !== 'pagada' && (Number(debt.saldoUSD) || 0) > 0.001;
       });
       if (active) throw new Error('El cliente tiene una deuda pendiente en otra caja. Actualice y vuelva a intentar.');
-      debts.forEach(d => tx.delete(d.ref));
+      debts.forEach((d: any) => tx.delete(d.ref));
       tx.delete(customerRef);
       tx.set(operationRef, { tipo: 'ELIMINAR-CLIENTE', operationId: opId, fecha: new Date().toISOString(), referencia: customerId }, { merge: false });
       result = { customer, deletedDebts: debts.length };
@@ -2178,7 +2250,7 @@ export const Store = {
     const debtRef = doc(db, 'cxc', debtId);
     let result: any = null;
     const opId = String(operationId || debtId);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'ELIMINAR-CXC', opId);
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
@@ -2237,7 +2309,7 @@ export const Store = {
     const debtRef = doc(db, 'cxc', debt.id);
     let result: any = null;
     const opId = String(operationId || debt.id);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'DEUDA-CXC', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda ya existe en otra caja. Actualice y vuelva a intentar.');
@@ -2295,7 +2367,7 @@ export const Store = {
     let journalResult: any = null;
     const opId = String(operationId || (collectionName + '|' + debtId + '|' + paymentId + '|REVERSE'));
 
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'REVERSAR-PAGO', opId);
       // Cada reintento debe reconstruir completamente el resultado a partir
       // del estado remoto para evitar residuos de un intento anterior.
@@ -2458,8 +2530,8 @@ export const Store = {
       const prevArr = ((prev as any)[k] || []) as any[];
       const newArr = ((patch as any)[k] || []) as any[];
       if (k === 'productos') {
-        const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
-        const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const prevById = new Map(prevArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
+        const newById = new Map(newArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
         const changes: Array<{ before?: any | null; after?: any | null }> = [];
         const deletedIds: string[] = [];
         newById.forEach((after, id) => {
@@ -2499,8 +2571,8 @@ export const Store = {
           throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
         }
       } else if (['clientes', 'proveedores', 'movimientos', 'libroDiario'].includes(String(k))) {
-        const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
-        const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const prevById = new Map(prevArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
+        const newById = new Map(newArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
         const records = [...newById.values()].filter((after: any) => {
           const before = prevById.get(String(after.id));
           return !before || JSON.stringify(sanitizeRecord(before)) !== JSON.stringify(sanitizeRecord(after));
@@ -2715,7 +2787,7 @@ export const Utils = {
     const productMovs = movimientos
       .filter(m => m.productoId === productoId)
       .slice()
-      .sort((a, b) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
+      .sort((a: any, b: any) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
     // Saldo de apertura: stockAntes del primer movimiento pre-existente (0 si no hay).
     let base = 0;
     for (const m of productMovs) {

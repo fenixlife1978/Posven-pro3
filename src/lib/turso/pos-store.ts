@@ -351,7 +351,7 @@ export async function getRecord(table: TursoStoreTable, id: string): Promise<any
 
 export async function listRecords(
   table: TursoStoreTable,
-  options: { limit?: number; offset?: number; terminalId?: string; estado?: string } = {},
+  options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {},
 ): Promise<any[]> {
   assertTursoReady();
   const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 10000);
@@ -366,10 +366,24 @@ export async function listRecords(
     filters.push("json_extract(data_json,'$.estado')=?");
     args.push(String(options.estado));
   }
+  if (options.fechaDesde) {
+    filters.push("fecha>?");
+    args.push(String(options.fechaDesde));
+  }
+  if (options.fechaHasta) {
+    filters.push("fecha<=?");
+    args.push(String(options.fechaHasta));
+  }
+  if (options.productoId) {
+    filters.push("json_extract(data_json,'$.productoId')=?");
+    args.push(String(options.productoId));
+  }
   const where = filters.length ? ' WHERE ' + filters.join(' AND ') : '';
   // productos no tiene columna fecha; se ordena por updated_at. Las demás
   // tablas operativas sí conservan fecha para ordenar cronológicamente.
-  const orderBy = table === 'productos' ? 'updated_at DESC' : "COALESCE(fecha,'') DESC";
+  const orderBy = table === 'productos'
+    ? 'updated_at DESC, id DESC'
+    : "COALESCE(fecha,'') DESC, id DESC";
   const result = await tursoExecute({
     sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
     args,
@@ -757,6 +771,9 @@ export async function createSaleTransaction(params: {
         fecha: now,
         referencia: saleType + ' ' + reciboId + (deduction.references.length > 1 ? ' - SALIDA AGRUPADA' : ''),
         terminalId: terminalId || 'GLOBAL',
+        costoUnitarioUSD: Number(p.costoUSD) || 0,
+        costoUnitarioBs: (Number(p.costoUSD) || 0) * Number(tasa),
+        tasaBCV: Number(tasa),
       });
     }
 
@@ -765,7 +782,7 @@ export async function createSaleTransaction(params: {
       .reduce((s, p) => s + (Number(p.montoUSD) || 0) * 0.03, 0);
 
     const sale = {
-      id: reciboId, fecha: now, cliente: clientName, items: cart.map(x => ({ ...x })),
+      id: reciboId, fecha: now, cliente: clientName, items: cart.map((x: any) => { const product = products.get(String(x.productoId)); return { ...x, ...(product && !x.ventaLibreBS ? { costoUnitarioUSD: Number(product.costoUSD) || 0, costoUnitarioBs: (Number(product.costoUSD) || 0) * Number(tasa), tasaBCV: Number(tasa) } : {}) }; }),
       subtotalUSD: totals.total, descuentoUSD: 0, totalUSD: totals.total, totalBS: totals.total * tasa,
       metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
       estado: 'completada', type: saleType, received: totalPaid,
@@ -2000,7 +2017,7 @@ export async function createPurchaseTransaction(params:any){
     if(existing.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una compra con la misma factura, proveedor y fecha.');
     const debtRows=await tx.execute({sql:"SELECT id,data_json FROM cxp WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]});
     if(debtRows.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una cuenta por pagar para esta factura y proveedor.');
-    const ids=[...new Set(items.map((i:any)=>String(i.productoId||'')).filter(Boolean))], itemBy=new Map<string,any>(); for(const i of items){const pid=String(i.productoId),p=itemBy.get(pid);itemBy.set(pid,p?{...p,cantidad:(Number(p.cantidad)||0)+(Number(i.cantidad)||0),subtotalUSD:(Number(p.subtotalUSD)||0)+(Number(i.subtotalUSD)||0)}:{...i});}
+    const ids: string[] = Array.from(new Set<string>(items.map((i:any)=>String(i.productoId||'')).filter((id:string)=>Boolean(id)))), itemBy=new Map<string,any>(); for(const i of items){const pid=String(i.productoId),p=itemBy.get(pid);itemBy.set(pid,p?{...p,cantidad:(Number(p.cantidad)||0)+(Number(i.cantidad)||0),subtotalUSD:(Number(p.subtotalUSD)||0)+(Number(i.subtotalUSD)||0)}:{...i});}
     const statements:TursoStatement[]=[rowStatement('compras',purchase)];
     const updatedProducts:any[]=[];
     for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en Turso.');const i=itemBy.get(pid),qty=Number(i.cantidad)||0,cost=Number(i.costoUnitarioUSD)||0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
@@ -2067,7 +2084,7 @@ export async function deletePurchaseTransaction(params:any){
     if(!purchase&&!purchases.length&&!debts.length&&!deleted.length)
       throw new Error('La compra ya no existe en Turso.');
 
-    const affected=[...new Set(deleted.map((d:any)=>String(d.productoId||'')).filter(Boolean))];
+    const affected: string[] = Array.from(new Set<string>(deleted.map((d:any)=>String(d.productoId||'')).filter((id:string)=>Boolean(id))));
     const statements:TursoStatement[]=[];
     const updatedProducts:any[]=[];
     const updatedMovements:any[]=[];
