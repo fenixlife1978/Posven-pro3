@@ -28,7 +28,6 @@ export default function GlobalControlModule({ state, updateState }: { state: App
 
   useEffect(() => {
     let cancelled = false;
-    let unsubscribe: (() => void) | null = null;
     setLoadingUsers(true);
 
     (async () => {
@@ -48,7 +47,6 @@ export default function GlobalControlModule({ state, updateState }: { state: App
 
     return () => {
       cancelled = true;
-      if (unsubscribe) unsubscribe();
     };
   }, []);
 
