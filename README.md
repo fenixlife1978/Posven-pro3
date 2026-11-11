@@ -1,32 +1,72 @@
-# POSVEN-PRO3
+# POSVEN3 — Aplicación de escritorio
 
-Aplicación de punto de venta para Windows, construida con Next.js y Electron.
+POSVEN3 es una aplicación de punto de venta para Windows, construida con Electron y Next.js. Está diseñada para operar con una base de datos SQLite local centralizada en una computadora servidor y varias computadoras cliente dentro de la misma red.
 
-## Arquitectura
+## Arquitectura de escritorio y red local
 
-- Base de datos operativa: Turso (libSQL/SQLite remoto).
-- Autenticación: sesiones propias de la aplicación y contraseñas con hash.
-- Aplicación de escritorio: instalador Windows x64 generado mediante GitHub Actions.
-- Compilación: exclusivamente en runner Windows; no se construyen paquetes Linux.
-- Las credenciales de Turso deben configurarse en el servidor que ejecuta las API y nunca incrustarse en el frontend ni en el instalador.
+- **Una PC SERVIDOR** aloja el servicio local de POSVEN3 y el único archivo SQLite operativo.
+- **Varias PC CLIENTE** se conectan a la IP privada y puerto del servidor mediante la aplicación de escritorio.
+- Todas las cajas comparten los mismos usuarios, ventas, inventario, movimientos, compras, caja, CxC, CxP, terminales, reportes Z, catálogos y configuración.
+- El servidor escucha en el puerto **4580** por defecto.
+- Los clientes actualizan sus vistas en segundo plano consultando el servidor LAN.
+- No se necesita Internet para operar mientras el servidor y la red local sigan funcionando.
+- Los clientes no abren ni comparten directamente el archivo SQLite; todas las operaciones pasan por la API LAN autenticada.
+- Si se apaga el servidor o se pierde la LAN, los clientes no confirman ventas ni escriben en colas independientes. Deben reconectar con el servidor.
 
-## Generar el instalador
+## Ubicación de la base de datos
 
-Abre la pestaña Actions, ejecuta Build Windows EXE (Turso only) y descarga el artefacto PosVEN-Pro3-Windows-Installer.
+En Windows, el archivo se guarda fuera del instalador, en el directorio de datos de usuario de Electron:
 
-## Configuración local de Turso para Windows
+`%APPDATA%/PosVEN Pro/data/posven-pro3.sqlite`
 
-La aplicación de escritorio carga un archivo `.env` externo al instalador desde la carpeta de datos de usuario que Electron devuelve mediante `app.getPath('userData')`. Crea ese archivo con este contenido:
+Los respaldos de seguridad previos a una restauración se guardan en `data/backups`. Reinstalar la aplicación no debe borrar este directorio de datos.
 
-```dotenv
-TURSO_DATABASE_URL=libsql://TU-BASE.turso.io
-TURSO_AUTH_TOKEN=TU_TOKEN
-# Opcional: contraseña inicial del administrador semilla si no existe ningún administrador
-POSVEN_SEED_ADMIN_PASSWORD=CAMBIA_ESTA_CLAVE
-```
+## Primera configuración
 
-No reemplaces los valores por credenciales reales dentro del repositorio. No compartas el archivo `.env` ni lo incluyas en el instalador. En un despliegue con API remota, estas credenciales deben permanecer en el servidor, no en el equipo cliente.
+1. Instala POSVEN3 en la computadora que funcionará como servidor.
+2. En el primer inicio selecciona **SERVIDOR**.
+3. POSVEN3 mostrará la dirección IP privada y el puerto para conectar las demás computadoras.
+4. En cada PC cliente instala POSVEN3, selecciona **CLIENTE** e introduce la IP y el puerto mostrados por el servidor.
+5. Se recomienda reservar la IP del servidor en el router para evitar que cambie. Si cambia, el cliente permite volver a configurar la dirección.
+6. En Windows Firewall permite conexiones privadas entrantes al puerto 4580.
 
-## Administrador semilla (primer inicio o reinicio de datos)
+La computadora servidor debe permanecer encendida y con POSVEN3 abierto mientras operen las cajas cliente.
 
-Antes de validar el login, la aplicación comprueba en Turso si existe al menos un administrador activo. Si no existe, crea o recupera el usuario semilla `admin` con correo `admin@posven.local` y rol administrador. La contraseña inicial predeterminada es `admin123`; se recomienda definir `POSVEN_SEED_ADMIN_PASSWORD` en el `.env` externo antes del primer inicio. Si el sistema ya tiene un administrador activo, no crea una cuenta semilla adicional. La creación es idempotente: reinstalar la aplicación no borra usuarios de Turso, y si se vacía la tabla de usuarios, el bootstrap se ejecuta en el siguiente intento de inicio de sesión.
+## Usuarios
+
+Las contraseñas se almacenan con hash scrypt y las sesiones residen en SQLite. Los roles disponibles son administrador y cajero.
+
+En una instalación nueva se crea el usuario semilla:
+- Usuario: `admin`
+- Correo: `admin@posven.local`
+- Contraseña inicial: `admin123`
+
+Cambia esa contraseña antes de utilizar el sistema con operaciones reales.
+
+## Respaldos y restauración desde POSVEN2
+
+POSVEN3 genera respaldos JSON desde SQLite local. Para recuperar información de POSVEN2 utiliza el respaldo administrativo completo que genera POSVEN2; no copies archivos internos de bases de datos remotas.
+
+La restauración valida tablas, catálogos, versión y conteos, crea una copia de seguridad de la SQLite actual y reemplaza los datos dentro de una transacción. Al terminar ejecuta comprobaciones de integridad y claves foráneas. Si algo falla, la transacción se revierte y la base anterior permanece disponible.
+
+Los respaldos administrativos de POSVEN2 no contienen hashes de contraseña. POSVEN3 conserva los identificadores y datos de cada usuario, genera contraseñas temporales aleatorias y descarga un archivo privado con esas claves. Los hashes presentes en respaldos SQLite de POSVEN3 se conservan.
+
+## Generar el instalador Windows
+
+GitHub Actions compila el instalador Windows x64. En la pestaña **Actions**, ejecuta el flujo **Build Windows EXE artifacts (no GitHub Release)** y descarga el artefacto **PosVEN-Pro3-Windows-Installer** cuando el trabajo finalice correctamente.
+
+Comandos locales:
+- `npm install`
+- `npm run build`
+- `npx electron-builder --win --publish never`
+
+## Pruebas de aceptación antes de producción
+
+- Inicio de sesión y creación del administrador semilla.
+- Una PC servidor y al menos tres PC cliente.
+- Ventas simultáneas, inventario y Kardex entre cajas.
+- Compras, caja, CxC, CxP y contabilidad.
+- Cierre Z transaccional, bloqueo de doble cierre y correlativo nuevo al reabrir.
+- Caída de Internet manteniendo la LAN.
+- Desconexión y reconexión de un cliente.
+- Respaldo, restauración POSVEN2, recuperación de usuarios y rollback.
