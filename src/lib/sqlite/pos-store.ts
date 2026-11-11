@@ -568,7 +568,7 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       args: [],
     });
     if (!seedResult.rows.length) throw new Error('No se encontró el administrador semilla local. Inicie sesión nuevamente antes de restaurar.');
-    const seedAdmin = seedResult.rows[0];
+
 
     const clearTables = [
       'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
