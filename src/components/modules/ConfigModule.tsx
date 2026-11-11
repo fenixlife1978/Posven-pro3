@@ -34,10 +34,10 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     if (isNaN(n) || n <= 0) return alert('Tasa inválida');
     try {
       await Store.patchConfig({ tasa: n });
-      toast({ title: "Sincronizado", description: "Tasa de cambio guardada en Turso y disponible después de recargar." });
+      toast({ title: "Sincronizado", description: "Tasa de cambio guardada en SQLite local y disponible después de recargar." });
     } catch (error: any) {
-      console.error('Error guardando tasa en Turso:', error);
-      toast({ variant: 'destructive', title: 'No se guardó la tasa', description: error?.message || 'Turso no confirmó el cambio.' });
+      console.error('Error guardando tasa en SQLite local:', error);
+      toast({ variant: 'destructive', title: 'No se guardó la tasa', description: error?.message || 'SQLite local no confirmó el cambio.' });
     }
   };
 
@@ -82,7 +82,8 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
 
     try {
       await cargarRespaldoDesdeArchivo(file, (progress) => setBackupProgress(progress));
-      toast({ title: "Respaldo Restaurado", description: "La restauración terminó correctamente. Se recomienda recargar la aplicación." });
+      toast({ title: "Respaldo Restaurado", description: "La restauración SQLite terminó correctamente. La aplicación se actualizará ahora." });
+      setTimeout(() => window.location.reload(), 900);
     } catch (err: any) {
       console.error('❌ Error restaurando respaldo:', err);
       setBackupError(err?.message || 'No se pudo cargar el respaldo seleccionado.');
@@ -95,7 +96,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const handleRepararCxcMigrado = async () => {
     const confirmar = window.confirm(
       'REPARAR CxC MIGRADO\n\n' +
-      'Se revisarán las cuentas por cobrar existentes en Turso y se sincronizarán con la venta/factura original cuando exista.\n\n' +
+      'Se revisarán las cuentas por cobrar existentes en SQLite local y se sincronizarán con la venta/factura original cuando exista.\n\n' +
       'La reparación NO modifica pagos, abonos ni saldo pendiente.\n\n' +
       '¿Desea continuar?'
     );
@@ -104,7 +105,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     setIsRepairingCxc(true);
     setReparacionCxcResultado(null);
     try {
-      const response = await fetch('/api/turso/repair-cxc', {
+      const response = await fetch('/api/pos/repair-cxc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -129,28 +130,28 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   };
 
   const formatearSistema = async () => {
-    const confirmMsg = '⚠️ Esta acción eliminará los datos operativos almacenados en Turso. El administrador semilla se conservará. ¿Desea continuar?';
+    const confirmMsg = '⚠️ Esta acción eliminará los datos operativos almacenados en SQLite local. El administrador semilla se conservará. ¿Desea continuar?';
     if (!confirm(confirmMsg)) return;
     setIsFormatting(true);
     try {
-      const response = await fetch('/api/turso/store', {
+      const response = await fetch('/api/pos/store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ operation: 'factoryReset' })
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.ok === false) throw new Error(data?.error || 'Turso no confirmó el formateo.');
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || 'SQLite local no confirmó el formateo.');
       if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('posven_apertura_done');
         localStorage.removeItem('posven_last_cxp_alert');
       }
       await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-      toast({ title: 'Sistema Formateado', description: 'Turso fue reiniciado y el administrador semilla fue conservado.' });
+      toast({ title: 'Sistema Formateado', description: 'SQLite local fue reiniciado y el administrador semilla fue conservado.' });
       window.location.href = '/login';
     } catch (error: any) {
-      console.error('Error en formateo Turso:', error);
+      console.error('Error en formateo SQLite local:', error);
       toast({ variant: 'destructive', title: 'Fallo en Limpieza', description: error?.message || 'No se pudo completar el formateo.' });
     } finally {
       setIsFormatting(false);
@@ -249,7 +250,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
       <div className="card shadow-lg border-amber-500/30 bg-amber-50 border-2">
         <div className="card-head border-b border-amber-500/20 px-5 py-4">
           <h3 className="text-amber-800 font-black uppercase italic text-xs flex items-center gap-2">
-            <Database className="w-4 h-4" /> Mantenimiento Turso
+            <Database className="w-4 h-4" /> Mantenimiento SQLite local
           </h3>
         </div>
         <div className="card-body p-6 bg-white">
