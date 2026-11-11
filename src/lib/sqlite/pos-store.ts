@@ -564,7 +564,7 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
       Object.assign(config, data.config);
     }
     for (const key of configKeys) {
-      if (data[key] !== undefined) config[key] = data[key];
+      if (key !== 'config' && data[key] !== undefined) config[key] = data[key];
     }
     await tx.execute({
       sql: 'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
@@ -588,7 +588,8 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
         continue;
       }
       if (!['administrador','cajero'].includes(role)) continue;
-      const id = String(user?.id || user?.uid || ('usr_' + randomId()));
+      const id = String(user?.id || user?.uid || '').trim();
+      if (!id) { skippedUsersWithoutHash++; continue; }
       const email = String(user?.email || '').trim().toLowerCase() || null;
       const nombre = String(user?.nombre || username).trim();
       const inserted = await tx.execute({
@@ -615,10 +616,6 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
       totalRows,
     };
   });
-}
-
-function randomId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 export async function getAppConfig(): Promise<any> {
