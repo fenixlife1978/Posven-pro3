@@ -47,7 +47,7 @@ Cambia esa contraseña antes de utilizar el sistema con operaciones reales.
 
 POSVEN3 genera respaldos JSON desde SQLite local. Para recuperar información de POSVEN2 utiliza el respaldo administrativo completo que genera POSVEN2; no copies archivos internos de bases de datos remotas.
 
-La restauración valida tablas, catálogos, versión y conteos, crea una copia de seguridad de la SQLite actual y reemplaza los datos dentro de una transacción. Al terminar ejecuta comprobaciones de integridad y claves foráneas. Si algo falla, la transacción se revierte y la base anterior permanece disponible.
+La restauración valida tablas, catálogos, versión y conteos, crea una copia de seguridad de la SQLite actual y reemplaza los datos dentro de una transacción. Al terminar ejecuta comprobaciones de integridad y claves foráneas. Si algo falla, la transacción se revierte y la base anterior permanece disponible. La restauración invalida las sesiones de las otras cajas; deberán iniciar sesión nuevamente.
 
 Los respaldos administrativos de POSVEN2 no contienen hashes de contraseña. POSVEN3 conserva los identificadores y datos de cada usuario, genera contraseñas temporales aleatorias y descarga un archivo privado con esas claves. Los hashes presentes en respaldos SQLite de POSVEN3 se conservan.
 
