@@ -457,6 +457,170 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
   });
 }
 
+export async function restoreBackupTransaction(params: { user: { rol: string }; backup: any }) {
+  assertSQLiteReady();
+  if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+
+  const backup = params.backup;
+  if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object') {
+    throw new Error('El archivo no es un respaldo POSVEN válido.');
+  }
+  const data = backup.data as Record<string, any>;
+  const tableKeys: Array<{ key: string; table: SQLiteStoreTable }> = [
+    { key: 'productos', table: 'productos' },
+    { key: 'movimientos', table: 'movimientos' },
+    { key: 'ventas', table: 'ventas' },
+    { key: 'cxc', table: 'cxc' },
+    { key: 'cxp', table: 'cxp' },
+    { key: 'clientes', table: 'clientes' },
+    { key: 'proveedores', table: 'proveedores' },
+    { key: 'devoluciones', table: 'devoluciones' },
+    { key: 'anulaciones', table: 'anulaciones' },
+    { key: 'terminales', table: 'terminales' },
+    { key: 'libroDiario', table: 'libroDiario' },
+    { key: 'reportesZ', table: 'reportesZ' },
+    { key: 'cashHistory', table: 'caja' },
+    { key: 'caja', table: 'caja' },
+    { key: 'compras', table: 'compras' },
+  ];
+  const catalogNames = [
+    'categorias','departamentos','marcas','presentaciones',
+    'productCategories','productUnits','productColors','productSizes',
+    'brands','groups','subgroups','lines','suppliers',
+  ];
+  const configKeys = [
+    'tasa','pinDevolucion','isInitialized','empresa','proximoRecibo',
+    'proximaDevolucion','proximaAnulacion','ultimoZ','fechaUltimoZ',
+    'acumuladoHistorico','fondoCajaHoyUSD','fondoCajaHoyBS','isCashOpen',
+    'cashData','config',
+  ];
+  let totalRows = 0;
+  for (const entry of tableKeys) {
+    const rows = Array.isArray(data[entry.key]) ? data[entry.key] : [];
+    totalRows += rows.length;
+  }
+  for (const name of catalogNames) {
+    if (Array.isArray(data[name])) totalRows += data[name].length;
+  }
+  if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
+  if (Number(backup.version || 0) < 1 || Number(backup.version || 0) > 3) {
+    throw new Error('La versión del respaldo no es compatible con POSVEN3.');
+  }
+
+  return sqliteInteractiveTransaction(async tx => {
+    const seed = await tx.execute({
+      sql: "SELECT id,username FROM users WHERE is_seed_admin=1 LIMIT 1",
+      args: [],
+    });
+    if (!seed.rows.length) throw new Error('No se encontró el administrador semilla local. Inicie sesión nuevamente antes de restaurar.');
+
+    const clearTables = [
+      'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+      'devoluciones','anulaciones','terminales','libro_diario','reportes_z','caja',
+      'compras','operaciones','auditoria_sistema','legacy_documents','migration_runs',
+      'catalogos','app_config','sessions',
+    ];
+    for (const name of clearTables) {
+      await tx.execute({ sql: 'DELETE FROM ' + name, args: [], wantRows: false });
+    }
+    await tx.execute({
+      sql: "DELETE FROM users WHERE is_seed_admin=0",
+      args: [],
+      wantRows: false,
+    });
+    await tx.execute({
+      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE is_seed_admin=1",
+      args: [],
+      wantRows: false,
+    });
+
+    const counts: Record<string, number> = {};
+    for (const entry of tableKeys) {
+      if (entry.key === 'caja' && Array.isArray(data.cashHistory)) continue;
+      const rows = Array.isArray(data[entry.key]) ? data[entry.key] : [];
+      let inserted = 0;
+      for (const row of rows) {
+        if (!row || typeof row !== 'object' || !String(row.id || '').trim()) {
+          throw new Error('El respaldo contiene un registro sin identificador en ' + entry.key + '.');
+        }
+        await tx.execute(rowStatement(entry.table, row));
+        inserted++;
+      }
+      counts[entry.table] = (counts[entry.table] || 0) + inserted;
+    }
+
+    for (const name of catalogNames) {
+      const rows = Array.isArray(data[name]) ? data[name] : [];
+      await tx.execute({
+        sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP',
+        args: [name, JSON.stringify(clean(rows)), '{}'],
+        wantRows: false,
+      });
+      counts['catalogo:' + name] = rows.length;
+    }
+
+    const config: Record<string, any> = {};
+    if (data.config && typeof data.config === 'object' && !Array.isArray(data.config)) {
+      Object.assign(config, data.config);
+    }
+    for (const key of configKeys) {
+      if (data[key] !== undefined) config[key] = data[key];
+    }
+    await tx.execute({
+      sql: 'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
+      args: ['general', JSON.stringify(clean(config))],
+      wantRows: false,
+    });
+
+    // Only portable scrypt hashes can be imported. Older POSVEN2 exports may
+    // contain user metadata without hashes; those accounts are reported as
+    // skipped instead of being assigned an unknown or insecure password.
+    const backupUsers = Array.isArray(data.users) ? data.users : [];
+    let importedUsers = 0;
+    let skippedUsersWithoutHash = 0;
+    for (const user of backupUsers) {
+      const username = String(user?.username || user?.email || '').trim().toLowerCase();
+      const hash = String(user?.password_hash || user?.passwordHash || '');
+      const role = String(user?.rol || user?.role || '');
+      if (!username || username === 'admin' || user?.isSeedAdmin || user?.is_seed_admin) continue;
+      if (!/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/i.test(hash)) {
+        skippedUsersWithoutHash++;
+        continue;
+      }
+      if (!['administrador','cajero'].includes(role)) continue;
+      const id = String(user?.id || user?.uid || ('usr_' + randomId()));
+      const email = String(user?.email || '').trim().toLowerCase() || null;
+      const nombre = String(user?.nombre || username).trim();
+      const inserted = await tx.execute({
+        sql: 'INSERT OR IGNORE INTO users(id,username,email,nombre,rol,password_hash,acceso_bloqueado,is_seed_admin,fecha_creacion,data_json) VALUES(?,?,?,?,?,?,0,0,?,?)',
+        args: [id, username, email, nombre, role, hash, String(user?.fechaCreacion || user?.fecha_creacion || new Date().toISOString()), JSON.stringify(clean(user))],
+        wantRows: false,
+      });
+      importedUsers += inserted.affected_row_count;
+    }
+
+    const integrity = await tx.execute({ sql: 'PRAGMA integrity_check' });
+    if (integrity.rows.some((row: any) => String(row.integrity_check || '').toLowerCase() !== 'ok')) {
+      throw new Error('La validación de integridad SQLite falló; la restauración fue cancelada.');
+    }
+    const foreignKeys = await tx.execute({ sql: 'PRAGMA foreign_key_check' });
+    if (foreignKeys.rows.length) throw new Error('La validación de claves foráneas falló; la restauración fue cancelada.');
+
+    return {
+      ok: true,
+      counts,
+      importedUsers,
+      skippedUsersWithoutHash,
+      preservedAdmin: String(seed.rows[0].username || 'admin'),
+      totalRows,
+    };
+  });
+}
+
+function randomId() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 export async function getAppConfig(): Promise<any> {
   assertSQLiteReady();
   const result = await sqliteExecute({ sql: 'SELECT data_json FROM app_config WHERE id=? LIMIT 1', args: ['general'] });
