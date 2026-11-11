@@ -583,7 +583,7 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
   });
 }
 
-export async function restoreBackupTransaction(params: { user: { id: string; rol: string; nombre?: string; username?: string }; backup: any }) {
+export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any }) {
   assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
 
@@ -964,7 +964,7 @@ export async function createSaleTransaction(params: {
   saleType?: string;
   credit?: { customer: any; debtId: string };
   cajeroId?: string;
-  user: { id: string; rol: string };
+  user: { id: string; rol: string; nombre?: string; username?: string };
 }) {
   assertSQLiteReady();
   const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now,
@@ -1547,7 +1547,7 @@ export async function createZClosureTransaction(params: {
 export async function applyDebtPaymentTransaction(params: {
   operationId?: string; collection: 'cxc' | 'cxp'; debtId: string; amountUSD: number;
   amountBS?: number; payment: any; journal?: any | any[]; sale?: any; customerCedula?: string; terminalId?: string;
-  user: { id: string; rol: string };
+  user: { id: string; rol: string; nombre?: string; username?: string };
 }) {
   assertSQLiteReady();
   const { operationId, collection, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
@@ -2389,7 +2389,7 @@ export async function createCashMovementTransaction(params: {
   operationId: string;
   movement: any;
   terminalId?: string;
-  user: { id: string; rol: string };
+  user: { id: string; rol: string; nombre?: string; username?: string };
 }) {
   assertSQLiteReady();
   const { operationId, movement, terminalId } = params;
