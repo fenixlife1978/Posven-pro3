@@ -17,6 +17,7 @@ export async function crearRespaldo(): Promise<BackupFile> {
   const response = await fetch('/api/pos/backup', {
     credentials: 'include',
     cache: 'no-store',
+    signal: AbortSignal.timeout(120000),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body?.ok !== true || body?.backup?.app !== 'posven-pro') {
@@ -80,6 +81,7 @@ async function restaurarBackupLocal(
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     cache: 'no-store',
+    signal: AbortSignal.timeout(120000),
     body: JSON.stringify({ action: 'restore', backup }),
   });
   const raw = await response.text();
