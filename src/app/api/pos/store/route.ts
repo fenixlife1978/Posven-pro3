@@ -202,9 +202,9 @@ export async function POST(request: Request) {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result=await reverseDebtPaymentTransaction(body); return NextResponse.json({ok:true,...result});
       }
-      case 'createPurchase': { const result=await createPurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
-      case 'deletePurchase': { const result=await deletePurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
-      case 'deleteCustomerDebt': { const result=await deleteCustomerDebtTransaction(body); return NextResponse.json({ok:true,...result}); }
+      case 'createPurchase': { if (user.rol !== 'administrador') throw new Error('Se requiere administrador.'); const result=await createPurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
+      case 'deletePurchase': { if (user.rol !== 'administrador') throw new Error('Se requiere administrador.'); const result=await deletePurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
+      case 'deleteCustomerDebt': { if (user.rol !== 'administrador') throw new Error('Se requiere administrador.'); const result=await deleteCustomerDebtTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deleteCustomerAndDebts': {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result=await deleteCustomerAndDebtsTransaction(body); return NextResponse.json({ok:true,...result});
