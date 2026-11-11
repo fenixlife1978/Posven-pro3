@@ -196,9 +196,10 @@ export async function getSessionUser(sessionId: string | null | undefined) {
   if (!result.rows[0]) return null;
   const user = mapUser(result.rows[0]);
   if (user.accesoBloqueado) return null;
+  const touchBefore = new Date(Date.now() - 30000).toISOString();
   await sqliteExecute({
-    sql: `UPDATE sessions SET last_seen_at=? WHERE id=?`,
-    args: [nowIso(), sessionId],
+    sql: `UPDATE sessions SET last_seen_at=? WHERE id=? AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+    args: [nowIso(), sessionId, touchBefore],
     wantRows: false,
   });
   return user;
