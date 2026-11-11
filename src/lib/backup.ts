@@ -88,6 +88,9 @@ async function restaurarBackupLocal(
   if (!response.ok || body?.ok === false) {
     throw new Error(body?.error || ('Error HTTP ' + response.status + ' al restaurar el respaldo.'));
   }
+  if (body.sessionId && typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem('posven_session_id', String(body.sessionId));
+  }
   descargarCredencialesRestauradas(Array.isArray(body.temporaryCredentials) ? body.temporaryCredentials : []);
   onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración SQLite completada. Se conservó el administrador local: ' + String(body.preservedAdmin || 'admin') + '. Usuarios recuperados: ' + Number(body.importedUsers || 0) + '. Claves temporales generadas: ' + (Array.isArray(body.temporaryCredentials) ? body.temporaryCredentials.length : 0) + '.' });
 }
