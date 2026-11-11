@@ -6,10 +6,11 @@ export interface BackupFile {
   createdAt: string;
   data: Record<string, unknown>;
   meta?: {
-    sqliteTables: Record<string, number>;
-    catalogs: Record<string, number>;
-    source: 'sqlite-local';
-    complete: true;
+    sqliteTables?: Record<string, number>;
+    tursoTables?: Record<string, number>;
+    catalogs?: Record<string, number>;
+    source?: string;
+    complete?: boolean;
   };
 }
 
