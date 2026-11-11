@@ -1,11 +1,12 @@
 import type { NextConfig } from 'next';
 
-const isTursoServerBuild = process.env.TURSO_MIGRATION_BUILD === '1' || Boolean(process.env.VERCEL);
-
 const nextConfig: NextConfig = {
-  output: isTursoServerBuild ? undefined : 'export',
+  // POSVEN3 is a desktop application whose local Node server hosts the UI/API.
+  // Static export would remove the server routes required by the LAN host.
+  output: undefined,
   trailingSlash: true,
-  distDir: isTursoServerBuild ? '.next' : 'out',
+  distDir: '.next',
+  serverExternalPackages: ['better-sqlite3'],
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
   images: {
