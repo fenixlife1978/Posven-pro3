@@ -2417,7 +2417,11 @@ export const Store = {
           await syncLegacyRealtimeProducts(prevArr, toSync);
         })().catch(e => console.error("Error persistiendo productos:", e)));
       } else if (k === 'terminales') {
-        // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete en el servidor LAN.
+        // Las terminales se escriben exclusivamente mediante operaciones específicas del servidor LAN.
+      } else if (['ventas', 'cxc', 'cxp', 'devoluciones', 'anulaciones', 'reportesZ', 'caja', 'compras'].includes(String(k))) {
+        // Estas tablas solo cambian dentro de sus transacciones de negocio.
+        // Store.set refleja en memoria el resultado confirmado, pero nunca
+        // intenta reemplazarlas mediante una sincronización genérica por arrays.
       } else if (['clientes', 'proveedores', 'movimientos', 'libroDiario'].includes(String(k))) {
         const prevById = new Map(prevArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
         const newById = new Map(newArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
