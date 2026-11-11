@@ -963,13 +963,13 @@ export async function createSaleTransaction(params: {
   tasa: number;
   saleType?: string;
   credit?: { customer: any; debtId: string };
-  effectiveCajeroId?: string;
+  cajeroId?: string;
   user: { id: string; rol: string };
 }) {
   assertSQLiteReady();
   const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now,
-    tasa, saleType = 'VENTA', credit, effectiveCajeroId } = params;
-  const effectiveCajeroId = params.user?.rol === 'cajero' ? params.user.id : effectiveCajeroId;
+    tasa, saleType = 'VENTA', credit, cajeroId } = params;
+  const effectiveCajeroId = params.user?.rol === 'cajero' ? params.user.id : cajeroId;
   if (params.user?.rol === 'cajero' && !terminalId) throw new Error('El cajero debe operar desde su terminal asignada.');
 
   if (!cart?.length) throw new Error('La venta no contiene productos.');
@@ -1537,6 +1537,7 @@ export async function createZClosureTransaction(params: {
 export async function applyDebtPaymentTransaction(params: {
   operationId?: string; collection: 'cxc' | 'cxp'; debtId: string; amountUSD: number;
   amountBS?: number; payment: any; journal?: any | any[]; sale?: any; customerCedula?: string; terminalId?: string;
+  user: { id: string; rol: string };
 }) {
   assertSQLiteReady();
   const { operationId, collection, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
