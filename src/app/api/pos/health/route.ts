@@ -9,7 +9,7 @@ export async function GET() {
   try {
     await ensureSqliteSchema();
     const health = sqliteHealthCheck();
-    if (!health.ok) return NextResponse.json({ ok: false, database: 'sqlite', integrity: health.integrity }, { status: 503 });
+    if (!health.ok) return NextResponse.json({ ok: false, database: 'sqlite', error: 'SQLite local no responde correctamente.' }, { status: 503 });
     return NextResponse.json({
       ok: true,
       database: 'sqlite',
