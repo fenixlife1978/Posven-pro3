@@ -246,7 +246,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
         </div>
       </div>
 
-      {/* ===== MANTENIMIENTO TURSO ===== */}
+      {/* ===== MANTENIMIENTO SQLITE LOCAL ===== */}
       <div className="card shadow-lg border-amber-500/30 bg-amber-50 border-2">
         <div className="card-head border-b border-amber-500/20 px-5 py-4">
           <h3 className="text-amber-800 font-black uppercase italic text-xs flex items-center gap-2">
