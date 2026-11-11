@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   build-windows:
+    if: github.ref != 'refs/heads/feat/pos3-sqlite-local-lan'
     name: Build Windows installer
     runs-on: windows-latest
     steps:
