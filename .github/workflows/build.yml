@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: posven3-sqlite-desktop-validation
+  group: posven3-sqlite-validation-final
   cancel-in-progress: true
 
 permissions:
