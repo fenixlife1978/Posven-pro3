@@ -18,7 +18,7 @@ El archivo se crea bajo el directorio de datos de usuario de Electron:
 
 SQLite usa WAL, `synchronous=FULL`, claves foráneas y espera de bloqueo de hasta 10 segundos. Los respaldos de seguridad de restauraciones se guardan en el subdirectorio `data/backups`.
 
-La PC servidor debe permanecer encendida y POSVEN3 debe estar abierto para que las cajas cliente puedan operar. Si se pierde Internet pero la red local sigue funcionando, las cajas continúan trabajando contra el servidor. Si se pierde la LAN o se apaga el servidor, los clientes no pueden registrar operaciones hasta reconectar; POSVEN3 no confirma ventas en una cola local independiente.
+La PC servidor debe permanecer encendida y POSVEN3 debe estar abierto para que las cajas cliente puedan operar. Mantén el puerto 4580 dentro de una red privada confiable, protegida con WPA2/WPA3; no configures reenvío del puerto hacia Internet. El tráfico LAN usa HTTP local, por lo que no debe utilizarse en redes públicas o no confiables. Si se pierde Internet pero la red local sigue funcionando, las cajas continúan trabajando contra el servidor. Si se pierde la LAN o se apaga el servidor, los clientes no pueden registrar operaciones hasta reconectar; POSVEN3 no confirma ventas en una cola local independiente.
 
 ## Configuración de red
 
