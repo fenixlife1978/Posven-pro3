@@ -70,7 +70,7 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
     response = await fetch('/api/pos/store', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ operation, ...payload }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(60000),
     });
   } catch {
     throw new Error('No se pudo contactar con el servidor LAN. La operación no se guardó ni quedó en cola.');
