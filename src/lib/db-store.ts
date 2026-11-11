@@ -1305,6 +1305,13 @@ export const Store = {
   },
   ensurePurchaseHistory,
   applyInventoryMovementsTransaction,
+  async openCashTransaction(params: { terminalId: string; patch: Record<string, any> }): Promise<any> {
+    if (typeof window === 'undefined') throw new Error('La apertura debe ejecutarse desde el POS.');
+    const result = await tryLocalServerOperation('terminalPatch', params);
+    if (!result?.terminal) throw new Error('SQLite local no confirmó la apertura de caja.');
+    applyPatch({ terminales: mergeById(cache.terminales, [result.terminal]) });
+    return result.terminal;
+  },
   /**
    * Corte Z autoritativo: no actualizar el estado visual ni confirmar al cajero
    * hasta que SQLite local haya guardado reporte y terminal en una sola transacción.
