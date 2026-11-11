@@ -93,6 +93,7 @@ export default function LicoreriaPOS() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '', usd: '' });
+  const [isOpening, setIsOpening] = useState(false);
   
   // Estados para Notificaciones de CxP
   const [dueDebts, setDueDebts] = useState<Debt[]>([]);
@@ -488,8 +489,11 @@ export default function LicoreriaPOS() {
               </div>
 
               <button 
-                disabled={aperturaData.bs === '' || aperturaData.usd === ''} 
-                onClick={() => { 
+                disabled={aperturaData.bs === '' || aperturaData.usd === '' || isOpening} 
+                onClick={async () => { 
+                  if (isOpening) return;
+                  setIsOpening(true);
+                  try {
                   const bsValue = parseFloat(aperturaData.bs) || 0;
                   const usdValue = parseFloat(aperturaData.usd) || 0;
                   
@@ -535,36 +539,41 @@ export default function LicoreriaPOS() {
                     totalCollections: 0,
                     saleCount: 0
                   };
+                  const openOperationId = 'OPEN-' + Store.uid();
+                  session.openOperationId = openOperationId;
+                  const persistedTerminal = await Store.openCashTransaction({
+                    terminalId: termId,
+                    patch: {
+                      fondoCajaHoyBS: bsValue,
+                      fondoCajaHoyUSD: usdValue,
+                      isCashOpen: true,
+                      cashData: session,
+                    },
+                  });
                   const updatedTerminals = (currentState.terminales || []).map(t =>
-                    t.id === termId ? { ...t, fondoCajaHoyBS: bsValue, fondoCajaHoyUSD: usdValue, isCashOpen: true, cashData: session } : t
+                    String(t.id) === String(termId) ? persistedTerminal : t
                   );
-                  // Mantener la identidad operativa de SQLite local al salir de la apertura.
-                  // currentState puede contener un usuario cacheado antiguo sin terminalId;
-                  // si lo copiamos completo a React, el POS pierde la caja inmediatamente
-                  // después de confirmar la apertura y vuelve a mostrar "caja no disponible".
-                  const authoritativeUser = {
-                    ...(currentUser || {}),
-                    terminalId: termId
-                  };
+                  // La caja solo pasa a abierta en la interfaz después del commit SQLite.
+                  const authoritativeUser = { ...(currentUser || {}), terminalId: termId };
                   const newState: AppState = {
                     ...currentState,
                     user: authoritativeUser,
                     terminales: updatedTerminals
                   };
-                  Store.set({
-                    user: authoritativeUser,
-                    terminales: updatedTerminals
-                  });
                   setUser(authoritativeUser);
                   setUserProfile(authoritativeUser);
                   setState(newState);
-                  
                   localStorage.removeItem('posven_apertura_done');
-                  setShowApertura(false); 
+                  setShowApertura(false);
+                  } catch (error: any) {
+                    alert(error?.message || 'SQLite local no confirmó la apertura. La caja permanece cerrada.');
+                  } finally {
+                    setIsOpening(false);
+                  }
                 }} 
                 className="w-full h-14 bg-brand-gold text-ink font-black text-sm rounded-xl shadow-xl shadow-brand-gold/10 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-widest"
               >
-                Confirmar Apertura
+                {isOpening ? 'Abriendo caja…' : 'Confirmar Apertura'}
               </button>
 
               <button
