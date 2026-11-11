@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import path from 'node:path';
-import { createSession, getSessionUser } from '@/lib/sqlite/auth';
+import { createSession, getSessionUser, listUsersForBackup } from '@/lib/sqlite/auth';
 import { assertSQLiteReady, restoreBackupTransaction } from '@/lib/sqlite/pos-store';
 import { createSqliteBackup, getSqliteDatabasePath } from '@/lib/sqlite/database';
 
@@ -15,6 +15,18 @@ async function requireAdmin() {
   if (!user) throw Object.assign(new Error('No autenticado.'), { status: 401 });
   if (user.rol !== 'administrador') throw Object.assign(new Error('Se requiere administrador.'), { status: 403 });
   return user;
+}
+
+export async function GET() {
+  try {
+    await requireAdmin();
+    const users = await listUsersForBackup();
+    return NextResponse.json({ ok: true, users }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error: any) {
+    const message = String(error?.message || error);
+    const status = Number(error?.status) || (message.includes('No autenticado') ? 401 : message.includes('Se requiere administrador') ? 403 : 400);
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
 }
 
 export async function POST(request: Request) {
