@@ -706,10 +706,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                         <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
                      </>
                    )}
-                   {type === 'REPORT_X' && (
-                     <div className="text-center font-bold mt-2">DOCUMENTO NO VÁLIDO COMO<br/>CIERRE FISCAL</div>
-                   )}
-                </div>
+</div>
               ))}
 
               {/* CONTENIDO VENTA (RECIBO) */}
