@@ -463,9 +463,9 @@ export default function LicoreriaPOS() {
       case 'contabilidad': {
         const ids = [user?.id, user?.uid].filter(Boolean).map(String);
         const terminal = state.terminales.find(t => ids.includes(String(t.usuarioId || '')));
-        return <AccountingModule state={state} updateState={updateState} terminalId={terminal?.id} terminalName={terminal?.nombre} />;
+        return <AccountingModule state={state} updateState={updateState} />;
       }
-      case 'cxc': return <CxCModule state={state} updateState={updateState} terminalId={state.terminales.find(t => t.usuarioId === user?.uid)?.id} />;
+      case 'cxc': return <CxCModule state={state} updateState={updateState} />;
       case 'cxp': return <CxPModule state={state} updateState={updateState} terminalId={state.terminales.find(t => t.usuarioId === user?.uid)?.id} />;
       case 'reportes': return <ReportsModule state={state} />;
       case 'config': return <ConfigModule state={state} updateState={updateState} />;
