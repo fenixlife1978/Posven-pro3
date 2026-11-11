@@ -401,6 +401,18 @@ export async function exportBackupSnapshot() {
       catalogs[name] = list.length;
     }
 
+    const requiredCatalogs = [
+      'categorias','departamentos','marcas','presentaciones',
+      'productCategories','productUnits','productColors','productSizes',
+      'brands','groups','subgroups','lines','suppliers',
+    ];
+    for (const name of requiredCatalogs) {
+      if (!Array.isArray(data[name])) {
+        data[name] = [];
+        catalogs[name] = 0;
+      }
+    }
+
     const configResult = await tx.execute({
       sql: "SELECT data_json FROM app_config WHERE id='general' LIMIT 1",
       args: [],
