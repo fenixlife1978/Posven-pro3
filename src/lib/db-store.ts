@@ -546,8 +546,8 @@ function mergeById<T extends { id?: any }>(existing: T[] | undefined, incoming: 
 // caja leyó. Si otra caja lo cambió entretanto, abortamos en lugar de
 // pisar silenciosamente su modificación con un array local antiguo.
 async function syncArrayToCollection(name: string, prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
-  const previousIds = new Set((prevArr || []).filter(x => x && x.id).map(x => String(x.id)));
-  const records = (newArr || []).filter(x => x && x.id).map(sanitizeRecord);
+  const previousIds = new Set((prevArr || []).filter((x: any) => x && x.id).map(x => String(x.id)));
+  const records = (newArr || []).filter((x: any) => x && x.id).map(sanitizeRecord);
   const currentIds = new Set(records.map((x: any) => String(x.id)));
   const deletedIds = [...previousIds].filter(id => !currentIds.has(id));
   if (records.length === 0 && deletedIds.length === 0) return;
@@ -588,7 +588,7 @@ async function applyInventoryMovementsTransaction(params: {
 
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
   let result: any = null;
-  await runTransaction(db, async tx => {
+  await runTransaction(db, async (tx: any) => {
     const operationRef = await claimOperation(tx, operationType, operationId);
     const remoteProducts = new Map<string, any>();
     for (const pid of productIds) {
@@ -653,7 +653,7 @@ async function applyInventoryMovementsTransaction(params: {
 // ============================================================
 function syncLegacyRealtimeProducts(prevArr: any[] | undefined, newArr: any[] | undefined): Promise<void> {
   if (!legacyRealtime) return Promise.resolve();
-  const prevById = new Map((prevArr || []).filter(x => x && x.id).map(x => [String(x.id), x]));
+  const prevById = new Map((prevArr || []).filter((x: any) => x && x.id).map(x => [String(x.id), x]));
   const newList = newArr || [];
   const updates: Record<string, any> = {};
   const removals: string[] = [];
@@ -675,7 +675,7 @@ function syncLegacyRealtimeProducts(prevArr: any[] | undefined, newArr: any[] | 
   const payload: Record<string, any> = { ...updates };
   removals.forEach(id => { payload[id] = null; });
   return update(rootRef, payload)
-    .catch(e => console.error('sincronización de productos:', e));
+    .catch((e: any) => console.error('sincronización de productos:', e));
 }
 
 async function bootstrapProductos(): Promise<boolean> {
@@ -719,7 +719,7 @@ async function loadCollection(name: string): Promise<any[]> {
   if (tursoItems !== null) return tursoItems.map(sanitizeRecord).filter(Boolean);
   if (!db) return [];
   const snap = await getDocs(collection(db, name));
-  return snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
+  return snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
 }
 
 // Carga COMPLETA de una colección paginada de 500 (evita leer doc a doc en loops).
@@ -741,7 +741,7 @@ async function loadAll(name: string): Promise<void> {
 // compartan la misma carga (evita que la segunda retorne "ya cargado"
 // cuando en realidad la primera aún no terminó — race condition que
 // causaba Reportes X/Z en $0 tras reinicio).
-const loadingPromises: Record<string, Promise<void>> = {};
+const loadingPromises: Partial<Record<string, Promise<void>>> = {};
 async function ensureLoaded(name: string): Promise<void> {
   if (loadedAll[name]) return;
   if (loadingPromises[name]) return loadingPromises[name];
@@ -815,7 +815,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
           : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
         snap = await getDocs(fallbackQuery);
       }
-      const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean)
+      const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean)
         .filter((item: any) => name !== 'ventas' && name !== 'libroDiario' || String(item.terminalId || '') === terminalId);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
@@ -913,7 +913,7 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
         ? query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
         : query(collection(db, COLLECTIONS[name]), ...filters, orderBy('fecha', 'asc'), limit(1000));
       const snap = await getDocs(q);
-      const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
+      const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       if (snap.docs.length < 1000) break;
       cursor = snap.docs[snap.docs.length - 1];
@@ -941,7 +941,7 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
       ? query(collection(db, col), orderBy('fecha', 'desc'), startAfter(last), limit(pageSize))
       : query(collection(db, col), orderBy('fecha', 'desc'), limit(pageSize));
     const snap = await getDocs(q);
-    const items = snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
+    const items = snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
     cursors[name] = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
     applyPatch({ [name]: mergeById((cache as any)[name], items) });
     return items.length;
@@ -966,13 +966,13 @@ async function kardex(productoId: string, max = 100): Promise<any[]> {
         orderBy('fecha', 'desc'),
         limit(max)
       ));
-      return snap.docs.map(d => sanitizeRecord(d.data())).filter(Boolean);
+      return snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
     } catch (e: any) {
       if (e?.code === 'failed-precondition' || /index/i.test(String(e?.message || ''))) {
         await ensureLoaded('movimientos');
         return (cache.movimientos || [])
           .filter(m => m.productoId === productoId)
-          .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+          .sort((a: any, b: any) => String(b.fecha).localeCompare(String(a.fecha)))
           .slice(0, max);
       }
       throw e;
@@ -1173,14 +1173,14 @@ function startMasterSync(name: string): () => void {
     const col = COLLECTIONS[name];
     const unsub = onSnapshot(
       collection(db, col),
-      (snap) => {
+      (snap: any) => {
         const items = snap.docs
-          .map(d => sanitizeRecord(d.data()))
+          .map((d: any) => sanitizeRecord(d.data()))
           .filter(Boolean);
         applyPatch({ [name]: items });
         if (name === 'clientes' || name === 'proveedores') loadedAll[name] = true;
       },
-      (err) => {
+      (err: any) => {
         if (err.code !== 'permission-denied') console.warn("Sync maestro " + name + ":", err);
       }
     );
@@ -1240,11 +1240,11 @@ function init() {
   void (async () => {
     const usingTurso = await bootstrapProductos();
     if (usingTurso || !legacyRealtime) return;
-    teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap) => {
+    teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap: any) => {
       const val = snap.val() || {};
       const items = Object.values(val).filter((item): item is Product => Boolean(item));
       applyPatch({ productos: items });
-    }, (err) => { if (err?.code !== 'permission-denied') console.warn("sincronización de productos:", err); }));
+    }, (err: any) => { if (err?.code !== 'permission-denied') console.warn("sincronización de productos:", err); }));
   })();
 
   // 3) LISTAS VIVAS ENTRE CAJAS.
@@ -1268,10 +1268,10 @@ function init() {
         const col = COLLECTIONS[name];
         teardownFns.push(onSnapshot(
           query(collection(db, col), where('estado', 'in', ['pendiente', 'parcial'])),
-          (snap) => {
+          (snap: any) => {
             const currentArr = [...((cache as any)[name] || [])];
             const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-            snap.docChanges().forEach(change => {
+            snap.docChanges().forEach((change: any) => {
               const item = sanitizeRecord(change.doc.data());
               const id = String(item?.id || change.doc.id);
               if (change.type === 'removed') {
@@ -1280,7 +1280,7 @@ function init() {
             });
             applyPatch({ [name]: [...map.values()] });
           },
-          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+          (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
         ));
       } catch (e) {
         console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
@@ -1308,10 +1308,10 @@ function init() {
         const col = COLLECTIONS[name];
         teardownFns.push(onSnapshot(
           query(collection(db, col), orderBy('fecha', 'desc'), limit(100)),
-          (snap) => {
+          (snap: any) => {
             const currentArr = [...((cache as any)[name] || [])];
             const map = new Map<string, any>(currentArr.map(x => [String(x.id), x]));
-            snap.docChanges().forEach(change => {
+            snap.docChanges().forEach((change: any) => {
               const item = sanitizeRecord(change.doc.data());
               if (!item || !item.id) return;
               if (change.type === 'removed') map.delete(String(item.id));
@@ -1319,7 +1319,7 @@ function init() {
             });
             applyPatch({ [name]: [...map.values()] });
           },
-          (err) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
+          (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
         ));
       } catch (e) {
         console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
@@ -1503,7 +1503,7 @@ export const Store = {
     if (tursoResult) return tursoResult;
 
     let result: any = null;
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, operationType, operationId);
       const saleRef = doc(db, 'ventas', String(saleId));
       const saleSnap = await tx.get(saleRef);
@@ -1556,7 +1556,7 @@ export const Store = {
     payment: any;
     journal?: any;
     terminalId?: string;
-  }): Promise<{ appliedUSD: number; debts: any[]; receiptId?: string }> {
+  }): Promise<{ appliedUSD: number; appliedBS?: number; debts: any[]; receiptId?: string; queuedOffline?: boolean }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
@@ -1570,9 +1570,9 @@ export const Store = {
 
     const effectiveTerminalId = String(terminalId || '').trim();
     const q = query(collection(db, 'cxp'), where('proveedor', '==', provider));
-    let result = { appliedUSD: 0, debts: [] as any[] };
+    let result = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
     const opId = String(operationId || payment?.id || (provider + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-CXP-GLOBAL', opId);
       const terminalRef = effectiveTerminalId ? doc(db, 'terminales', effectiveTerminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1580,7 +1580,7 @@ export const Store = {
       if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Turso.');
       // concurrencia. Todo el resultado se reconstruye en cada intento para no
       // duplicar appliedUSD/debts en memoria.
-      const nextResult = { appliedUSD: 0, debts: [] as any[], receiptId: '' as string };
+      const nextResult = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
       const nextCounter = Number(terminalRemote?.proximoPagoProveedor) || 1;
       nextResult.receiptId = terminalRemote
         ? terminalSeries(terminalPrefix(terminalRemote, terminalId), 'CXP', nextCounter, 6)
@@ -1588,9 +1588,9 @@ export const Store = {
       const snap = await tx.get(q);
 
       const docs = snap.docs
-        .map(d => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
-        .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
-        .sort((a, b) => {
+        .map((d: any) => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
+        .filter((x: any) => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
+        .sort((a: any, b: any) => {
           const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
           return fecha !== 0 ? fecha : String(a.data.id || '').localeCompare(String(b.data.id || ''));
         });
@@ -1631,6 +1631,7 @@ export const Store = {
         tx.set(item.ref, sanitizeRecord(updated), { merge: true });
         nextResult.debts.push({ ...updated, appliedUSD: pago });
         nextResult.appliedUSD += pago;
+        nextResult.appliedBS += pago * (Number(payment.tasaAplicada) || 1);
       }
 
       if (nextResult.appliedUSD <= 0.001) {
@@ -1663,9 +1664,10 @@ export const Store = {
     amountUSD: number;
     amountBS?: number;
     payment: any;
+    paymentParts?: any[];
     journal?: any;
     terminalId?: string;
-  }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string }> {
+  }): Promise<{ appliedUSD: number; appliedBS: number; debts: any[]; receiptId?: string; queuedOffline?: boolean }> {
     if (typeof window === 'undefined') return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
@@ -1688,7 +1690,7 @@ export const Store = {
     let result = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
     const opId = String(operationId || payment?.id || ('CXC-GLOBAL|' + customerLabel + '|' + amountUSD + '|' + payment?.fecha + '|' + payment?.metodo));
 
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-CXC-GLOBAL', opId);
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1703,9 +1705,9 @@ export const Store = {
 
       const snap = await tx.get(q);
       const docs = snap.docs
-        .map(d => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
-        .filter(x => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
-        .sort((a, b) => {
+        .map((d: any) => ({ ref: d.ref, data: sanitizeRecord(d.data()) as any }))
+        .filter((x: any) => (Number(x.data.saldoUSD) || 0) > 0.001 && x.data.estado !== 'pagada')
+        .sort((a: any, b: any) => {
           const fecha = String(a.data.fecha || '').localeCompare(String(b.data.fecha || ''));
           return fecha !== 0 ? fecha : String(a.data.id || '').localeCompare(String(b.data.id || ''));
         });
@@ -1860,7 +1862,7 @@ export const Store = {
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
     const opId = String(operationId || payment?.id || (collectionName + '|' + debtId + '|' + amountUSD + '|' + payment?.metodo + '|' + payment?.fecha));
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'PAGO-DEUDA', opId);
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
@@ -1954,7 +1956,7 @@ export const Store = {
     const debtRef = doc(db, 'cxp', debt.id);
     let result: any = null;
     const opId = String(operationId || debt.id);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'DEUDA-CXP', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda de proveedor ya existe en otra caja. Actualice y vuelva a intentar.');
@@ -2185,7 +2187,7 @@ export const Store = {
     const customerRef = doc(db, 'clientes', customerId);
     let result: any = null;
     const opId = String(operationId || customerId);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'ELIMINAR-CLIENTE', opId);
       const customerSnap = await tx.get(customerRef);
       if (!customerSnap.exists()) throw new Error('El cliente ya no existe o fue eliminado en otra caja.');
@@ -2222,12 +2224,12 @@ export const Store = {
         debtsSnap = await tx.get(query(collection(db, 'cxc')));
       }
       const debts = debtsSnap.docs;
-      const active = debts.find(d => {
+      const active = debts.find((d: any) => {
         const debt = d.data() as any;
         return debt.estado !== 'pagada' && (Number(debt.saldoUSD) || 0) > 0.001;
       });
       if (active) throw new Error('El cliente tiene una deuda pendiente en otra caja. Actualice y vuelva a intentar.');
-      debts.forEach(d => tx.delete(d.ref));
+      debts.forEach((d: any) => tx.delete(d.ref));
       tx.delete(customerRef);
       tx.set(operationRef, { tipo: 'ELIMINAR-CLIENTE', operationId: opId, fecha: new Date().toISOString(), referencia: customerId }, { merge: false });
       result = { customer, deletedDebts: debts.length };
@@ -2248,7 +2250,7 @@ export const Store = {
     const debtRef = doc(db, 'cxc', debtId);
     let result: any = null;
     const opId = String(operationId || debtId);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'ELIMINAR-CXC', opId);
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
@@ -2307,7 +2309,7 @@ export const Store = {
     const debtRef = doc(db, 'cxc', debt.id);
     let result: any = null;
     const opId = String(operationId || debt.id);
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'DEUDA-CXC', opId);
       const existing = await tx.get(debtRef);
       if (existing.exists()) throw new Error('La deuda ya existe en otra caja. Actualice y vuelva a intentar.');
@@ -2365,7 +2367,7 @@ export const Store = {
     let journalResult: any = null;
     const opId = String(operationId || (collectionName + '|' + debtId + '|' + paymentId + '|REVERSE'));
 
-    await runTransaction(db, async tx => {
+    await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, 'REVERSAR-PAGO', opId);
       // Cada reintento debe reconstruir completamente el resultado a partir
       // del estado remoto para evitar residuos de un intento anterior.
@@ -2528,8 +2530,8 @@ export const Store = {
       const prevArr = ((prev as any)[k] || []) as any[];
       const newArr = ((patch as any)[k] || []) as any[];
       if (k === 'productos') {
-        const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
-        const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const prevById = new Map(prevArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
+        const newById = new Map(newArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
         const changes: Array<{ before?: any | null; after?: any | null }> = [];
         const deletedIds: string[] = [];
         newById.forEach((after, id) => {
@@ -2569,8 +2571,8 @@ export const Store = {
           throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
         }
       } else if (['clientes', 'proveedores', 'movimientos', 'libroDiario'].includes(String(k))) {
-        const prevById = new Map(prevArr.filter(x => x?.id).map(x => [String(x.id), x]));
-        const newById = new Map(newArr.filter(x => x?.id).map(x => [String(x.id), x]));
+        const prevById = new Map(prevArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
+        const newById = new Map(newArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
         const records = [...newById.values()].filter((after: any) => {
           const before = prevById.get(String(after.id));
           return !before || JSON.stringify(sanitizeRecord(before)) !== JSON.stringify(sanitizeRecord(after));
@@ -2785,7 +2787,7 @@ export const Utils = {
     const productMovs = movimientos
       .filter(m => m.productoId === productoId)
       .slice()
-      .sort((a, b) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
+      .sort((a: any, b: any) => (a.fecha === b.fecha ? 0 : a.fecha < b.fecha ? -1 : 1));
     // Saldo de apertura: stockAntes del primer movimiento pre-existente (0 si no hay).
     let base = 0;
     for (const m of productMovs) {
