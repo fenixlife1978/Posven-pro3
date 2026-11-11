@@ -4,6 +4,8 @@
  * Exclusivamente servidor. SQLite local es la única base de datos operativa.
  * Las operaciones críticas usan transacciones interactivas.
  */
+import { randomBytes } from 'node:crypto';
+import { hashPassword } from '@/lib/sqlite/auth';
 import {
   isSQLiteConfigured,
   sqliteExecute,
@@ -577,27 +579,34 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
     // skipped instead of being assigned an unknown or insecure password.
     const backupUsers = Array.isArray(data.users) ? data.users : [];
     let importedUsers = 0;
-    let skippedUsersWithoutHash = 0;
+    let skippedUsers = 0;
+    const temporaryCredentials: Array<{ username: string; password: string; rol: string }> = [];
     for (const user of backupUsers) {
       const username = String(user?.username || user?.email || '').trim().toLowerCase();
-      const hash = String(user?.password_hash || user?.passwordHash || '');
-      const role = String(user?.rol || user?.role || '');
+      const sourceHash = String(user?.password_hash || user?.passwordHash || '');
+      const role = String(user?.rol || user?.role || '').toLowerCase();
       if (!username || username === 'admin' || user?.isSeedAdmin || user?.is_seed_admin) continue;
-      if (!/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/i.test(hash)) {
-        skippedUsersWithoutHash++;
-        continue;
-      }
-      if (!['administrador','cajero'].includes(role)) continue;
-      const id = String(user?.id || user?.uid || '').trim();
-      if (!id) { skippedUsersWithoutHash++; continue; }
+      if (!['administrador','cajero'].includes(role)) { skippedUsers++; continue; }
+
+      // POSVEN2 deliberately excludes password hashes from its export. Keep
+      // each account and issue a cryptographically random temporary password.
+      // When a trusted SQLite backup includes a valid scrypt hash, preserve it.
+      const hasPortableHash = /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/i.test(sourceHash);
+      const temporaryPassword = hasPortableHash ? null : randomBytes(18).toString('base64url');
+      const passwordHash = hasPortableHash ? sourceHash : hashPassword(String(temporaryPassword));
+      const id = String(user?.id || user?.uid || ('usr_' + randomBytes(18).toString('hex'))).trim();
       const email = String(user?.email || '').trim().toLowerCase() || null;
       const nombre = String(user?.nombre || username).trim();
+      const blocked = user?.accesoBloqueado === true || Number(user?.acceso_bloqueado || 0) === 1;
       const inserted = await tx.execute({
-        sql: 'INSERT OR IGNORE INTO users(id,username,email,nombre,rol,password_hash,acceso_bloqueado,is_seed_admin,fecha_creacion,data_json) VALUES(?,?,?,?,?,?,0,0,?,?)',
-        args: [id, username, email, nombre, role, hash, String(user?.fechaCreacion || user?.fecha_creacion || new Date().toISOString()), JSON.stringify(clean(user))],
+        sql: 'INSERT INTO users(id,username,email,nombre,rol,password_hash,acceso_bloqueado,is_seed_admin,fecha_creacion,data_json) VALUES(?,?,?,?,?,?,?,0,?,?)',
+        args: [id, username, email, nombre, role, passwordHash, blocked ? 1 : 0, String(user?.fechaCreacion || user?.fecha_creacion || new Date().toISOString()), JSON.stringify(clean(user))],
         wantRows: false,
       });
       importedUsers += inserted.affected_row_count;
+      if (inserted.affected_row_count && temporaryPassword) {
+        temporaryCredentials.push({ username, password: temporaryPassword, rol: role });
+      }
     }
 
     const integrity = await tx.execute({ sql: 'PRAGMA integrity_check' });
@@ -611,7 +620,8 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
       ok: true,
       counts,
       importedUsers,
-      skippedUsersWithoutHash,
+      skippedUsers,
+      temporaryCredentials,
       preservedAdmin: String(seed.rows[0].username || 'admin'),
       preservedAdminId: String(seed.rows[0].id),
       totalRows,
