@@ -1581,6 +1581,10 @@ export async function applyDebtPaymentTransaction(params: {
       assertTerminalAccess(params.user, terminal);
       if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el cobro.');
     }
+    if (terminalForOperation && terminal) {
+      assertTerminalAccess(params.user, terminal);
+      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el cobro.');
+    }
     const field = collection==='cxc'?'proximoCobroDeuda':'proximoPagoProveedor';
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
