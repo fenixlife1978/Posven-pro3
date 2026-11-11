@@ -7,7 +7,7 @@
 - Las demás computadoras se configuran como **CLIENTES** y abren la aplicación contra la IP privada y el puerto del servidor.
 - El servidor escucha en el puerto 4580 por defecto y en la interfaz LAN (`0.0.0.0`). Solo acepta conexiones cuyo origen sea una dirección privada IPv4/IPv6 local.
 - Todas las ventas, inventario, movimientos, compras, caja, CxC, CxP, usuarios, terminales, reportes Z y configuración se consultan y escriben en la misma SQLite del servidor.
-- No hay base cloud, sincronización con Turso, Firebase, Firestore ni Vercel como backend operativo.
+- No hay base de datos cloud ni backend web remoto en el circuito operativo.
 - Los clientes consultan cambios del servidor en segundo plano mediante intervalos cortos. No se crean bases independientes en cada PC ni colas de ventas offline.
 
 ## Datos locales del servidor
