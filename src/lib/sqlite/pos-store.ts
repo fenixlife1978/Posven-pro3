@@ -1383,6 +1383,15 @@ export async function patchTerminalTransaction(params: {
     if (!current) throw new Error('La terminal ya no existe en SQLite local.');
     assertTerminalAccess(params.user, current);
     const patch = clean(params.patch);
+    if (params.user.rol === 'cajero') {
+      const allowedOpeningFields = new Set(['fondoCajaHoyBS','fondoCajaHoyUSD','isCashOpen','cashData']);
+      if (Object.keys(patch).some(key => !allowedOpeningFields.has(key))) {
+        throw new Error('El cajero solo puede registrar la apertura de su propia caja.');
+      }
+      if (current.isCashOpen === true || patch.isCashOpen !== true) {
+        throw new Error('El cajero no puede modificar una caja abierta ni cerrarla manualmente. Use el proceso de Corte Z.');
+      }
+    }
     if (patch.isCashOpen === true) {
       const requestedOpenId = String(patch.cashData?.openOperationId || patch.cashData?.openDate || '');
       const currentOpenId = String(current.cashData?.openOperationId || current.cashData?.openDate || '');
