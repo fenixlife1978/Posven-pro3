@@ -157,6 +157,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const closingZRef = useRef(false);
   
   const [pagos, setPagos] = useState<PagoRealizado[]>([]);
   const [showMultiModal, setShowMultiModal] = useState(false);
@@ -606,8 +607,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const ejecutarCierreZ = async (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
+    if (closingZRef.current) return;
     const data = reportSnapshot;
     if (!data) return;
+    closingZRef.current = true;
     const ahora = Utils.ahora();
     const tc = Utils.getTerminalCash(currentTerminal);
     const numeroZ = tc.ultimoZ + 1;
@@ -659,8 +662,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       stats: { ...data.stats }
     };
 
-    if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
-
     const terminalActual = state.terminales.find(t => String(t.id) === String(termId));
     if (!terminalActual) {
       toast({ variant: 'destructive', title: 'No se pudo cerrar la caja', description: 'No se encontró la terminal asignada. No se confirmó ningún corte Z.' });
@@ -694,9 +695,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         title: 'Corte Z NO confirmado',
         description: String(error?.message || 'Turso no confirmó el cierre. La caja no se marcará como cerrada.'),
       });
+      closingZRef.current = false;
       return;
     }
     const zConfirmado = zPersistido.report;
+    if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
 
     toast({ title: `Corte Z ${zConfirmado.id} confirmado en Turso`, description: `Diferencia Bs. ${Utils.fmtBS(diff.bs)} · USD ${Utils.fmtUSD(diff.usd)}` });
 
@@ -724,6 +727,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       differenceUSD: Number(diff.usd) || 0,
     });
     setShowReportType('REPORT_Z');
+    closingZRef.current = false;
   };
 
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
