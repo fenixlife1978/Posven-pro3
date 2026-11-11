@@ -6,6 +6,13 @@ on:
       - feat/pos3-sqlite-local-lan
     paths:
       - '.github/workflows/build.yml'
+      - 'main.js'
+      - 'preload.js'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - 'tsconfig.json'
   workflow_dispatch:
 
 concurrency:
