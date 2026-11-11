@@ -128,68 +128,21 @@ async function restaurarBackupLocal(
   backup: BackupFile,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
 ): Promise<void> {
-  const TABLES = [
-    'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
-    'devoluciones','anulaciones','terminales','libroDiario','reportesZ','caja','compras',
-  ] as const;
-  const CATALOGS = CATALOG_KEYS;
-  const BATCH_SIZE = 450;
-
-  const backupRowsForTable = (name: typeof TABLES[number]): any[] => {
-    const source = name === 'caja' ? backup.data.cashHistory ?? backup.data.caja : backup.data[name];
-    return Array.isArray(source) ? source as any[] : [];
-  };
-
-  const totalRows = TABLES.reduce((sum, name) => sum + backupRowsForTable(name).length, 0)
-    + CATALOGS.reduce((sum, name) => sum + (Array.isArray(backup.data[name]) ? (backup.data[name] as any[]).length : 0), 0) + 1;
-  let completed = 0;
-
-  const report = (stage: string, detail: string) => {
-    const percent = Math.min(99, Math.round((completed / Math.max(totalRows, 1)) * 100));
-    onProgress?.({ percent, stage, detail });
-  };
-
-  const post = async (payload: Record<string, unknown>) => {
-    const response = await fetch('/api/pos/backup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      cache: 'no-store',
-      body: JSON.stringify(payload),
-    });
-    const raw = await response.text();
-    let body: any = {};
-    try { body = raw ? JSON.parse(raw) : {}; } catch { body = { error: raw || 'Respuesta no válida.' }; }
-    if (!response.ok || body?.ok === false) throw new Error(body?.error || ('Error HTTP ' + response.status + ' al restaurar el respaldo.'));
-    return body;
-  };
-
-  report('Preparando', 'Conectando con la base local…');
-  await post({ action: 'reset' });
-
-  for (const name of TABLES) {
-    const rows = backupRowsForTable(name);
-    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-      const batch = rows.slice(i, i + BATCH_SIZE);
-      if (!batch.length) continue;
-      await post({ action: 'table', table: name, rows: batch });
-      completed += batch.length;
-      report('Datos', name + ': ' + Math.min(i + batch.length, rows.length) + ' de ' + rows.length);
-    }
+  onProgress?.({ percent: 5, stage: 'Preparando', detail: 'Validando respaldo y preparando copia de seguridad local…' });
+  const response = await fetch('/api/pos/backup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({ action: 'restore', backup }),
+  });
+  const raw = await response.text();
+  let body: any = {};
+  try { body = raw ? JSON.parse(raw) : {}; } catch { body = { error: raw || 'Respuesta no válida.' }; }
+  if (!response.ok || body?.ok === false) {
+    throw new Error(body?.error || ('Error HTTP ' + response.status + ' al restaurar el respaldo.'));
   }
-
-  for (const name of CATALOGS) {
-    const rows = Array.isArray(backup.data[name]) ? backup.data[name] as any[] : [];
-    await post({ action: 'catalog', name, rows });
-    completed += rows.length;
-    report('Catálogos', name + ': ' + rows.length + ' registros');
-  }
-
-  const config: Record<string, unknown> = {};
-  for (const key of CONFIG_KEYS) if (backup.data[key] !== undefined) config[key] = backup.data[key];
-  if (Object.keys(config).length) await post({ action: 'config', config });
-  await post({ action: 'finish' });
-  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración finalizada correctamente en SQLite local.' });
+  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración SQLite completada. Se conservó el administrador local: ' + String(body.preservedAdmin || 'admin') + '. Usuarios sin hash importable: ' + Number(body.skippedUsersWithoutHash || 0) + '.' });
 }
 
 export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
