@@ -2020,6 +2020,8 @@ export async function processReturnOrCancellationTransaction(params:any){
       ventaId:String(saleId),
       terminalId:terminalId||operationDoc?.terminalId||'GLOBAL',
       terminalName:terminal?.nombre||operationDoc?.terminalName||'SISTEMA GLOBAL',
+      usuarioId:user?.id || operationDoc?.usuarioId,
+      usuarioNombre:user?.nombre || user?.username || operationDoc?.usuarioNombre,
       items:effectiveItems,
       totalUSD:effectiveTotal,
       ...(operationType==='ANULACION' ? { totalRevertidoUSD:effectiveTotal } : {}),
@@ -2042,7 +2044,7 @@ export async function processReturnOrCancellationTransaction(params:any){
       const p=products.get(pid);
       const before=Number(p.stock)||0;
       const after=before+(Number(m.cantidad)||0);
-      const persisted={...m,productoId:pid,stockAntes:before,stockDespues:after,id:String(m.id||('MOV-'+crypto.randomUUID()))};
+      const persisted={...m,productoId:pid,stockAntes:before,stockDespues:after,usuarioId:user?.id||m.usuarioId,usuarioNombre:user?.nombre||user?.username||m.usuarioNombre,id:String(m.id||('MOV-'+crypto.randomUUID()))};
       products.set(pid,{...p,stock:after});
       statements.push(rowStatement('movimientos',persisted));
     }
@@ -2056,7 +2058,7 @@ export async function processReturnOrCancellationTransaction(params:any){
       : 0;
 
     const canonicalJournal=journal && refundTotal>0.001
-      ? {...journal,montoUSD:refundTotal,referencia:canonicalId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}
+      ? {...journal,montoUSD:refundTotal,referencia:canonicalId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName,usuarioId:user?.id||journal.usuarioId,usuarioNombre:user?.nombre||user?.username||journal.usuarioNombre}
       : null;
 
     statements.push(rowStatement(table,canonicalOperationDoc));
@@ -2074,7 +2076,7 @@ export async function processReturnOrCancellationTransaction(params:any){
         operationType+'-'+operationId,
         operationType,
         operationId,
-        JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalId||'GLOBAL'})
+        JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalId||'GLOBAL',usuarioId:user?.id,usuarioNombre:user?.nombre||user?.username})
       ],
       wantRows:false
     });
