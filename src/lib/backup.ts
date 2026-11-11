@@ -84,13 +84,14 @@ export async function crearRespaldo(): Promise<BackupFile> {
     if (config[key] !== undefined) data[key] = config[key];
   }
 
-  const usersResponse = await fetch('/api/users', { credentials: 'include', cache: 'no-store' });
+  const usersResponse = await fetch('/api/pos/backup', { credentials: 'include', cache: 'no-store' });
   const usersBody = await usersResponse.json().catch(() => ({}));
-  if (usersResponse.ok) {
-    const users = Array.isArray(usersBody?.usuarios) ? usersBody.usuarios : (Array.isArray(usersBody?.users) ? usersBody.users : []);
-    data.users = users;
-    sqliteTables.users = users.length;
+  if (!usersResponse.ok || usersBody?.ok === false) {
+    throw new Error(usersBody?.error || 'No se pudieron incluir los usuarios en el respaldo.');
   }
+  const users = Array.isArray(usersBody?.users) ? usersBody.users : [];
+  data.users = users;
+  sqliteTables.users = users.length;
 
   return {
     app: 'posven-pro',
