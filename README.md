@@ -9,7 +9,7 @@ POSVEN3 es una aplicación de punto de venta para Windows, construida con Electr
 - Todas las cajas comparten los mismos usuarios, ventas, inventario, movimientos, compras, caja, CxC, CxP, terminales, reportes Z, catálogos y configuración.
 - El servidor escucha en el puerto **4580** por defecto.
 - Los clientes actualizan sus vistas en segundo plano consultando el servidor LAN.
-- No se necesita Internet para operar mientras el servidor y la red local sigan funcionando.
+- No se necesita Internet para las operaciones POS mientras el servidor y la red local sigan funcionando; las actualizaciones de servicios externos, como la tasa BCV, sí requieren Internet.
 - Los clientes no abren ni comparten directamente el archivo SQLite; todas las operaciones pasan por la API LAN autenticada.
 - Si se apaga el servidor o se pierde la LAN, los clientes no confirman ventas ni escriben en colas independientes. Deben reconectar con el servidor.
 
