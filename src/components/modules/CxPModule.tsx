@@ -200,7 +200,6 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
         journal: nuevoAsiento
       });
       if (!resultadoPago) throw new Error('No se pudo registrar el pago al proveedor.');
-      if (resultadoPago.queuedOffline) { toast({ title: 'Pago guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); setShowPaymentModal(null); setPaymentAmount(''); return; }
       toast({ title: "Pago registrado", description: `Se abonó ${Utils.fmtUSD(amountNormalizado)}${esMetodoBS ? ' (' + Utils.fmtBS(rawMonto) + ')' : ''} a ${showPaymentModal.proveedor.toUpperCase()}` });
       setShowPaymentModal(null);
       setPaymentAmount('');
@@ -286,8 +285,6 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
         journal: nuevoAsiento
       });
 
-      if (resultadoPago.queuedOffline) { toast({ title: 'Pago global guardado sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente al regresar Internet.' }); return; }
-
       const totalAplicado = resultadoPago.appliedUSD;
       if (totalAplicado <= 0.001) {
         throw new Error('El saldo del proveedor cambió en otra caja. Actualice la pantalla y vuelva a intentar.');
@@ -338,7 +335,6 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
         journalId: pago.asientoId ? String(pago.asientoId) : undefined
       });
       if (!resultado) throw new Error('No se pudo revertir el abono.');
-      if (resultado.queuedOffline) { toast({ title: 'Reverso guardado sin conexión', description: 'La reversión quedó pendiente de sincronización.' }); return; }
       toast({
         title: "Abono eliminado",
         description: `Se revirtió el abono de ${Utils.fmtUSD(pago.montoUSD)}. La deuda quedó en ${Utils.fmtUSD(resultado.saldoUSD)}.`
@@ -402,7 +398,6 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     setIsProcessing(true);
     try {
       const resultadoDeuda = await Store.createSupplierDebtTransaction({ debt: nuevaDeuda, journal: nuevoAsiento });
-      if (resultadoDeuda?.queuedOffline) { toast({ title: 'Deuda guardada sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente.' }); return; }
       toast({ title: "Deuda registrada", description: `Se ha registrado la deuda de ${Utils.fmtUSD(monto)} a ${selectedProveedor}` });
       setShowDeudaDirectaModal(false);
       setSelectedProveedor('');
