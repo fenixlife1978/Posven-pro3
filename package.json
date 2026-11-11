@@ -60,7 +60,8 @@
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.24.2",
-    "jsbarcode": "^3.12.3"
+    "jsbarcode": "^3.12.3",
+    "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {
     "@types/node": "^20",
@@ -75,7 +76,7 @@
   "build": {
     "appId": "com.posven.pro",
     "productName": "PosVEN Pro",
-    "npmRebuild": false,
+    "npmRebuild": true,
     "copyright": "Copyright © 2026 fenixlife1978",
     "directories": {
       "output": "dist",
@@ -98,7 +99,8 @@
       "**/node_modules/electron-pos-printer/**/*",
       "**/node_modules/@serialport/**/*",
       "**/node_modules/node-usb/**/*",
-      "**/node_modules/**/*.{node,dll}"
+      "**/node_modules/**/*.{node,dll}",
+      "**/node_modules/better-sqlite3/**/*"
     ],
     "win": {
       "target": [
