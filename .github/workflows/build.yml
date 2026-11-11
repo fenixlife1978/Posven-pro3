@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-windows:
@@ -49,6 +49,9 @@ jobs:
         run: npm run build
         env:
           POSVEN_DESKTOP_BUILD: '1'
+
+      - name: TypeScript validation
+        run: npx tsc --noEmit
 
       - name: Verify Next.js server build
         shell: pwsh
