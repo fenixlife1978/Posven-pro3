@@ -3,16 +3,13 @@ name: Build Windows EXE artifacts (no GitHub Release)
 on:
   push:
     branches:
-      - '**'
-  pull_request:
-    branches:
-      - main
-      - master
-      - turso-migration
+      - feat/pos3-sqlite-local-lan
+    paths:
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: posven3-sqlite-desktop-validation
   cancel-in-progress: true
 
 permissions:
