@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/auth/turso-auth';
-import { isTursoConfigured } from '@/lib/turso/client';
+import { createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/sqlite/auth';
+import { isSQLiteConfigured } from '@/lib/sqlite/client';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
-    if (!isTursoConfigured()) return NextResponse.json({ error: 'Turso no está configurado.' }, { status: 503 });
+    if (!isSQLiteConfigured()) return NextResponse.json({ error: 'SQLite local no está disponible.' }, { status: 503 });
 
     const body = await request.json().catch(() => ({}));
     const identifier = String(body?.identifier || '').trim();
