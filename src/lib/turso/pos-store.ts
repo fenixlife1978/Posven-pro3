@@ -1010,6 +1010,9 @@ export async function patchTerminalTransaction(params: {
     const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
     if (!current) throw new Error('La terminal ya no existe en Turso.');
     assertTerminalAccess(params.user, current);
+    if (current.isCashOpen !== true) {
+      throw new Error('La caja ya está cerrada o no tiene una jornada abierta. Debe realizar una nueva apertura antes de emitir otro Z.');
+    }
     const updated = { ...current, ...clean(params.patch), id: params.terminalId };
     await tx.execute(rowStatement('terminales', updated));
     return { terminal: updated };
