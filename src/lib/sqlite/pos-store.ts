@@ -468,6 +468,48 @@ export async function restoreBackupTransaction(params: { user: { rol: string }; 
     throw new Error('El archivo no es un respaldo POSVEN válido.');
   }
   const data = backup.data as Record<string, any>;
+  const requiredBackupTables = [
+    'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+    'devoluciones','anulaciones','terminales','libroDiario','reportesZ','compras',
+  ];
+  const requiredBackupCatalogs = [
+    'categorias','departamentos','marcas','presentaciones',
+    'productCategories','productUnits','productColors','productSizes',
+    'brands','groups','subgroups','lines','suppliers',
+  ];
+  const missingTables = requiredBackupTables.filter(key => !Array.isArray(data[key]));
+  if (!Array.isArray(data.cashHistory) && !Array.isArray(data.caja)) missingTables.push('cashHistory/caja');
+  const missingCatalogs = requiredBackupCatalogs.filter(key => !Array.isArray(data[key]));
+  if (missingTables.length || missingCatalogs.length) {
+    throw new Error('Respaldo incompleto. Faltan tablas: ' + missingTables.join(', ') + '; catálogos: ' + missingCatalogs.join(', ') + '. No se modificó SQLite local.');
+  }
+  if (!Array.isArray(data.users)) {
+    throw new Error('El respaldo no contiene la lista de usuarios. Genere un nuevo respaldo administrativo desde POSVEN2 antes de restaurar.');
+  }
+  if (backup.meta?.source === 'turso' && backup.meta.complete !== true) {
+    const capped = Object.entries(backup.meta.tursoTables || {})
+      .filter(([, count]) => Number(count) >= 10000)
+      .map(([name]) => name);
+    if (capped.length) {
+      throw new Error('Respaldo antiguo posiblemente truncado en: ' + capped.join(', ') + '. Genere una nueva copia paginada desde POSVEN2.');
+    }
+  }
+  if (backup.meta?.source === 'turso' && backup.meta.tursoTables) {
+    for (const [tableName, count] of Object.entries(backup.meta.tursoTables)) {
+      const key = tableName === 'caja' ? 'cashHistory' : tableName;
+      if (Array.isArray(data[key]) && Number(count) !== data[key].length) {
+        throw new Error('El conteo del respaldo no coincide en ' + tableName + '. La restauración fue cancelada.');
+      }
+    }
+  }
+  if (backup.meta?.catalogs) {
+    for (const [name, count] of Object.entries(backup.meta.catalogs)) {
+      if (Array.isArray(data[name]) && Number(count) !== data[name].length) {
+        throw new Error('El conteo del catálogo ' + name + ' no coincide con el manifiesto.');
+      }
+    }
+  }
+
   const tableKeys: Array<{ key: string; table: SQLiteStoreTable }> = [
     { key: 'productos', table: 'productos' },
     { key: 'movimientos', table: 'movimientos' },
