@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteUser, getSessionUser, setUserBlocked } from '@/lib/auth/turso-auth';
-import { tursoExecute } from '@/lib/turso/client';
+import { deleteUser, getSessionUser, setUserBlocked } from '@/lib/sqlite/auth';
+import { sqliteExecute } from '@/lib/sqlite/client';
 
 export const runtime = 'nodejs';
 
@@ -16,7 +16,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
   const { id } = await context.params;
   const body = await request.json().catch(() => ({}));
-  const target = await tursoExecute({
+  const target = await sqliteExecute({
     sql: 'SELECT is_seed_admin, nombre, rol, acceso_bloqueado FROM users WHERE id=? LIMIT 1',
     args: [id],
   });
@@ -41,7 +41,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     return NextResponse.json({ error: 'El administrador semilla debe conservar el rol administrador.' }, { status: 400 });
   }
 
-  await tursoExecute({
+  await sqliteExecute({
     sql: 'UPDATE users SET nombre=?, rol=? WHERE id=?',
     args: [nombre, rol, id],
     wantRows: false,
