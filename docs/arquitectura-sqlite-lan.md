@@ -43,6 +43,7 @@ La restauración:
 3. crea una copia física de seguridad de la SQLite actual;
 4. reemplaza los datos dentro de una transacción SQLite;
 5. ejecuta comprobaciones de integridad y claves foráneas antes de confirmar;
+7. invalida las sesiones de las demás cajas, que deberán iniciar sesión nuevamente;
 6. conserva el administrador local que inició la restauración.
 
 Los respaldos administrativos de POSVEN2 no incluyen hashes de contraseña. Se recuperan los usuarios con su identificador, nombre, correo, rol y estado de bloqueo, y se generan contraseñas temporales aleatorias que se descargan en un archivo privado al terminar la restauración. Los hashes presentes en respaldos SQLite de POSVEN3 sí se conservan.
