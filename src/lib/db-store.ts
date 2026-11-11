@@ -8,25 +8,25 @@ type DocumentData = any;
 type QueryDocumentSnapshot<T = any> = any;
 const db: any = null;
 const legacyRealtime: any = null;
-const servidorSQLite localRetirado = (..._args: any[]): never => {
+const legacyStoreUnavailable = (..._args: any[]): never => {
   throw new Error('servidor SQLite local fue retirado del flujo operativo. SQLite local es la única fuente de datos.');
 };
-const collection: any = servidorSQLite localRetirado;
-const doc: any = servidorSQLite localRetirado;
-const getDoc: any = servidorSQLite localRetirado;
-const getDocs: any = servidorSQLite localRetirado;
-const onSnapshot: any = servidorSQLite localRetirado;
-const orderBy: any = servidorSQLite localRetirado;
-const limit: any = servidorSQLite localRetirado;
-const query: any = servidorSQLite localRetirado;
-const setDoc: any = servidorSQLite localRetirado;
-const where: any = servidorSQLite localRetirado;
-const runTransaction: any = servidorSQLite localRetirado;
-const startAfter: any = servidorSQLite localRetirado;
-const onValue: any = servidorSQLite localRetirado;
-const ref: any = servidorSQLite localRetirado;
-const update: any = servidorSQLite localRetirado;
-const legacyRealtimeGet: any = servidorSQLite localRetirado;
+const collection: any = legacyStoreUnavailable;
+const doc: any = legacyStoreUnavailable;
+const getDoc: any = legacyStoreUnavailable;
+const getDocs: any = legacyStoreUnavailable;
+const onSnapshot: any = legacyStoreUnavailable;
+const orderBy: any = legacyStoreUnavailable;
+const limit: any = legacyStoreUnavailable;
+const query: any = legacyStoreUnavailable;
+const setDoc: any = legacyStoreUnavailable;
+const where: any = legacyStoreUnavailable;
+const runTransaction: any = legacyStoreUnavailable;
+const startAfter: any = legacyStoreUnavailable;
+const onValue: any = legacyStoreUnavailable;
+const ref: any = legacyStoreUnavailable;
+const update: any = legacyStoreUnavailable;
+const legacyRealtimeGet: any = legacyStoreUnavailable;
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
@@ -60,7 +60,7 @@ const COLLECTIONS: Record<string, string> = {
 const OPERATIONS_COLLECTION = 'operaciones';
 
 // ============================================================
-// PUENTE DE OPERACIONES CRÍTICAS A TURSO
+// PUENTE DE OPERACIONES CRÍTICAS AL SERVIDOR LAN
 // ------------------------------------------------------------
 // SQLite local solo toma el control cuando sus credenciales existen en el servidor.
 // Si no está configurado (HTTP 503), el flujo existente de servidor SQLite local continúa.
@@ -68,7 +68,7 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // a servidor SQLite local: evitar dos fuentes de verdad es obligatorio durante la migración.
 // ============================================================
 async function tryLocalServerOperation(operation: string, payload: any): Promise<any | null> {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined') throw new Error('La operación debe ejecutarse desde la aplicación de escritorio conectada al servidor LAN.');
   let response: Response;
   try {
     response = await fetch('/api/pos/store', {
@@ -86,7 +86,7 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
 }
 
 async function tryLocalServerSpecialRead(kind: 'config' | 'catalog', name = ''): Promise<any | null> {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined') throw new Error('La consulta debe ejecutarse desde la aplicación de escritorio conectada al servidor LAN.');
   const params = new URLSearchParams({ special: kind });
   if (kind === 'catalog') params.set('name', name);
   let response: Response;
@@ -98,7 +98,7 @@ async function tryLocalServerSpecialRead(kind: 'config' | 'catalog', name = ''):
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
 async function tryLocalServerRead(table: string, options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {}): Promise<any[] | null> {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined') throw new Error('La consulta debe ejecutarse desde la aplicación de escritorio conectada al servidor LAN.');
   let response: Response;
   try {
     const params = new URLSearchParams();
@@ -1228,8 +1228,8 @@ function init() {
   })();
 
   void (async () => {
-    const usingSQLite local = await bootstrapProductos();
-    if (usingSQLite local || !legacyRealtime) return;
+    const usingLocalSqlite = await bootstrapProductos();
+    if (usingLocalSqlite || !legacyRealtime) return;
     teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap: any) => {
       const val = snap.val() || {};
       const items = Object.values(val).filter((item): item is Product => Boolean(item));
@@ -1927,16 +1927,16 @@ export const Store = {
       // SQLite local confirma la deuda, pero la UI administrativa necesita reflejar
       // inmediatamente ese mismo registro en memoria para que CxP y
       // "Total a Pagar" se actualicen sin recargar la página.
-      const debtFromSQLite local = serverResult.debt || params.debt;
+      const debtFromSqlite = serverResult.debt || params.debt;
       const patch: Partial<AppState> = {};
-      if (debtFromSQLite local?.id) {
-        patch.cxp = mergeById(cache.cxp || [], [debtFromSQLite local]);
+      if (debtFromSqlite?.id) {
+        patch.cxp = mergeById(cache.cxp || [], [debtFromSqlite]);
       }
       if (params.journal?.id) {
         patch.libroDiario = mergeById(cache.libroDiario || [], [params.journal]);
       }
       if (Object.keys(patch).length) applyPatch(patch);
-      return debtFromSQLite local;
+      return debtFromSqlite;
     }
     const { operationId, debt, journal } = params;
     const debtRef = doc(db, 'cxp', debt.id);
