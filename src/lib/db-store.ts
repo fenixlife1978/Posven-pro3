@@ -1,15 +1,14 @@
 'use client';
 
 import { AppState, Terminal, Movimiento, Product } from './types';
-// SQLite local es la única base de datos operativa. Estos nombres se conservan únicamente
-// para que los caminos legacy de sincronización no vuelvan a escribir en servidor SQLite local.
+// SQLite local es la única base de datos operativa. Los adaptadores heredados quedan desactivados.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
 type DocumentData = any;
 type QueryDocumentSnapshot<T = any> = any;
 const db: any = null;
 const legacyRealtime: any = null;
 const legacyStoreUnavailable = (..._args: any[]): never => {
-  throw new Error('servidor SQLite local fue retirado del flujo operativo. SQLite local es la única fuente de datos.');
+  throw new Error('No se permite acceder a persistencia heredada. La única fuente de datos es SQLite local.');
 };
 const collection: any = legacyStoreUnavailable;
 const doc: any = legacyStoreUnavailable;
@@ -62,7 +61,7 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // ============================================================
 // PUENTE DE OPERACIONES CRÍTICAS AL SERVIDOR LAN
 // ------------------------------------------------------------
-// SQLite local solo toma el control cuando sus credenciales existen en el servidor.
+// SQLite local es la única persistencia operativa del servidor LAN.
 // Si no está configurado (HTTP 503), el flujo existente de servidor SQLite local continúa.
 // Si SQLite local sí está configurado pero falla por otra causa, NO hacemos fallback
 // a servidor SQLite local: evitar dos fuentes de verdad es obligatorio durante la migración.
@@ -2074,7 +2073,7 @@ export const Store = {
     customerCedula?: string;
     customerId?: string;
   }): Promise<any> {
-    if (typeof window === 'undefined' || !db) return null;
+    if (typeof window === 'undefined') return null;
     const serverResult = await tryLocalServerOperation('deleteCustomerDebt', params);
     if (serverResult) return serverResult;
     const { operationId, debtId, customerCedula, customerId } = params;
@@ -2189,7 +2188,7 @@ export const Store = {
     paymentId: string;
     journalId?: string;
   }): Promise<any | null> {
-    if (typeof window === 'undefined' || !db) return null;
+    if (typeof window === 'undefined') return null;
     const serverResult = await tryLocalServerOperation('reverseDebtPayment', params);
     if (serverResult) return serverResult;
     const { operationId, collection: collectionName, debtId, paymentId, journalId } = params;
