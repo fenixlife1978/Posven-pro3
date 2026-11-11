@@ -35,19 +35,19 @@ export interface BackupFile {
   };
 }
 
-async function readTursoTable(table: string, limit = 10000): Promise<any[]> {
+async function readLocalTable(table: string, limit = 10000): Promise<any[]> {
   const response = await fetch('/api/pos/store?table=' + encodeURIComponent(table) + '&limit=' + limit, {
     credentials: 'include',
     cache: 'no-store',
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde Turso.');
+    throw new Error(body?.error || 'No se pudo leer la tabla ' + table + ' desde la base local.');
   }
   return Array.isArray(body?.records) ? body.records : [];
 }
 
-async function readTursoSpecial(kind: 'config' | 'catalog', name = ''): Promise<any> {
+async function readLocalSpecial(kind: 'config' | 'catalog', name = ''): Promise<any> {
   const params = new URLSearchParams({ special: kind });
   if (name) params.set('name', name);
   const response = await fetch('/api/pos/store?' + params.toString(), {
@@ -56,7 +56,7 @@ async function readTursoSpecial(kind: 'config' | 'catalog', name = ''): Promise<
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error || 'No se pudo leer ' + kind + ' desde Turso.');
+    throw new Error(body?.error || 'No se pudo leer ' + kind + ' desde la base local.');
   }
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
@@ -68,18 +68,18 @@ export async function crearRespaldo(): Promise<BackupFile> {
 
   for (const key of COLLECTION_KEYS) {
     const table = TABLE_MAP[key] || key;
-    const rows = await readTursoTable(table);
+    const rows = await readLocalTable(table);
     data[key] = rows;
     sqliteTables[table] = rows.length;
   }
 
   for (const key of CATALOG_KEYS) {
-    const rows = await readTursoSpecial('catalog', key);
+    const rows = await readLocalSpecial('catalog', key);
     data[key] = rows;
     catalogs[key] = rows.length;
   }
 
-  const config = await readTursoSpecial('config');
+  const config = await readLocalSpecial('config');
   for (const key of CONFIG_KEYS) {
     if (config[key] !== undefined) data[key] = config[key];
   }
@@ -124,7 +124,7 @@ export async function leerArchivoRespaldo(file: File): Promise<BackupFile | null
   return parsed;
 }
 
-async function restaurarBackupTurso(
+async function restaurarBackupLocal(
   backup: BackupFile,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
 ): Promise<void> {
@@ -164,7 +164,7 @@ async function restaurarBackupTurso(
     return body;
   };
 
-  report('Preparando', 'Conectando con Turso…');
+  report('Preparando', 'Conectando con la base local…');
   await post({ action: 'reset' });
 
   for (const name of TABLES) {
@@ -189,11 +189,11 @@ async function restaurarBackupTurso(
   for (const key of CONFIG_KEYS) if (backup.data[key] !== undefined) config[key] = backup.data[key];
   if (Object.keys(config).length) await post({ action: 'config', config });
   await post({ action: 'finish' });
-  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración finalizada correctamente en Turso.' });
+  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración finalizada correctamente en SQLite local.' });
 }
 
 export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
-  await restaurarBackupTurso(backup);
+  await restaurarBackupLocal(backup);
 }
 
 export async function cargarRespaldoDesdeArchivo(
@@ -202,5 +202,5 @@ export async function cargarRespaldoDesdeArchivo(
 ): Promise<void> {
   const backup = await leerArchivoRespaldo(file);
   if (!backup) return;
-  await restaurarBackupTurso(backup, onProgress);
+  await restaurarBackupLocal(backup, onProgress);
 }
