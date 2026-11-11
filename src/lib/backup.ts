@@ -125,6 +125,28 @@ export async function leerArchivoRespaldo(file: File): Promise<BackupFile | null
   return parsed;
 }
 
+function descargarCredencialesRestauradas(credentials: Array<{ username: string; password: string; rol: string }>) {
+  if (!credentials.length) return;
+  const lines = [
+    'POSVEN3 - CREDENCIALES TEMPORALES DE USUARIOS RESTAURADOS',
+    'Estas contraseñas se generaron porque POSVEN2 no incluye hashes de contraseña en sus respaldos.',
+    'Entregue cada clave al usuario correspondiente y solicite cambiarla después del primer acceso.',
+    'Guarde este archivo de forma privada y elimínelo cuando haya entregado las claves.',
+    '',
+    'Usuario | Rol | Contraseña temporal',
+    ...credentials.map(item => item.username + ' | ' + item.rol + ' | ' + item.password),
+  ];
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'POSVEN3_credenciales_temporales_restauracion.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function restaurarBackupLocal(
   backup: BackupFile,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
@@ -143,7 +165,8 @@ async function restaurarBackupLocal(
   if (!response.ok || body?.ok === false) {
     throw new Error(body?.error || ('Error HTTP ' + response.status + ' al restaurar el respaldo.'));
   }
-  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración SQLite completada. Se conservó el administrador local: ' + String(body.preservedAdmin || 'admin') + '. Usuarios sin hash importable: ' + Number(body.skippedUsersWithoutHash || 0) + '.' });
+  descargarCredencialesRestauradas(Array.isArray(body.temporaryCredentials) ? body.temporaryCredentials : []);
+  onProgress?.({ percent: 100, stage: 'Completado', detail: 'Restauración SQLite completada. Se conservó el administrador local: ' + String(body.preservedAdmin || 'admin') + '. Usuarios recuperados: ' + Number(body.importedUsers || 0) + '. Claves temporales generadas: ' + (Array.isArray(body.temporaryCredentials) ? body.temporaryCredentials.length : 0) + '.' });
 }
 
 export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
