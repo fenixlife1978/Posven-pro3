@@ -43,6 +43,14 @@ export function closeSqliteDatabase() {
   delete root[globalKey];
 }
 
+export async function createSqliteBackup(destination: string) {
+  const db = getSqliteDatabase();
+  const target = path.resolve(destination);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  await db.backup(target);
+  return target;
+}
+
 export function sqliteHealthCheck() {
   const db = getSqliteDatabase();
   const result = db.pragma('integrity_check');
