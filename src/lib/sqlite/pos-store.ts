@@ -583,7 +583,7 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
   });
 }
 
-export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any }) {
+export async function restoreBackupTransaction(params: { user: { id: string; rol: string; nombre?: string; username?: string }; backup: any }) {
   assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
 
@@ -1160,6 +1160,7 @@ export async function createSaleTransaction(params: {
       estado: 'completada', type: saleType, received: totalPaid,
       change: Math.max(0, totalPaid - totals.total), payments: payments.map(x => ({ ...x })),
       terminalId, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: effectiveCajeroId,
+      cajeroNombre: params.user.nombre || params.user.username || '',
       baseImponibleUSD: Math.round(totals.base * 100) / 100,
       ivaUSD: Math.round(totals.iva * 100) / 100, exentoUSD: Math.round(totals.exento * 100) / 100,
       igtfUSD: Math.round(igtf * 100) / 100, tasa,
@@ -1602,8 +1603,8 @@ export async function applyDebtPaymentTransaction(params: {
     const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
 
     const paymentWithTerminal = collection === 'cxc'
-      ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName}
-      : {...payment, terminalId: undefined, terminalName: undefined};
+      ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''}
+      : {...payment, terminalId: undefined, terminalName: undefined, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''};
     const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
 
     const updated={...debt,abonadoUSD:abonadoRegistrado+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...historialPrevio,pago]};
@@ -2413,6 +2414,8 @@ export async function createCashMovementTransaction(params: {
       ...movement,
       terminalId: terminalId || movement.terminalId || 'GLOBAL',
       terminalName: terminal?.nombre || movement.terminalName || 'SISTEMA GLOBAL',
+      usuarioId: params.user.id,
+      usuarioNombre: params.user.nombre || params.user.username || '',
     };
     await tx.execute(rowStatement('libroDiario', canonicalMovement));
     await tx.execute({
