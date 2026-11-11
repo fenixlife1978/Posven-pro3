@@ -1224,7 +1224,21 @@ export async function patchTerminalTransaction(params: {
     const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
     if (!current) throw new Error('La terminal ya no existe en SQLite local.');
     assertTerminalAccess(params.user, current);
-    const updated = { ...current, ...clean(params.patch), id: params.terminalId };
+    const patch = clean(params.patch);
+    if (patch.isCashOpen === true) {
+      const requestedOpenId = String(patch.cashData?.openOperationId || patch.cashData?.openDate || '');
+      const currentOpenId = String(current.cashData?.openOperationId || current.cashData?.openDate || '');
+      if (current.isCashOpen === true && requestedOpenId && requestedOpenId !== currentOpenId) {
+        throw new Error('Esta caja ya fue abierta desde otra sesión. Actualice la pantalla; no se creó una segunda apertura.');
+      }
+      if (current.isCashOpen !== true && !patch.cashData?.openDate) {
+        throw new Error('La apertura debe incluir los datos de la nueva jornada.');
+      }
+    }
+    if (patch.isCashOpen === false && current.isCashOpen === true) {
+      throw new Error('Una caja abierta solo puede cerrarse mediante un Corte Z confirmado.');
+    }
+    const updated = { ...current, ...patch, id: params.terminalId };
     await tx.execute(rowStatement('terminales', updated));
     return { terminal: updated };
   });
