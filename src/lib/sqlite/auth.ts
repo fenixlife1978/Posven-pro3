@@ -215,15 +215,6 @@ export async function revokeSession(sessionId: string | null | undefined) {
   });
 }
 
-export async function listUsersForBackup() {
-  await ensureSqliteSchema();
-  const result = await sqliteExecute({
-    sql: `SELECT id, username, email, nombre, rol, password_hash, acceso_bloqueado,
-      is_seed_admin, fecha_creacion, data_json
-      FROM users ORDER BY lower(nombre), lower(username)`,
-  });
-  return result.rows;
-}
 
 export async function listUsers() {
   await ensureSqliteSchema();
