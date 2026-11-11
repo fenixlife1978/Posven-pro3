@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteUser, getSessionUser, setUserBlocked } from '@/lib/sqlite/auth';
+import { deleteUser, getRequestSessionId, getSessionUser, setUserBlocked } from '@/lib/sqlite/auth';
 import { sqliteExecute } from '@/lib/sqlite/client';
 
 export const runtime = 'nodejs';
 
 async function admin(request: NextRequest) {
-  const user = await getSessionUser(request.cookies.get('posven_session')?.value);
+  const user = await getSessionUser(getRequestSessionId(request));
   if (!user || user.rol !== 'administrador') return null;
   return user;
 }
