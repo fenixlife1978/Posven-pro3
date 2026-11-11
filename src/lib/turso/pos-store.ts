@@ -922,6 +922,19 @@ export async function applyInventoryMovementsTransaction(params: {
       products.set(pid, product);
     }
 
+    // La tasa BCV vigente en la configuración sirve como respaldo cuando un
+    // formulario antiguo o una caja no envía el snapshot. Se lee dentro de la
+    // misma transacción para que el movimiento y el descuento de stock sean atómicos.
+    const configResult = await tx.execute({
+      sql: 'SELECT data_json FROM app_config WHERE id=? LIMIT 1',
+      args: ['general'],
+    });
+    let configuredRate = 0;
+    try {
+      const config = JSON.parse(String(configResult.rows[0]?.data_json || '{}'));
+      configuredRate = Number(config?.tasa) || 0;
+    } catch {}
+
     const statements: TursoStatement[] = [{
       sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
       args: ['INVENTARIO-' + params.operationId, 'INVENTARIO', params.operationId, JSON.stringify({
@@ -938,8 +951,27 @@ export async function applyInventoryMovementsTransaction(params: {
       for (const movement of params.movements.filter(m => String(m.productoId) === pid)) {
         const before = running;
         running += Number(movement.cantidad) || 0;
+        let historicalSnapshot = movement;
+        if (Number(movement.cantidad) < 0) {
+          const product = products.get(pid);
+          const rawCost = movement.costoUnitarioUSD ?? product?.costoUSD;
+          const costUSD = Number(rawCost);
+          const rate = Number(movement.tasaBCV) > 0 ? Number(movement.tasaBCV) : configuredRate;
+          if (!Number.isFinite(costUSD) || costUSD < 0) {
+            throw new Error('No se puede registrar la salida de ' + (product?.nombre || pid) + ': falta un costo unitario válido en USD.');
+          }
+          if (!(rate > 0) || !Number.isFinite(rate)) {
+            throw new Error('No se puede registrar la salida de ' + (product?.nombre || pid) + ': no hay una tasa BCV válida para guardar el histórico.');
+          }
+          historicalSnapshot = {
+            ...movement,
+            costoUnitarioUSD: costUSD,
+            costoUnitarioBs: Math.round(costUSD * rate * 1000000) / 1000000,
+            tasaBCV: rate,
+          };
+        }
         const persisted = {
-          ...movement,
+          ...historicalSnapshot,
           id: String(movement.id || ('MOV-' + crypto.randomUUID())),
           productoId: pid,
           stockAntes: before,
