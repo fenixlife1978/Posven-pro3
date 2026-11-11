@@ -1179,6 +1179,28 @@ function init() {
     if (items !== null) applyPatch({ movimientos: items });
   }, 7000));
 
+  // Paneles administrativos y contabilidad también reciben cambios de otras cajas.
+  teardownFns.push(startSqlitePolling('ventas globales', async () => {
+    const items = await tryLocalServerRead('ventas', { limit: 2000 });
+    if (items !== null) applyPatch({ ventas: items });
+  }, 6000));
+
+  teardownFns.push(startSqlitePolling('libro diario', async () => {
+    const items = await tryLocalServerRead('libroDiario', { limit: 2000 });
+    if (items !== null) applyPatch({ libroDiario: items });
+  }, 8000));
+
+  teardownFns.push(startSqlitePolling('compras/caja', async () => {
+    const [compras, caja] = await Promise.all([
+      tryLocalServerRead('compras', { limit: 2000 }),
+      tryLocalServerRead('caja', { limit: 1000 }),
+    ]);
+    applyPatch({
+      ...(compras !== null ? { compras } : {}),
+      ...(caja !== null ? { cashHistory: caja } : {}),
+    });
+  }, 10000));
+
 
   // 4) CARGA INICIAL: listas pequeñas completas + ventas/libroDiario COMPLETOS
   //    (cada caja filtra por su propio corte Z, así que ninguna puede perder datos
