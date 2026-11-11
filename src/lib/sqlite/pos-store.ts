@@ -1840,6 +1840,9 @@ export async function processReturnOrCancellationTransaction(params:any){
 
     const sale = rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]);
     if(!sale) throw new Error('La venta ya no existe en SQLite local.');
+    if (user?.rol === 'cajero' && String(sale.terminalId || '') !== String(terminalId || '')) {
+      throw new Error('El cajero solo puede devolver o anular ventas de su propia terminal.');
+    }
     if(operationType==='ANULACION' && String(sale.estado||'')==='anulada')
       throw new Error('La factura ya fue anulada.');
 
