@@ -53,11 +53,11 @@ export async function createSqliteBackup(destination: string) {
 
 export function sqliteHealthCheck() {
   const db = getSqliteDatabase();
-  const result = db.pragma('integrity_check');
-  const ok = Array.isArray(result) && result.length === 1 && result[0]?.integrity_check === 'ok';
+  // Health polling runs from every client every few seconds. Keep this probe
+  // constant-time; full integrity_check is reserved for backup restoration.
+  const probe = db.prepare('SELECT 1 AS ok').get();
   return {
-    ok,
-    integrity: result,
+    ok: Number(probe?.ok) === 1,
     journalMode: db.pragma('journal_mode', { simple: true }),
     foreignKeys: db.pragma('foreign_keys', { simple: true }),
     databasePath: resolveDatabasePath(),
