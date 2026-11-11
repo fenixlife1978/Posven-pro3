@@ -35,6 +35,14 @@ jobs:
       - name: Regenerate npm lockfile
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
+      - name: Upload synchronized npm lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: POSVEN3-SQLite-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
         env:
@@ -67,14 +75,6 @@ jobs:
           $found = Get-ChildItem -Path dist -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue
           if (-not $found -or $found.Count -eq 0) { throw 'No se generó ningún instalador .exe.' }
           $found | ForEach-Object { Write-Host "Instalador: $($_.FullName) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
-
-      - name: Upload synchronized npm lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: POSVEN3-SQLite-package-lock
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Upload Windows installer as a downloadable Actions artifact
         uses: actions/upload-artifact@v4
