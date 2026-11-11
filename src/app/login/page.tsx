@@ -39,28 +39,28 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("Inicializando Base de Datos Turso...");
+  const [statusMessage, setStatusMessage] = useState("Inicializando Base de Datos local...");
 
   useEffect(() => {
     installLoginTabSessionFetch();
     let cancelled = false;
-    const checkTursoSession = async () => {
-      setStatusMessage("Inicializando Base de Datos Turso...");
+    const checkLocalSession = async () => {
+      setStatusMessage("Inicializando Base de Datos local...");
       try {
         const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
         if (response.ok) {
-          setStatusMessage("Sesión Turso encontrada. Ingresando...");
+          setStatusMessage("Sesión local encontrada. Ingresando...");
           router.push("/");
           return;
         }
-        if (!cancelled) setStatusMessage(response.status === 503 ? "Turso no está disponible." : "Turso respondió, pero no hay sesión activa.");
+        if (!cancelled) setStatusMessage(response.status === 503 ? "Servidor local no está disponible." : "El servidor local respondió, pero no hay sesión activa.");
       } catch {
-        if (!cancelled) setStatusMessage("No fue posible conectar con Turso.");
+        if (!cancelled) setStatusMessage("No fue posible conectar con el servidor local.");
       } finally {
         if (!cancelled) setAuthChecked(true);
       }
     };
-    checkTursoSession();
+    checkLocalSession();
     return () => { cancelled = true; };
   }, [router]);
 
@@ -71,7 +71,7 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    setStatusMessage("Conectando con Base de Datos Turso...");
+    setStatusMessage("Conectando con Base de Datos local...");
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -82,7 +82,7 @@ export default function LoginPage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || ("Error de autenticación (" + response.status + ")."));
-      setStatusMessage("Turso autenticó correctamente. Ingresando...");
+      setStatusMessage("Autenticación local correcta. Ingresando...");
       if (data?.sessionId) sessionStorage.setItem(POSVEN_TAB_SESSION_KEY, String(data.sessionId));
       toast({ title: "Acceso autorizado", description: "Bienvenido, " + (data.user?.nombre || email) + "." });
       router.push("/");
