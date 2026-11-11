@@ -258,7 +258,38 @@ app.whenReady().then(async () => {
           '\n\nMantén esta computadora encendida para que las demás cajas puedan operar.',
       });
     } else {
-      const url = await verifyServer(networkConfig.host, networkConfig.port);
+      let url;
+      try {
+        url = await verifyServer(networkConfig.host, networkConfig.port);
+      } catch (connectionError) {
+        await dialog.showMessageBox({
+          type: 'warning',
+          title: 'Servidor POSVEN3 no localizado',
+          message: 'No se pudo conectar con ' + networkConfig.host + ':' + networkConfig.port + '.',
+          detail: 'Comprueba que la PC servidor esté encendida y en la misma red. Si cambió su IP, actualiza aquí la dirección para volver a conectar.',
+          buttons: ['Configurar conexión', 'Salir'],
+          defaultId: 0,
+          cancelId: 1,
+        }).then(async result => {
+          if (result.response === 0) networkConfig = await showNetworkSetup();
+          else networkConfig = null;
+        });
+        if (!networkConfig) { app.quit(); return; }
+        if (networkConfig.mode === 'server') {
+          const port = await startLocalNextServer(networkConfig.port);
+          createWindow('http://127.0.0.1:' + port);
+          const addresses = getLanIPv4Addresses();
+          dialog.showMessageBox({
+            type: 'info', title: 'Servidor POSVEN3 activo',
+            message: 'Esta computadora está funcionando como servidor local.',
+            detail: 'Direcciones para conectar las PC clientes:\n' +
+              (addresses.length ? addresses.map(ip => 'http://' + ip + ':' + port).join('\n') : 'No se detectó una IP privada IPv4. Verifica la conexión de red.') +
+              '\n\nMantén esta computadora encendida para que las demás cajas puedan operar.',
+          });
+          return;
+        }
+        url = await verifyServer(networkConfig.host, networkConfig.port);
+      }
       createWindow(url);
     }
 
