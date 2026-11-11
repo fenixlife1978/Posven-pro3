@@ -63,6 +63,12 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // ------------------------------------------------------------
 // SQLite local es la única persistencia operativa. Si el servidor LAN no responde, la operación falla sin usar otra base ni una cola local.
 // ============================================================
+function handleExpiredLocalSession(response: Response) {
+  if (response.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    window.location.replace('/login');
+  }
+}
+
 async function tryLocalServerOperation(operation: string, payload: any): Promise<any | null> {
   if (typeof window === 'undefined') throw new Error('La operación debe ejecutarse desde la aplicación de escritorio conectada al servidor LAN.');
   let response: Response;
@@ -75,6 +81,7 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
   } catch {
     throw new Error('No se pudo contactar con el servidor LAN. La operación no se guardó ni quedó en cola.');
   }
+  handleExpiredLocalSession(response);
   if (response.status === 503) throw new Error('El servidor SQLite local no está disponible. La operación fue rechazada.');
   let body: any = null;
   try { body = await response.json(); } catch {}
@@ -89,6 +96,7 @@ async function tryLocalServerSpecialRead(kind: 'config' | 'catalog', name = ''):
   let response: Response;
   try { response = await fetch('/api/pos/store?' + params.toString(), { credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(10000) }); }
   catch { throw new Error('No se pudo consultar el servidor LAN.'); }
+  handleExpiredLocalSession(response);
   if (response.status === 503) throw new Error('El servidor SQLite local no está disponible.');
   let body: any = null; try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
@@ -116,7 +124,8 @@ async function tryLocalServerRead(table: string, options: { limit?: number; offs
   } catch {
     throw new Error('No se pudo consultar el servidor LAN.');
   }
-  if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. servidor SQLite local no se utilizará como respaldo.');
+  handleExpiredLocalSession(response);
+  if (response.status === 503) throw new Error('El servidor SQLite local no está disponible.');
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) {
