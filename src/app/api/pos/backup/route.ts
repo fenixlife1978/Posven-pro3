@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       response.cookies.set('posven_session', session.id, {
         httpOnly: true,
         sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
+        secure: false,
         path: '/',
         expires: new Date(session.expires),
       });
