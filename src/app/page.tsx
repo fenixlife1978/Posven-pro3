@@ -43,6 +43,7 @@ import UsersModule from '@/components/modules/UsersModule';
 import GlobalControlModule from '@/components/modules/GlobalControlModule';
 import SuppliersModule from '@/components/modules/SuppliersModule';
 import AccountingModule from '@/components/modules/AccountingModule';
+import FiscalModule from '@/components/modules/FiscalModule';
 
 const POSVEN_TAB_SESSION_KEY = 'posven_session_id';
 
@@ -431,6 +432,8 @@ export default function LicoreriaPOS() {
       label: 'Finanzas',
       items: [
         { id: 'contabilidad', label: 'Contabilidad', icon: BookOpen },
+        { id: 'fiscal', label: 'Centro Fiscal', icon: FileText },
+
         { id: 'cxc', label: 'Cuentas por Cobrar', icon: HandCoins, count: (state.cxc || []).filter((x: any) => x.estado !== 'pagada').length },
         { id: 'cxp', label: 'Cuentas por Pagar', icon: FileText, count: (state.cxp || []).filter((x: any) => x.estado !== 'pagada').length },
       ]
@@ -463,6 +466,7 @@ export default function LicoreriaPOS() {
       case 'contabilidad': {
         return <AccountingModule state={state} updateState={updateState} />;
       }
+      case 'fiscal': return <FiscalModule state={state} />;
       case 'cxc': return <CxCModule state={state} updateState={updateState} />;
       case 'cxp': return <CxPModule state={state} updateState={updateState} terminalId={state.terminales.find(t => t.usuarioId === user?.uid)?.id} />;
       case 'reportes': return <ReportsModule state={state} />;
