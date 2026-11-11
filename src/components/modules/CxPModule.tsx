@@ -312,7 +312,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       toast({
         variant: "destructive",
         title: "No se pudo registrar el pago global",
-        description: e?.message || 'No se pudo completar la operación contra Turso.'
+        description: e?.message || 'No se pudo completar la operación contra SQLite local.'
       });
     } finally {
       processingRef.current = false;
