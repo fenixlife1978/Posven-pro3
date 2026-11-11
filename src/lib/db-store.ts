@@ -1,33 +1,32 @@
 'use client';
 
 import { AppState, Terminal, Movimiento, Product } from './types';
-import { enqueueOfflineOperation, registerOfflineProcessor } from './offline-queue';
-// Turso es la única base de datos operativa. Estos nombres se conservan únicamente
-// para que los caminos legacy de sincronización no vuelvan a escribir en servidor Turso.
+// SQLite local es la única base de datos operativa. Estos nombres se conservan únicamente
+// para que los caminos legacy de sincronización no vuelvan a escribir en servidor SQLite local.
 // Cualquier intento de alcanzar esos caminos falla explícitamente.
 type DocumentData = any;
 type QueryDocumentSnapshot<T = any> = any;
 const db: any = null;
 const legacyRealtime: any = null;
-const servidorTursoRetirado = (..._args: any[]): never => {
-  throw new Error('servidor Turso fue retirado del flujo operativo. Turso es la única fuente de datos.');
+const servidorSQLite localRetirado = (..._args: any[]): never => {
+  throw new Error('servidor SQLite local fue retirado del flujo operativo. SQLite local es la única fuente de datos.');
 };
-const collection: any = servidorTursoRetirado;
-const doc: any = servidorTursoRetirado;
-const getDoc: any = servidorTursoRetirado;
-const getDocs: any = servidorTursoRetirado;
-const onSnapshot: any = servidorTursoRetirado;
-const orderBy: any = servidorTursoRetirado;
-const limit: any = servidorTursoRetirado;
-const query: any = servidorTursoRetirado;
-const setDoc: any = servidorTursoRetirado;
-const where: any = servidorTursoRetirado;
-const runTransaction: any = servidorTursoRetirado;
-const startAfter: any = servidorTursoRetirado;
-const onValue: any = servidorTursoRetirado;
-const ref: any = servidorTursoRetirado;
-const update: any = servidorTursoRetirado;
-const legacyRealtimeGet: any = servidorTursoRetirado;
+const collection: any = servidorSQLite localRetirado;
+const doc: any = servidorSQLite localRetirado;
+const getDoc: any = servidorSQLite localRetirado;
+const getDocs: any = servidorSQLite localRetirado;
+const onSnapshot: any = servidorSQLite localRetirado;
+const orderBy: any = servidorSQLite localRetirado;
+const limit: any = servidorSQLite localRetirado;
+const query: any = servidorSQLite localRetirado;
+const setDoc: any = servidorSQLite localRetirado;
+const where: any = servidorSQLite localRetirado;
+const runTransaction: any = servidorSQLite localRetirado;
+const startAfter: any = servidorSQLite localRetirado;
+const onValue: any = servidorSQLite localRetirado;
+const ref: any = servidorSQLite localRetirado;
+const update: any = servidorSQLite localRetirado;
+const legacyRealtimeGet: any = servidorSQLite localRetirado;
 
 const STORAGE_KEY = 'posven_pro_session_data_cache';
 const PAGE_SIZE = 50;
@@ -63,14 +62,13 @@ const OPERATIONS_COLLECTION = 'operaciones';
 // ============================================================
 // PUENTE DE OPERACIONES CRÍTICAS A TURSO
 // ------------------------------------------------------------
-// Turso solo toma el control cuando sus credenciales existen en el servidor.
-// Si no está configurado (HTTP 503), el flujo existente de servidor Turso continúa.
-// Si Turso sí está configurado pero falla por otra causa, NO hacemos fallback
-// a servidor Turso: evitar dos fuentes de verdad es obligatorio durante la migración.
+// SQLite local solo toma el control cuando sus credenciales existen en el servidor.
+// Si no está configurado (HTTP 503), el flujo existente de servidor SQLite local continúa.
+// Si SQLite local sí está configurado pero falla por otra causa, NO hacemos fallback
+// a servidor SQLite local: evitar dos fuentes de verdad es obligatorio durante la migración.
 // ============================================================
-async function tryTursoOperation(operation: string, payload: any): Promise<any | null> {
+async function tryLocalServerOperation(operation: string, payload: any): Promise<any | null> {
   if (typeof window === 'undefined') return null;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('El dispositivo está sin conexión. La operación no se enviará a servidor Turso para evitar duplicados.');
   let response: Response;
   try {
     response = await fetch('/api/pos/store', {
@@ -78,28 +76,28 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
       body: JSON.stringify({ operation, ...payload }),
     });
   } catch {
-    throw new Error('No se pudo contactar con Turso. La operación no fue enviada a servidor Turso para evitar duplicados.');
+    throw new Error('No se pudo contactar con SQLite local. La operación no fue enviada a servidor SQLite local para evitar duplicados.');
   }
-  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. servidor SQLite local no se utilizará como respaldo.');
   let body: any = null;
   try { body = await response.json(); } catch {}
-  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('Turso rechazó la operación (' + response.status + ').')));
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || ('SQLite local rechazó la operación (' + response.status + ').')));
   return body;
 }
 
-async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promise<any | null> {
+async function tryLocalServerSpecialRead(kind: 'config' | 'catalog', name = ''): Promise<any | null> {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams({ special: kind });
   if (kind === 'catalog') params.set('name', name);
   let response: Response;
   try { response = await fetch('/api/pos/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
-  catch { throw new Error('No se pudo consultar Turso.'); }
-  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
+  catch { throw new Error('No se pudo consultar SQLite local.'); }
+  if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. servidor SQLite local no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
-  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
+  if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
   return kind === 'config' ? (body.config || {}) : (Array.isArray(body.lista) ? body.lista : []);
 }
-async function tryTursoRead(table: string, options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {}): Promise<any[] | null> {
+async function tryLocalServerRead(table: string, options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {}): Promise<any[] | null> {
   if (typeof window === 'undefined') return null;
   let response: Response;
   try {
@@ -118,19 +116,19 @@ async function tryTursoRead(table: string, options: { limit?: number; offset?: n
       cache: 'no-store',
     });
   } catch {
-    throw new Error('No se pudo consultar Turso. No se usará servidor Turso como respaldo porque Turso está activo.');
+    throw new Error('No se pudo consultar SQLite local. No se usará servidor SQLite local como respaldo porque SQLite local está activo.');
   }
-  if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
+  if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible. servidor SQLite local no se utilizará como respaldo.');
   let body: any = null;
   try { body = await response.json(); } catch {}
   if (!response.ok || body?.ok === false) {
-    throw new Error(String(body?.error || ('Turso rechazó la lectura (' + response.status + ').')));
+    throw new Error(String(body?.error || ('SQLite local rechazó la lectura (' + response.status + ').')));
   }
   return Array.isArray(body?.records) ? body.records : [];
 }
 
 
-async function tryTursoReadAll(
+async function tryLocalServerReadAll(
   table: string,
   options: { terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {},
   pageSize = 500,
@@ -138,7 +136,7 @@ async function tryTursoReadAll(
   const all: any[] = [];
   let offset = 0;
   while (true) {
-    const page = await tryTursoRead(table, { ...options, limit: pageSize, offset });
+    const page = await tryLocalServerRead(table, { ...options, limit: pageSize, offset });
     if (page === null) return null;
     all.push(...page);
     if (page.length < pageSize) return all;
@@ -551,13 +549,13 @@ async function syncArrayToCollection(name: string, prevArr: any[] | undefined, n
   const currentIds = new Set(records.map((x: any) => String(x.id)));
   const deletedIds = [...previousIds].filter(id => !currentIds.has(id));
   if (records.length === 0 && deletedIds.length === 0) return;
-  const result = await tryTursoOperation('recordsSync', { table: name, records, deletedIds });
+  const result = await tryLocalServerOperation('recordsSync', { table: name, records, deletedIds });
   if (result && Array.isArray(result.records)) applyPatch({ [name]: result.records });
 }
 
-// Stock y movimientos se gestionan exclusivamente mediante operaciones transaccionales de Turso.
+// Stock y movimientos se gestionan exclusivamente mediante operaciones transaccionales de SQLite local.
 function syncProductosTransactional(_prevArr: any[] | undefined, _newArr: any[] | undefined): Promise<Map<string, number> | undefined> {
-  throw new Error('La persistencia de productos está gestionada exclusivamente por Turso.');
+  throw new Error('La persistencia de productos está gestionada exclusivamente por SQLite local.');
 }
 
 // el movimiento con stockAntes/stockDespues calculados dentro de la transacción.
@@ -568,23 +566,15 @@ async function applyInventoryMovementsTransaction(params: {
   productPatches?: Record<string, any>;
   fromOfflineQueue?: boolean;
 }): Promise<any> {
-  const tursoResult = await tryTursoOperation('inventory', params);
-  if (tursoResult) {
-    if (Array.isArray(tursoResult.products) && tursoResult.products.length) applyPatch({ productos: mergeById(cache.productos, tursoResult.products) });
-    if (Array.isArray(tursoResult.movements) && tursoResult.movements.length) applyPatch({ movimientos: mergeById(cache.movimientos, tursoResult.movements) });
-    return tursoResult;
+  const serverResult = await tryLocalServerOperation('inventory', params);
+  if (serverResult) {
+    if (Array.isArray(serverResult.products) && serverResult.products.length) applyPatch({ productos: mergeById(cache.productos, serverResult.products) });
+    if (Array.isArray(serverResult.movements) && serverResult.movements.length) applyPatch({ movimientos: mergeById(cache.movimientos, serverResult.movements) });
+    return serverResult;
   }
 
   const { operationId, operationType, movements, productPatches = {}, fromOfflineQueue } = params;
   if (!movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
-
-  if (!fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
-    if (!['AJUSTE-INVENTARIO', 'AJUSTE-INVENTARIO-POS'].includes(operationType)) {
-      throw new Error('Esta operación requiere conexión para proteger la consistencia de ventas/devoluciones.');
-    }
-    enqueueOfflineOperation('INVENTARIO', { operationId, operationType, movements, productPatches, fromOfflineQueue: true }, operationId);
-    return { queuedOffline: true, operationId, movements, products: [] };
-  }
 
   const productIds = [...new Set(movements.map(m => String(m.productoId || '')).filter(Boolean))];
   let result: any = null;
@@ -593,7 +583,7 @@ async function applyInventoryMovementsTransaction(params: {
     const remoteProducts = new Map<string, any>();
     for (const pid of productIds) {
       const snap = await tx.get(doc(db, 'productos', pid));
-      if (!snap.exists()) throw new Error('El producto ' + pid + ' ya no existe en Turso.');
+      if (!snap.exists()) throw new Error('El producto ' + pid + ' ya no existe en SQLite local.');
       remoteProducts.set(pid, { ...sanitizeRecord(snap.data()), id: pid });
     }
 
@@ -680,9 +670,9 @@ function syncLegacyRealtimeProducts(prevArr: any[] | undefined, newArr: any[] | 
 
 async function bootstrapProductos(): Promise<boolean> {
   try {
-    const tursoItems = await tryTursoRead('productos', { limit: 5000 });
-    if (tursoItems !== null) {
-      applyPatch({ productos: tursoItems });
+    const serverItems = await tryLocalServerRead('productos', { limit: 5000 });
+    if (serverItems !== null) {
+      applyPatch({ productos: serverItems });
       return true;
     }
     if (!legacyRealtime) return false;
@@ -715,8 +705,8 @@ const loadedAll: Record<string, boolean> = {};
 const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
 async function loadCollection(name: string): Promise<any[]> {
-  const tursoItems = await tryTursoRead(name);
-  if (tursoItems !== null) return tursoItems.map(sanitizeRecord).filter(Boolean);
+  const serverItems = await tryLocalServerRead(name);
+  if (serverItems !== null) return serverItems.map(sanitizeRecord).filter(Boolean);
   if (!db) return [];
   const snap = await getDocs(collection(db, name));
   return snap.docs.map((d: any) => sanitizeRecord(d.data())).filter(Boolean);
@@ -773,26 +763,26 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
   const key = `report:${name}:${terminalId}:${cutoff}`;
 
   try {
-    // Turso es la fuente operativa durante la migración. No debemos volver a
-    // consultar servidor Turso para X/Z porque eso agrega latencia y puede devolver
+    // SQLite local es la fuente operativa durante la migración. No debemos volver a
+    // consultar servidor SQLite local para X/Z porque eso agrega latencia y puede devolver
     // un estado histórico distinto al de la caja actual.
     let offset = 0;
     let totalLoaded = 0;
     while (true) {
-      const tursoItems = await tryTursoRead(name, { limit: 1000, offset, terminalId, fechaDesde: cutoff });
-      if (tursoItems === null) break;
-      const items = tursoItems.filter((item: any) => String(item?.fecha || '') > cutoff);
+      const serverItems = await tryLocalServerRead(name, { limit: 1000, offset, terminalId, fechaDesde: cutoff });
+      if (serverItems === null) break;
+      const items = serverItems.filter((item: any) => String(item?.fecha || '') > cutoff);
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       totalLoaded += items.length;
-      if (tursoItems.length < 1000) {
+      if (serverItems.length < 1000) {
         SINCE_STAMP[key] = 'done';
-        console.info("[db-store] Ventana Turso de reporte cargada:", name, totalLoaded, "registros");
+        console.info("[db-store] Ventana SQLite local de reporte cargada:", name, totalLoaded, "registros");
         return;
       }
-      offset += tursoItems.length;
+      offset += serverItems.length;
     }
 
-    // Fallback únicamente cuando Turso no está configurado (503).
+    // Fallback únicamente cuando SQLite local no está configurado (503).
     if (!db || !COLLECTIONS[name]) return;
     const filters: any[] = [where('fecha', '>', cutoff)];
     if (name === 'ventas' || name === 'libroDiario') {
@@ -861,7 +851,7 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
   if (name !== 'reportesZ' && SINCE_STAMP[key] === 'done') return;
 
   try {
-    // Turso filtra en SQL y pagina todo el intervalo para no descargar
+    // SQLite local filtra en SQL y pagina todo el intervalo para no descargar
     // registros ajenos al reporte ni truncar historiales extensos.
     const start = String(desde) + 'T00:00:00';
     // listRecords usa fechaDesde con operador estricto (>); consultar desde
@@ -875,15 +865,15 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
     let offset = 0;
     let loaded = 0;
     while (true) {
-      const tursoItems = await tryTursoRead(name, {
+      const serverItems = await tryLocalServerRead(name, {
         limit: 1000,
         offset,
         fechaDesde: queryStart,
         fechaHasta: end,
         ...(terminalId !== 'all' ? { terminalId } : {}),
       });
-      if (tursoItems === null) break;
-      const items = tursoItems.filter((item: any) => {
+      if (serverItems === null) break;
+      const items = serverItems.filter((item: any) => {
         const fecha = String(item?.fecha || '');
         return fecha >= start && fecha < end;
       });
@@ -891,12 +881,12 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
         applyPatch({ [name]: mergeById((cache as any)[name], items) });
         loaded += items.length;
       }
-      if (tursoItems.length < 1000) {
+      if (serverItems.length < 1000) {
         SINCE_STAMP[key] = 'done';
-        console.info('[db-store] Rango Turso cargado:', name, loaded, 'registros');
+        console.info('[db-store] Rango SQLite local cargado:', name, loaded, 'registros');
         return;
       }
-      offset += tursoItems.length;
+      offset += serverItems.length;
     }
 
     if (!db || !COLLECTIONS[name]) return;
@@ -930,10 +920,10 @@ async function loadMore(name: string, pageSize: number = PAGE_SIZE): Promise<num
   const col = COLLECTIONS[name];
   if (!col) return 0;
   try {
-    const tursoItems = await tryTursoRead(name, { limit: pageSize });
-    if (tursoItems !== null) {
-      applyPatch({ [name]: mergeById((cache as any)[name], tursoItems) });
-      return tursoItems.length;
+    const serverItems = await tryLocalServerRead(name, { limit: pageSize });
+    if (serverItems !== null) {
+      applyPatch({ [name]: mergeById((cache as any)[name], serverItems) });
+      return serverItems.length;
     }
     if (!db) return 0;
     const last = cursors[name] || null;
@@ -956,8 +946,8 @@ const SINCE_STAMP: Record<string, string> = {};
 // Kardex de un producto (where + orden). Si falta el índice compuesto, carga y filtra en memoria.
 async function kardex(productoId: string, max = 100): Promise<any[]> {
   try {
-    const tursoItems = await tryTursoRead('movimientos', { limit: max, productoId });
-    if (tursoItems !== null) return tursoItems;
+    const serverItems = await tryLocalServerRead('movimientos', { limit: max, productoId });
+    if (serverItems !== null) return serverItems;
     if (!db) return [];
     try {
       const snap = await getDocs(query(
@@ -1015,13 +1005,13 @@ async function loadCatalogs(force = false, version = ''): Promise<void> {
   if (!force && meta.ready && (!version || meta.version === version)) return;
   const entries = Object.entries(CATALOG_FIELDS);
   const patch: any = {};
-  let tursoActive = false;
+  let localServerActive = false;
   for (const [field, catName] of entries) {
-    const list = await tryTursoSpecialRead('catalog', catName);
+    const list = await tryLocalServerSpecialRead('catalog', catName);
     if (list === null) break;
-    tursoActive = true; patch[field] = list;
+    localServerActive = true; patch[field] = list;
   }
-  if (!tursoActive) {
+  if (!localServerActive) {
     const results = await Promise.all(entries.map(async ([field, catName]) => {
       try { const snap = await getDoc(doc(db, CATALOGOS_COLLECTION, catName)); return [field, snap.exists() ? (snap.data().lista || []) : []] as const; }
       catch (e) { console.warn('Catálogo ' + catName + ':', e); return null; }
@@ -1057,15 +1047,15 @@ function startTerminalSync(terminalId?: string, all = false, initialItems: Termi
     applyPatch({ terminales: mergeById((cache as any).terminales, initialItems) });
   }
 
-  // Cuando Turso está activo, la hidratación inicial sale de Turso y servidor Turso
+  // Cuando SQLite local está activo, la hidratación inicial sale de SQLite local y servidor SQLite local
   // deja de ser fuente de lectura para terminales/ventas durante la migración.
   // El cache local conserva la última vista mientras llega la respuesta.
   void (async () => {
     try {
-      const terminals = await tryTursoRead('terminales', all ? {} : { limit: 1, terminalId });
+      const terminals = await tryLocalServerRead('terminales', all ? {} : { limit: 1, terminalId });
       if (terminals !== null) {
         applyPatch({ terminales: all ? terminals : mergeById((cache as any).terminales, terminals) });
-        const sales = await tryTursoRead('ventas', all ? { limit: 500 } : { limit: 500, terminalId });
+        const sales = await tryLocalServerRead('ventas', all ? { limit: 500 } : { limit: 500, terminalId });
         if (sales !== null) applyPatch({ ventas: sales });
         return;
       }
@@ -1126,7 +1116,7 @@ function startTerminalSync(terminalId?: string, all = false, initialItems: Termi
 
   return stopTerminalSync;
     } catch (e) {
-      console.error('[db-store] Error hidratando terminal/ventas desde Turso:', e);
+      console.error('[db-store] Error hidratando terminal/ventas desde SQLite local:', e);
     }
   })();
 
@@ -1154,18 +1144,18 @@ function startMasterSync(name: string): () => void {
   if (!COLLECTIONS[name]) return () => {};
   if (masterSyncFns[name]) return () => stopMasterSync(name);
 
-  // Con Turso activo, clientes/proveedores deben salir de Turso. El listener
-  // servidor Turso se conserva únicamente como fallback cuando Turso no está configurado.
+  // Con SQLite local activo, clientes/proveedores deben salir de SQLite local. El listener
+  // servidor SQLite local se conserva únicamente como fallback cuando SQLite local no está configurado.
   void (async () => {
     try {
-      const tursoItems = await tryTursoRead(name, { limit: 2000 });
-      if (tursoItems !== null) {
-        applyPatch({ [name]: tursoItems });
+      const serverItems = await tryLocalServerRead(name, { limit: 2000 });
+      if (serverItems !== null) {
+        applyPatch({ [name]: serverItems });
         loadedAll[name] = true;
         return;
       }
     } catch (e) {
-      console.error('[db-store] Error cargando ' + name + ' desde Turso:', e);
+      console.error('[db-store] Error cargando ' + name + ' desde SQLite local:', e);
       return;
     }
 
@@ -1219,27 +1209,27 @@ function init() {
   started = true;
   if (typeof window === 'undefined') return;
 
-  // 1) CONFIG: Turso es la única fuente de verdad operacional.
-  // No condicionamos esta carga a servidor Turso: la tasa BCV y el resto de la
+  // 1) CONFIG: SQLite local es la única fuente de verdad operacional.
+  // No condicionamos esta carga a servidor SQLite local: la tasa BCV y el resto de la
   // configuración deben hidratarse directamente desde app_config/general
-  // aunque el cliente servidor Turso no exista o no esté inicializado.
+  // aunque el cliente servidor SQLite local no exista o no esté inicializado.
   void (async () => {
     try {
-      const tursoConfig = await tryTursoSpecialRead('config');
+      const serverConfig = await tryLocalServerSpecialRead('config');
       const patch: any = {};
-      for (const f of CONFIG_FIELDS) if (tursoConfig?.[f] !== undefined) {
-        patch[f] = sanitizeRecord(tursoConfig[f]);
+      for (const f of CONFIG_FIELDS) if (serverConfig?.[f] !== undefined) {
+        patch[f] = sanitizeRecord(serverConfig[f]);
       }
       if (Object.keys(patch).length) applyPatch(patch);
-      await loadCatalogs(true, String(tursoConfig?.catalogosVersion || ''));
+      await loadCatalogs(true, String(serverConfig?.catalogosVersion || ''));
     } catch (error) {
-      console.error('[db-store] Error cargando configuración desde Turso:', error);
+      console.error('[db-store] Error cargando configuración desde SQLite local:', error);
     }
   })();
 
   void (async () => {
-    const usingTurso = await bootstrapProductos();
-    if (usingTurso || !legacyRealtime) return;
+    const usingSQLite local = await bootstrapProductos();
+    if (usingSQLite local || !legacyRealtime) return;
     teardownFns.push(onValue(ref(legacyRealtime, LEGACY_REALTIME_PRODUCTS_PATH), (snap: any) => {
       const val = snap.val() || {};
       const items = Object.values(val).filter((item): item is Product => Boolean(item));
@@ -1252,14 +1242,14 @@ function init() {
   // miles de deudas ya pagadas conectadas en cada terminal genera lecturas
   // iniciales innecesarias. El histórico completo se hidrata únicamente
   // cuando se entra al módulo que lo necesita.
-  // CxC/CxP: Turso es la fuente de lectura cuando está activo. servidor Turso
-  // conserva el listener únicamente como fallback mientras Turso no esté configurado.
+  // CxC/CxP: SQLite local es la fuente de lectura cuando está activo. servidor SQLite local
+  // conserva el listener únicamente como fallback mientras SQLite local no esté configurado.
   void (async () => {
     for (const name of ['cxc', 'cxp']) {
       try {
         const [pendientes, parciales] = await Promise.all([
-          tryTursoReadAll(name, { estado: 'pendiente' }),
-          tryTursoReadAll(name, { estado: 'parcial' }),
+          tryLocalServerReadAll(name, { estado: 'pendiente' }),
+          tryLocalServerReadAll(name, { estado: 'parcial' }),
         ]);
         if (pendientes !== null && parciales !== null) {
           applyPatch({ [name]: mergeById(pendientes, parciales) });
@@ -1283,7 +1273,7 @@ function init() {
           (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
         ));
       } catch (e) {
-        console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
+        console.error("[db-store] Error leyendo " + name + " desde SQLite local:", e);
       }
     }
   })();
@@ -1300,9 +1290,9 @@ function init() {
   void (async () => {
     for (const name of ['devoluciones', 'anulaciones', 'reportesZ']) {
       try {
-        const tursoItems = await tryTursoRead(name, { limit: 100 });
-        if (tursoItems !== null) {
-          applyPatch({ [name]: tursoItems });
+        const serverItems = await tryLocalServerRead(name, { limit: 100 });
+        if (serverItems !== null) {
+          applyPatch({ [name]: serverItems });
           continue;
         }
         const col = COLLECTIONS[name];
@@ -1322,18 +1312,18 @@ function init() {
           (err: any) => { if (err.code !== 'permission-denied') console.warn("Sync " + name + ":", err); }
         ));
       } catch (e) {
-        console.error("[db-store] Error leyendo " + name + " desde Turso:", e);
+        console.error("[db-store] Error leyendo " + name + " desde SQLite local:", e);
       }
     }
   })();
 
-  // Históricos operativos: Turso es la única fuente de movimientos.
+  // Históricos operativos: SQLite local es la única fuente de movimientos.
   void (async () => {
     try {
-      const tursoItems = await tryTursoRead('movimientos', { limit: 50 });
-      if (tursoItems !== null) applyPatch({ movimientos: tursoItems });
+      const serverItems = await tryLocalServerRead('movimientos', { limit: 50 });
+      if (serverItems !== null) applyPatch({ movimientos: serverItems });
     } catch (e) {
-      console.error('[db-store] Error leyendo movimientos desde Turso:', e);
+      console.error('[db-store] Error leyendo movimientos desde SQLite local:', e);
     }
   })();
 
@@ -1347,13 +1337,13 @@ function init() {
   // cuando el módulo correspondiente los necesita.
 
 
-  // 4.5) LIBRO DIARIO: movimientos de caja y asientos deben hidratarse desde Turso
+  // 4.5) LIBRO DIARIO: movimientos de caja y asientos deben hidratarse desde SQLite local
   void (async () => {
     try {
-      const tursoItems = await tryTursoRead('libroDiario', { limit: 2000 });
-      if (tursoItems !== null) applyPatch({ libroDiario: tursoItems });
+      const serverItems = await tryLocalServerRead('libroDiario', { limit: 2000 });
+      if (serverItems !== null) applyPatch({ libroDiario: serverItems });
     } catch (e) {
-      console.error('[db-store] Error cargando libro diario desde Turso:', e);
+      console.error('[db-store] Error cargando libro diario desde SQLite local:', e);
     }
   })();
 
@@ -1365,19 +1355,19 @@ function init() {
 async function ensurePurchaseHistory(): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
-    // Historial de compras: cargar directamente desde Turso un bloque amplio.
+    // Historial de compras: cargar directamente desde SQLite local un bloque amplio.
     // Las compras migradas pueden ser anteriores a las primeras 500 operaciones
     // del cache inicial y no deben desaparecer del módulo por ese límite.
     const [compras, movimientos, cxp] = await Promise.all([
-      tryTursoRead('compras', { limit: 2000 }),
-      tryTursoRead('movimientos', { limit: 2000 }),
-      tryTursoRead('cxp', { limit: 2000 }),
+      tryLocalServerRead('compras', { limit: 2000 }),
+      tryLocalServerRead('movimientos', { limit: 2000 }),
+      tryLocalServerRead('cxp', { limit: 2000 }),
     ]);
     if (compras !== null) applyPatch({ compras: mergeById((cache as any).compras, compras) });
     if (movimientos !== null) applyPatch({ movimientos: mergeById((cache as any).movimientos, movimientos) });
     if (cxp !== null) applyPatch({ cxp: mergeById((cache as any).cxp, cxp) });
   } catch (e) {
-    console.error('[db-store] Error cargando historial de compras desde Turso:', e);
+    console.error('[db-store] Error cargando historial de compras desde SQLite local:', e);
     throw e;
   }
 }
@@ -1389,7 +1379,7 @@ async function getSaleById(saleId: string): Promise<any | null> {
   if (!saleId) return null;
   const id = String(saleId);
   try {
-    // Para consultas históricas, la venta debe salir de Turso directamente.
+    // Para consultas históricas, la venta debe salir de SQLite local directamente.
     // El cache local puede contener una versión antigua de la venta migrada
     // sin items y no debe ocultar el payload completo persistido.
     if (typeof window !== 'undefined') {
@@ -1397,9 +1387,9 @@ async function getSaleById(saleId: string): Promise<any | null> {
         credentials: 'include',
         cache: 'no-store',
       });
-      if (response.status === 503) throw new Error('Turso no está configurado o no está disponible.');
+      if (response.status === 503) throw new Error('SQLite local no está configurado o no está disponible.');
       const body: any = await response.json();
-      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'Turso rechazó la lectura.'));
+      if (!response.ok || body?.ok === false) throw new Error(String(body?.error || 'SQLite local rechazó la lectura.'));
       if (body?.record) return sanitizeRecord(body.record);
       return null;
     }
@@ -1423,11 +1413,11 @@ export const Store = {
     const fechaDesde = start.toISOString().slice(0, 10);
     const fechaHasta = to + 'T23:59:59.999';
     const [movimientos, productos] = await Promise.all([
-      tryTursoReadAll('movimientos', { fechaDesde, fechaHasta }, 500),
-      tryTursoReadAll('productos', {}, 500),
+      tryLocalServerReadAll('movimientos', { fechaDesde, fechaHasta }, 500),
+      tryLocalServerReadAll('productos', {}, 500),
     ]);
     if (movimientos === null || productos === null) {
-      throw new Error('No fue posible consultar el historial completo en Turso. No se utilizará información parcial.');
+      throw new Error('No fue posible consultar el historial completo en SQLite local. No se utilizará información parcial.');
     }
     const filtered = movimientos.filter((m: any) => {
       const date = String(m?.fecha || '').slice(0, 10);
@@ -1442,12 +1432,12 @@ export const Store = {
   applyInventoryMovementsTransaction,
   /**
    * Corte Z autoritativo: no actualizar el estado visual ni confirmar al cajero
-   * hasta que Turso haya guardado reporte y terminal en una sola transacción.
+   * hasta que SQLite local haya guardado reporte y terminal en una sola transacción.
    */
   async createZClosure(params: { terminalId: string; report: any; terminalPatch: Record<string, any> }): Promise<any> {
     if (typeof window === 'undefined') throw new Error('El cierre Z debe ejecutarse desde el POS.');
-    const result = await tryTursoOperation('zClosure', params);
-    if (!result?.report || !result?.terminal) throw new Error('Turso no confirmó el cierre Z. La caja permanece sin cambios.');
+    const result = await tryLocalServerOperation('zClosure', params);
+    if (!result?.report || !result?.terminal) throw new Error('SQLite local no confirmó el cierre Z. La caja permanece sin cambios.');
     const previousReports = (cache.reportesZ || []) as any[];
     const previousTerminals = (cache.terminales || []) as any[];
     applyPatch({
@@ -1470,8 +1460,8 @@ export const Store = {
     terminalId?: string;
   }): Promise<any> {
     if (typeof window === 'undefined') throw new Error('La operación de caja debe ejecutarse desde el POS.');
-    const result = await tryTursoOperation('cashMovement', params);
-    if (!result?.movement) throw new Error('Turso no confirmó el movimiento de caja.');
+    const result = await tryLocalServerOperation('cashMovement', params);
+    if (!result?.movement) throw new Error('SQLite local no confirmó el movimiento de caja.');
     return result;
   },
   subscribe(callback: (state: Partial<AppState>) => void): () => void {
@@ -1495,24 +1485,20 @@ export const Store = {
    */
   async processReturnOrCancellationTransaction(params: { operationId: string; operationType: 'DEVOLUCION' | 'ANULACION'; saleId: string; operationDoc: any; movements: any[]; journal?: any; refundItems?: any[]; fullCancellation?: boolean; fromOfflineQueue?: boolean; }): Promise<any> {
     const { operationId, operationType, saleId, operationDoc, movements, journal, refundItems = [], fullCancellation = false } = params;
-    if (!params.fromOfflineQueue && typeof window !== 'undefined' && navigator.onLine === false) {
-      enqueueOfflineOperation(operationType, { ...params }, operationId);
-      return { queuedOffline: true, operationId };
-    }
-    const tursoResult = await tryTursoOperation('returnOrCancellation', params);
-    if (tursoResult) return tursoResult;
+    const serverResult = await tryLocalServerOperation('returnOrCancellation', params);
+    if (serverResult) return serverResult;
 
     let result: any = null;
     await runTransaction(db, async (tx: any) => {
       const operationRef = await claimOperation(tx, operationType, operationId);
       const saleRef = doc(db, 'ventas', String(saleId));
       const saleSnap = await tx.get(saleRef);
-      if (!saleSnap.exists()) throw new Error('La venta ya no existe en Turso.');
+      if (!saleSnap.exists()) throw new Error('La venta ya no existe en SQLite local.');
       const sale = { ...sanitizeRecord(saleSnap.data()), id: String(saleId) } as any;
       if (operationType === 'ANULACION' && String(sale.estado || '') === 'anulada') throw new Error('La factura ya fue anulada.');
       const productIds = [...new Set((movements || []).map((m:any) => String(m.productoId || '')).filter(Boolean))];
       const products = new Map<string, any>();
-      for (const pid of productIds) { const s = await tx.get(doc(db,'productos',pid)); if (!s.exists()) throw new Error('Un producto de la operación ya no existe en Turso.'); products.set(pid,{...sanitizeRecord(s.data()),id:pid}); }
+      for (const pid of productIds) { const s = await tx.get(doc(db,'productos',pid)); if (!s.exists()) throw new Error('Un producto de la operación ya no existe en SQLite local.'); products.set(pid,{...sanitizeRecord(s.data()),id:pid}); }
       const journalRef = journal ? doc(db,'libroDiario',String(journal.id)) : null;
       if (journalRef) { const js = await tx.get(journalRef); if (js.exists()) throw new Error('El asiento contable de esta operación ya existe.'); }
       const terminalId = String(operationDoc.terminalId || '');
@@ -1560,12 +1546,12 @@ export const Store = {
     if (typeof window === 'undefined') return { appliedUSD: 0, debts: [] };
     const { operationId, provider, amountUSD, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, debts: [] };
-    const tursoResult = await tryTursoOperation('globalProviderPayment', params);
-    if (tursoResult) {
-      const refreshedCxp = await tryTursoRead('cxp', { limit: 2000 });
+    const serverResult = await tryLocalServerOperation('globalProviderPayment', params);
+    if (serverResult) {
+      const refreshedCxp = await tryLocalServerRead('cxp', { limit: 2000 });
       if (refreshedCxp !== null) applyPatch({ cxp: refreshedCxp });
-      if (Array.isArray(tursoResult.journal)) applyPatch({ libroDiario: mergeById(cache.libroDiario, tursoResult.journal) });
-      return tursoResult;
+      if (Array.isArray(serverResult.journal)) applyPatch({ libroDiario: mergeById(cache.libroDiario, serverResult.journal) });
+      return serverResult;
     }
 
     const effectiveTerminalId = String(terminalId || '').trim();
@@ -1577,7 +1563,7 @@ export const Store = {
       const terminalRef = effectiveTerminalId ? doc(db, 'terminales', effectiveTerminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
       const terminalRemote = terminalSnap?.exists() ? sanitizeRecord(terminalSnap.data()) as any : null;
-      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Turso.');
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en SQLite local.');
       // concurrencia. Todo el resultado se reconstruye en cada intento para no
       // duplicar appliedUSD/debts en memoria.
       const nextResult = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
@@ -1671,18 +1657,18 @@ export const Store = {
     if (typeof window === 'undefined') return { appliedUSD: 0, appliedBS: 0, debts: [] };
     const { operationId, customerName, customerCedula, amountUSD, amountBS, payment, journal, terminalId } = params;
     if (!(amountUSD > 0)) return { appliedUSD: 0, appliedBS: 0, debts: [] };
-    const tursoResult = await tryTursoOperation('globalCustomerPayment', params);
-    if (tursoResult) {
-      if (Array.isArray(tursoResult.debts)) applyPatch({ cxc: mergeById(cache.cxc, tursoResult.debts) });
+    const serverResult = await tryLocalServerOperation('globalCustomerPayment', params);
+    if (serverResult) {
+      if (Array.isArray(serverResult.debts)) applyPatch({ cxc: mergeById(cache.cxc, serverResult.debts) });
       // Un pago global puede liquidar varias facturas. Volver a leer CxC desde
-      // Turso garantiza que todas las facturas afectadas y sus historiales
+      // SQLite local garantiza que todas las facturas afectadas y sus historiales
       // queden visibles inmediatamente en la interfaz.
-      const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
+      const refreshedCxc = await tryLocalServerRead('cxc', { limit: 2000 });
       if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
-      if (tursoResult.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
-      if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: tursoResult.appliedUSD, montoBS: tursoResult.appliedBS, referencia: tursoResult.receiptId, terminalId: terminalId || journal.terminalId }]) });
-      if (tursoResult.terminal?.id) applyPatch({ terminales: mergeById(cache.terminales || [], [tursoResult.terminal]) });
-      return tursoResult;
+      if (serverResult.sale?.id) applyPatch({ ventas: mergeById(cache.ventas, [serverResult.sale]) });
+      if (journal?.id) applyPatch({ libroDiario: mergeById(cache.libroDiario, [{ ...journal, montoUSD: serverResult.appliedUSD, montoBS: serverResult.appliedBS, referencia: serverResult.receiptId, terminalId: terminalId || journal.terminalId }]) });
+      if (serverResult.terminal?.id) applyPatch({ terminales: mergeById(cache.terminales || [], [serverResult.terminal]) });
+      return serverResult;
     }
 
     const customerLabel = customerCedula ? `${customerName} [${customerCedula}]` : customerName;
@@ -1695,7 +1681,7 @@ export const Store = {
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
       const terminalRemote = terminalSnap?.exists() ? sanitizeRecord(terminalSnap.data()) as any : null;
-      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Turso.');
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en SQLite local.');
 
       const nextResult = { appliedUSD: 0, appliedBS: 0, debts: [] as any[], receiptId: '' as string };
       const nextCounter = Number(terminalRemote?.proximoCobroDeuda) || 1;
@@ -1824,40 +1810,40 @@ export const Store = {
     if (typeof window === 'undefined') return null;
     const { operationId, collection: collectionName, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
     if (!(amountUSD > 0)) return null;
-    const tursoResult = await tryTursoOperation('debtPayment', params);
-    if (tursoResult) {
-      if (tursoResult.id) {
-        applyPatch({ [collectionName]: mergeById((cache as any)[collectionName] || [], [tursoResult]) });
+    const serverResult = await tryLocalServerOperation('debtPayment', params);
+    if (serverResult) {
+      if (serverResult.id) {
+        applyPatch({ [collectionName]: mergeById((cache as any)[collectionName] || [], [serverResult]) });
       }
 
       // El pago individual CxP es una operación administrativa y su asiento
       // debe aparecer inmediatamente en Contabilidad, sin depender de una
       // recarga ni de que el listado de CxP haya sido hidratado nuevamente.
-      if (collectionName === 'cxp' && tursoResult.id) {
-        applyPatch({ cxp: mergeById(cache.cxp || [], [tursoResult]) });
+      if (collectionName === 'cxp' && serverResult.id) {
+        applyPatch({ cxp: mergeById(cache.cxp || [], [serverResult]) });
       }
 
-      // Tras un cobro CxC, hidratar CxC completa desde Turso para que el
+      // Tras un cobro CxC, hidratar CxC completa desde SQLite local para que el
       // historial de cada pago/abono aparezca inmediatamente, incluso cuando
       // la deuda pasó de activa a pagada y dejó de pertenecer al listado activo.
       if (collectionName === 'cxc') {
-        const refreshedCxc = await tryTursoRead('cxc', { limit: 2000 });
+        const refreshedCxc = await tryLocalServerRead('cxc', { limit: 2000 });
         if (refreshedCxc !== null) applyPatch({ cxc: refreshedCxc });
       }
 
-      if (tursoResult.sale?.id) {
-        applyPatch({ ventas: mergeById(cache.ventas, [tursoResult.sale]) });
+      if (serverResult.sale?.id) {
+        applyPatch({ ventas: mergeById(cache.ventas, [serverResult.sale]) });
       }
 
-      if (Array.isArray(tursoResult.journal) && tursoResult.journal.length) {
-        applyPatch({ libroDiario: mergeById(cache.libroDiario || [], tursoResult.journal) });
+      if (Array.isArray(serverResult.journal) && serverResult.journal.length) {
+        applyPatch({ libroDiario: mergeById(cache.libroDiario || [], serverResult.journal) });
       }
 
-      if (tursoResult.terminal) {
-        applyPatch({ terminales: mergeById(cache.terminales, [tursoResult.terminal]) });
+      if (serverResult.terminal) {
+        applyPatch({ terminales: mergeById(cache.terminales, [serverResult.terminal]) });
       }
 
-      return tursoResult;
+      return serverResult;
     }
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
@@ -1867,7 +1853,7 @@ export const Store = {
       const terminalRef = terminalId ? doc(db, 'terminales', terminalId) : null;
       const terminalSnap = terminalRef ? await tx.get(terminalRef) : null;
       const terminalRemote = terminalSnap?.exists() ? sanitizeRecord(terminalSnap.data()) as any : null;
-      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en Turso.');
+      if (terminalId && !terminalRemote) throw new Error('La caja/terminal ya no existe en SQLite local.');
       const debtSnap = await tx.get(debtRef);
       if (!debtSnap.exists()) throw new Error('La deuda ya no existe o fue eliminada en otra caja.');
       const remote = sanitizeRecord(debtSnap.data()) as any;
@@ -1933,24 +1919,24 @@ export const Store = {
     debt: any;
     journal?: any;
   }): Promise<any> {
-    // En modo Turso no existe `db` local: Turso es la única fuente operativa.
+    // En modo SQLite local no existe `db` local: SQLite local es la única fuente operativa.
     // No debemos bloquear esta ruta antes de llamar al endpoint /api/pos/store.
     if (typeof window === 'undefined') return null;
-    const tursoResult = await tryTursoOperation('supplierDebt', params);
-    if (tursoResult) {
-      // Turso confirma la deuda, pero la UI administrativa necesita reflejar
+    const serverResult = await tryLocalServerOperation('supplierDebt', params);
+    if (serverResult) {
+      // SQLite local confirma la deuda, pero la UI administrativa necesita reflejar
       // inmediatamente ese mismo registro en memoria para que CxP y
       // "Total a Pagar" se actualicen sin recargar la página.
-      const debtFromTurso = tursoResult.debt || params.debt;
+      const debtFromSQLite local = serverResult.debt || params.debt;
       const patch: Partial<AppState> = {};
-      if (debtFromTurso?.id) {
-        patch.cxp = mergeById(cache.cxp || [], [debtFromTurso]);
+      if (debtFromSQLite local?.id) {
+        patch.cxp = mergeById(cache.cxp || [], [debtFromSQLite local]);
       }
       if (params.journal?.id) {
         patch.libroDiario = mergeById(cache.libroDiario || [], [params.journal]);
       }
       if (Object.keys(patch).length) applyPatch(patch);
-      return debtFromTurso;
+      return debtFromSQLite local;
     }
     const { operationId, debt, journal } = params;
     const debtRef = doc(db, 'cxp', debt.id);
@@ -1972,12 +1958,12 @@ export const Store = {
 
   async syncProductsStockFromKardex(): Promise<any> {
     if (typeof window === 'undefined') {
-      throw new Error('La sincronización de inventario solo puede ejecutarse desde el cliente mediante Turso.');
+      throw new Error('La sincronización de inventario solo puede ejecutarse desde el cliente mediante SQLite local.');
     }
-    const result = await tryTursoOperation('inventoryStockSync', {});
-    if (!result) throw new Error('Turso no confirmó la sincronización del stock con Kardex.');
+    const result = await tryLocalServerOperation('inventoryStockSync', {});
+    if (!result) throw new Error('SQLite local no confirmó la sincronización del stock con Kardex.');
     // Reflejar inmediatamente en memoria todo lo que la misma transacción
-    // de Turso acaba de confirmar. Esto evita que Contabilidad tenga que
+    // de SQLite local acaba de confirmar. Esto evita que Contabilidad tenga que
     // recargar la página para mostrar el egreso/asiento del contado, y mantiene
     // sincronizados Compras, CxP, Kardex y Productos.
     const patch: Partial<AppState> = {};
@@ -2003,27 +1989,18 @@ export const Store = {
   },
 
   async createSaleTransaction(params: any): Promise<any> {
-    // El POS opera exclusivamente contra Turso. Este puente faltaba en el
-    // Store aunque la transacción y el endpoint de Turso sí existen.
+    // El POS opera exclusivamente contra SQLite local. Este puente faltaba en el
+    // Store aunque la transacción y el endpoint de SQLite local sí existen.
     if (typeof window === 'undefined') {
-      throw new Error('Las ventas solo pueden registrarse desde el cliente mediante Turso.');
+      throw new Error('Las ventas solo pueden registrarse desde el cliente mediante SQLite local.');
     }
 
-    // Si no hay conexión, persistimos la intención completa en la cola local
-    // antes de devolver el control al POS. No se presenta como venta confirmada:
-    // Turso validará stock, correlativo y efectos contables al sincronizar.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false && !params.fromOfflineQueue) {
-      const operationId = String(params.operationId || ('VENTA-POS-' + Store.uid()));
-      enqueueOfflineOperation('VENTA', { ...params, operationId, fromOfflineQueue: true }, operationId);
-      return { queuedOffline: true, operationId };
-    }
-
-    const result = await tryTursoOperation('sale', params);
+    const result = await tryLocalServerOperation('sale', params);
     if (!result?.sale) {
-      throw new Error('Turso no confirmó el registro de la venta.');
+      throw new Error('SQLite local no confirmó el registro de la venta.');
     }
 
-    // Reflejar inmediatamente la misma transacción confirmada por Turso.
+    // Reflejar inmediatamente la misma transacción confirmada por SQLite local.
     // Esto mantiene POS, Kardex, CxC, Contabilidad y Caja sincronizados sin
     // tocar los módulos administrativos ni introducir otra fuente de datos.
     const patch: Partial<AppState> = {};
@@ -2063,10 +2040,10 @@ export const Store = {
     journal?: any;
     debt?: any;
   }): Promise<any> {
-    // ÚNICA FUENTE DE VERDAD: Turso.
+    // ÚNICA FUENTE DE VERDAD: SQLite local.
     // Esta operación ya no tiene ningún camino alternativo de persistencia.
     if (typeof window === 'undefined') {
-      throw new Error('Las compras solo pueden registrarse desde el cliente mediante Turso.');
+      throw new Error('Las compras solo pueden registrarse desde el cliente mediante SQLite local.');
     }
 
     const { items, invoiceNumber, supplier, exchangeRate } = params;
@@ -2074,12 +2051,12 @@ export const Store = {
     if (!invoiceNumber || !supplier) throw new Error('La compra no tiene factura/proveedor.');
     if (!(Number(exchangeRate) > 0)) throw new Error('La tasa de la compra no es válida.');
 
-    const result = await tryTursoOperation('createPurchase', params);
+    const result = await tryLocalServerOperation('createPurchase', params);
     if (!result) {
-      throw new Error('Turso no confirmó el registro de la compra.');
+      throw new Error('SQLite local no confirmó el registro de la compra.');
     }
 
-    // Reflejar inmediatamente en memoria la misma transacción confirmada por Turso.
+    // Reflejar inmediatamente en memoria la misma transacción confirmada por SQLite local.
     // En una compra mixta existe un pago contado (asiento) y un saldo CxP; ambos
     // deben aparecer en Contabilidad/CxP sin obligar al usuario a recargar la página.
     const patch: Partial<AppState> = {};
@@ -2111,10 +2088,10 @@ export const Store = {
     supplier: string;
     purchaseDate?: string;
   }): Promise<any> {
-    // Eliminación de compras: Turso es la única fuente de verdad.
+    // Eliminación de compras: SQLite local es la única fuente de verdad.
     // No se consulta ni se utiliza ningún camino legacy.
     if (typeof window === 'undefined') {
-      throw new Error('La eliminación de compras solo puede ejecutarse desde el cliente mediante Turso.');
+      throw new Error('La eliminación de compras solo puede ejecutarse desde el cliente mediante SQLite local.');
     }
 
     const invoiceNumber = String(params.invoiceNumber || '').trim();
@@ -2123,10 +2100,10 @@ export const Store = {
       throw new Error('La compra no tiene factura/proveedor identificables.');
     }
 
-    const result = await tryTursoOperation('deletePurchase', params);
-    if (!result) throw new Error('Turso no confirmó la eliminación de la compra.');
+    const result = await tryLocalServerOperation('deletePurchase', params);
+    if (!result) throw new Error('SQLite local no confirmó la eliminación de la compra.');
 
-    // Reflejar inmediatamente en la UI exactamente lo que confirmó Turso.
+    // Reflejar inmediatamente en la UI exactamente lo que confirmó SQLite local.
     const deletedPurchaseIds = new Set((result.deletedPurchaseIds || []).map((id: any) => String(id)));
     const deletedDebtIds = new Set((result.deletedDebtIds || []).map((id: any) => String(id)));
     const deletedJournalIds = new Set((result.deletedJournalIds || []).map((id: any) => String(id)));
@@ -2181,8 +2158,8 @@ export const Store = {
     customerCedula?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
-    const tursoResult = await tryTursoOperation('deleteCustomerAndDebts', params);
-    if (tursoResult) return tursoResult;
+    const serverResult = await tryLocalServerOperation('deleteCustomerAndDebts', params);
+    if (serverResult) return serverResult;
     const { operationId, customerId, customerName, customerCedula } = params;
     const customerRef = doc(db, 'clientes', customerId);
     let result: any = null;
@@ -2244,8 +2221,8 @@ export const Store = {
     customerId?: string;
   }): Promise<any> {
     if (typeof window === 'undefined' || !db) return null;
-    const tursoResult = await tryTursoOperation('deleteCustomerDebt', params);
-    if (tursoResult) return tursoResult;
+    const serverResult = await tryLocalServerOperation('deleteCustomerDebt', params);
+    if (serverResult) return serverResult;
     const { operationId, debtId, customerCedula, customerId } = params;
     const debtRef = doc(db, 'cxc', debtId);
     let result: any = null;
@@ -2289,21 +2266,21 @@ export const Store = {
     journal?: any;
   }): Promise<any> {
     if (typeof window === 'undefined') return null;
-    // Turso es la fuente operativa; db es un marcador legacy retirado.
-    // No debemos salir aquí antes de ejecutar la operación contra Turso.
-    const tursoResult = await tryTursoOperation('customerDebt', params);
-    if (tursoResult) {
-      // La operación en Turso ya es autoritativa, pero la UI mantiene un
+    // SQLite local es la fuente operativa; db es un marcador legacy retirado.
+    // No debemos salir aquí antes de ejecutar la operación contra SQLite local.
+    const serverResult = await tryLocalServerOperation('customerDebt', params);
+    if (serverResult) {
+      // La operación en SQLite local ya es autoritativa, pero la UI mantiene un
       // cache reactivo local. Aplicamos inmediatamente el registro canónico
-      // devuelto por Turso para que Dashboard, CxC y POS vean al nuevo cliente
+      // devuelto por SQLite local para que Dashboard, CxC y POS vean al nuevo cliente
       // y su deuda sin tener que salir y volver a entrar al módulo.
-      if (tursoResult.debt) {
-        applyPatch({ cxc: mergeById(cache.cxc, [tursoResult.debt]) });
+      if (serverResult.debt) {
+        applyPatch({ cxc: mergeById(cache.cxc, [serverResult.debt]) });
       }
-      if (tursoResult.customer) {
-        applyPatch({ clientes: mergeById(cache.clientes, [tursoResult.customer]) });
+      if (serverResult.customer) {
+        applyPatch({ clientes: mergeById(cache.clientes, [serverResult.customer]) });
       }
-      return tursoResult;
+      return serverResult;
     }
     const { operationId, debt, customer, customerId, customerCedula, journal } = params;
     const debtRef = doc(db, 'cxc', debt.id);
@@ -2359,8 +2336,8 @@ export const Store = {
     journalId?: string;
   }): Promise<any | null> {
     if (typeof window === 'undefined' || !db) return null;
-    const tursoResult = await tryTursoOperation('reverseDebtPayment', params);
-    if (tursoResult) return tursoResult;
+    const serverResult = await tryLocalServerOperation('reverseDebtPayment', params);
+    if (serverResult) return serverResult;
     const { operationId, collection: collectionName, debtId, paymentId, journalId } = params;
     const debtRef = doc(db, collectionName, debtId);
     let result: any = null;
@@ -2453,8 +2430,8 @@ export const Store = {
     // Echo local inmediato (la UI ya muestra el cambio al instante)
     applyPatch(patch);
 
-    // Cuando Turso está activo, las operaciones críticas de terminal/caja no
-    // deben pasar por servidor Turso. La comparación se hace contra el cache anterior
+    // Cuando SQLite local está activo, las operaciones críticas de terminal/caja no
+    // deben pasar por servidor SQLite local. La comparación se hace contra el cache anterior
     // y solo se envían los campos que realmente cambiaron.
     if (patch.terminales !== undefined) {
       const prevTerminals = (prev.terminales || []) as any[];
@@ -2474,7 +2451,7 @@ export const Store = {
             if (key === 'id') return;
             if (JSON.stringify(terminal[key]) !== JSON.stringify(previousTerminal[key])) terminalPatch[key] = terminal[key];
           });
-          const zResult = await tryTursoOperation('zClosure', {
+          const zResult = await tryLocalServerOperation('zClosure', {
             terminalId,
             report: newestReport,
             terminalPatch,
@@ -2510,7 +2487,7 @@ export const Store = {
           if (JSON.stringify(terminal[key]) !== JSON.stringify(previous[key])) terminalPatch[key] = terminal[key];
         });
         if (Object.keys(terminalPatch).length === 0) continue;
-        const result = await tryTursoOperation('terminalPatch', {
+        const result = await tryLocalServerOperation('terminalPatch', {
           terminalId: String(terminal.id),
           patch: terminalPatch,
         });
@@ -2543,7 +2520,7 @@ export const Store = {
         prevById.forEach((_before, id) => { if (!newById.has(id)) deletedIds.push(id); });
 
         jobs.push((async () => {
-          const result = await tryTursoOperation('productSync', { changes, deletedIds });
+          const result = await tryLocalServerOperation('productSync', { changes, deletedIds });
           if (result) {
             const canonical = Array.isArray(result.products) ? result.products : [];
             const next = mergeById(newArr, canonical).filter(p => !deletedIds.includes(String(p.id)));
@@ -2551,7 +2528,7 @@ export const Store = {
             return;
           }
 
-          // Turso no configurado: conserva el comportamiento servidor Turso existente.
+          // SQLite local no configurado: conserva el comportamiento servidor SQLite local existente.
           const stocks = await syncProductosTransactional(prevArr, newArr);
           let toSync = newArr;
           if (stocks && stocks.size > 0) {
@@ -2565,11 +2542,7 @@ export const Store = {
           await syncLegacyRealtimeProducts(prevArr, toSync);
         })().catch(e => console.error("Error persistiendo productos:", e)));
       } else if (k === 'terminales') {
-        // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete.
-        // Si Turso está activo, no existe una vía genérica que pueda terminar en servidor Turso.
-        if (navigator.onLine === false) {
-          throw new Error('Sin conexión: no se modificará la terminal para evitar divergencia.');
-        }
+        // Las terminales se escriben exclusivamente mediante terminalPatch/Upsert/Delete en el servidor LAN.
       } else if (['clientes', 'proveedores', 'movimientos', 'libroDiario'].includes(String(k))) {
         const prevById = new Map(prevArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
         const newById = new Map(newArr.filter((x: any) => x?.id).map(x => [String(x.id), x]));
@@ -2580,7 +2553,7 @@ export const Store = {
         const deletedIds = [...prevById.keys()].filter(id => !newById.has(id));
 
         jobs.push((async () => {
-          const result = await tryTursoOperation('recordsSync', {
+          const result = await tryLocalServerOperation('recordsSync', {
             table: String(k),
             records: sanitizeRecord(records),
             deletedIds,
@@ -2596,7 +2569,7 @@ export const Store = {
       }
     }
 
-    // 2) CATÁLOGOS: Turso primero; servidor Turso solo mientras Turso no esté configurado.
+    // 2) CATÁLOGOS: SQLite local primero; servidor SQLite local solo mientras SQLite local no esté configurado.
     const catalogJobs: Promise<unknown>[] = [];
     let catalogosChanged = false;
     for (const [field, catName] of Object.entries(CATALOG_FIELDS)) {
@@ -2606,7 +2579,7 @@ export const Store = {
       if (JSON.stringify(prevList) !== JSON.stringify(newList)) {
         catalogosChanged = true;
         catalogJobs.push((async () => {
-          const result = await tryTursoOperation('catalogPatch', { name: catName, lista: sanitizeRecord(newList) });
+          const result = await tryLocalServerOperation('catalogPatch', { name: catName, lista: sanitizeRecord(newList) });
           if (!result) await setDoc(doc(db, CATALOGOS_COLLECTION, catName), { lista: sanitizeRecord(newList) });
         })());
       }
@@ -2614,12 +2587,12 @@ export const Store = {
     if (catalogosChanged) {
       const catalogVersion = new Date().toISOString();
       jobs.push(Promise.all(catalogJobs).then(async () => {
-        const result = await tryTursoOperation('configPatch', { patch: { catalogosVersion: catalogVersion } });
+        const result = await tryLocalServerOperation('configPatch', { patch: { catalogosVersion: catalogVersion } });
         if (!result) await setDoc(doc(db, CONFIG_COLLECTION, CONFIG_DOC_ID), { catalogosVersion: catalogVersion }, { merge: true });
       }).then(() => writeCatalogCacheMeta(catalogVersion)).catch(e => console.error('Error persistiendo catálogo/version:', e)));
     }
 
-    // 3) CONFIG: Turso es la única fuente de verdad. No se replica ni cae en servidor Turso.
+    // 3) CONFIG: SQLite local es la única fuente de verdad. No se replica ni cae en servidor SQLite local.
     const toWrite: Record<string, any> = {};
     for (const f of CONFIG_FIELDS) {
       const key = f as keyof AppState;
@@ -2630,8 +2603,8 @@ export const Store = {
     }
     if (Object.keys(toWrite).length > 0) {
       jobs.push((async () => {
-        const result = await tryTursoOperation('configPatch', { patch: toWrite });
-        if (!result) throw new Error('Turso no confirmó la actualización de configuración.');
+        const result = await tryLocalServerOperation('configPatch', { patch: toWrite });
+        if (!result) throw new Error('SQLite local no confirmó la actualización de configuración.');
       })().catch(e => console.error('Error persistiendo config:', e)));
     }
     await Promise.all(jobs);
@@ -2644,8 +2617,8 @@ export const Store = {
       if ((patch as any)[key] !== undefined) cleanPatch[key] = sanitizeRecord((patch as any)[key]);
     }
     if (Object.keys(cleanPatch).length === 0) return Store.get();
-    const result = await tryTursoOperation('configPatch', { patch: cleanPatch });
-    if (!result?.config) throw new Error('Turso no confirmó la actualización de configuración.');
+    const result = await tryLocalServerOperation('configPatch', { patch: cleanPatch });
+    if (!result?.config) throw new Error('SQLite local no confirmó la actualización de configuración.');
     const applied: any = {};
     for (const key of CONFIG_FIELDS) if (result.config[key] !== undefined) applied[key] = sanitizeRecord(result.config[key]);
     applyPatch(applied);
@@ -2666,28 +2639,6 @@ export const Store = {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
   }
 };
-
-registerOfflineProcessor(async (operation) => {
-  if (operation.type === 'VENTA') {
-    await Store.createSaleTransaction({ ...(operation.payload || {}), fromOfflineQueue: true, operationId: operation.operationId });
-    return;
-  }
-  if (operation.type === 'INVENTARIO') {
-    await Store.applyInventoryMovementsTransaction({ ...(operation.payload || {}), fromOfflineQueue: true, operationId: operation.operationId });
-    return;
-  }
-  if (operation.type === 'COMPRA') { await Store.createPurchaseTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'PAGO-DEUDA') { await Store.applyDebtPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'PAGO-CXP-GLOBAL') { await Store.applyGlobalProviderPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'REVERSAR-PAGO') { await Store.reverseDebtPaymentTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'ELIMINAR-COMPRA') { await Store.deletePurchaseTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'ELIMINAR-CLIENTE') { await Store.deleteCustomerAndDebtsTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'ELIMINAR-CXC') { await Store.deleteCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'DEUDA-CXC') { await Store.createCustomerDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'DEUDA-CXP') { await Store.createSupplierDebtTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  if (operation.type === 'DEVOLUCION' || operation.type === 'ANULACION') { await Store.processReturnOrCancellationTransaction({ ...(operation.payload || {}), operationId: operation.operationId }); return; }
-  throw new Error('Tipo de operación offline no soportado: ' + operation.type);
-});
 
 export const Utils = {
   getVzlaDate: () => {
