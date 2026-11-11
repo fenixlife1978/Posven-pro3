@@ -222,7 +222,7 @@ export default function LicoreriaPOS() {
 
     const checkLanServer = async () => {
       try {
-        const response = await fetch('/api/pos/health', { cache: 'no-store' });
+        const response = await fetch('/api/pos/health', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
         const health = await response.json().catch(() => ({}));
         setIsOnline(response.ok && health?.ok === true && health?.database === 'sqlite');
       } catch {
