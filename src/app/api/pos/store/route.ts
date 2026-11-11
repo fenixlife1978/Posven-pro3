@@ -127,6 +127,7 @@ export async function POST(request: Request) {
         const target = String(body.table || '');
         if (!allowed.has(target)) throw new Error('Tabla no permitida para sincronización general.');
         if (target === 'proveedores' && user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        if (target === 'clientes' && Array.isArray(body.deletedIds) && body.deletedIds.length && user.rol !== 'administrador') throw new Error('Solo un administrador puede eliminar clientes.');
         const result = await syncRecords({
           table: target as any,
           records: Array.isArray(body.records) ? body.records : [],
