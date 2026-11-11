@@ -1,30 +1,12 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import path from 'node:path';
 import { createSession, getSessionUser } from '@/lib/sqlite/auth';
-import {
-  assertSQLiteReady,
-  factoryResetTransaction,
-  upsertRecords,
-  patchAppConfig,
-  patchCatalog,
-  type SQLiteStoreTable,
-} from '@/lib/sqlite/pos-store';
+import { assertSQLiteReady, restoreBackupTransaction } from '@/lib/sqlite/pos-store';
+import { createSqliteBackup, getSqliteDatabasePath } from '@/lib/sqlite/database';
 
 export const runtime = 'nodejs';
-
-const TABLES = [
-  'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
-  'devoluciones','anulaciones','terminales','libroDiario','reportesZ','caja','compras',
-] as const;
-
-const CATALOGS = [
-  'categorias','departamentos','marcas','presentaciones',
-  'productCategories','productUnits','productColors','productSizes',
-  'brands','groups','subgroups','lines','suppliers',
-] as const;
-
-type TableName = typeof TABLES[number];
-type CatalogName = typeof CATALOGS[number];
+export const dynamic = 'force-dynamic';
 
 async function requireAdmin() {
   assertSQLiteReady();
@@ -39,65 +21,46 @@ export async function POST(request: Request) {
   try {
     const user = await requireAdmin();
     const body = await request.json();
-    const action = String(body?.action || '');
-
-    if (action === 'reset') {
-      const result = await factoryResetTransaction({ user });
-      // El reset elimina las sesiones para limpiar completamente la base de datos.
-      // Debemos crear inmediatamente una nueva sesión para que los siguientes
-      // bloques del respaldo sigan autenticados sin obligar al usuario a volver a entrar.
-      const session = await createSession(String(result.seedAdmin.id));
-      const response = NextResponse.json({ ...result, ok: true, action });
-      response.cookies.set('posven_session', session.id, {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: false,
-        path: '/',
-        expires: new Date(session.expires),
-      });
-      return response;
+    if (String(body?.action || '') !== 'restore') {
+      throw Object.assign(new Error('La restauración debe enviarse como un único paquete validado.'), { status: 400 });
+    }
+    const backup = body?.backup;
+    if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object') {
+      throw Object.assign(new Error('El archivo no es un respaldo POSVEN válido.'), { status: 400 });
+    }
+    if (JSON.stringify(backup).length > 64 * 1024 * 1024) {
+      throw Object.assign(new Error('El respaldo supera el tamaño máximo permitido de 64 MB.'), { status: 413 });
     }
 
-    if (action === 'table') {
-      const table = String(body?.table || '') as TableName;
-      if (!TABLES.includes(table)) throw new Error('Tabla de respaldo no permitida.');
-      const rows = Array.isArray(body?.rows) ? body.rows : [];
-      if (rows.length > 450) throw new Error('El lote supera el límite seguro de 450 registros.');
-      const result = await upsertRecords(table as SQLiteStoreTable, rows);
-      return NextResponse.json({ ok: true, action, table, count: result.count });
-    }
+    const databasePath = getSqliteDatabasePath();
+    const backupDirectory = path.join(path.dirname(databasePath), 'backups');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safetyCopy = path.join(backupDirectory, 'antes-restauracion-' + timestamp + '.sqlite');
+    await createSqliteBackup(safetyCopy);
 
-    if (action === 'catalog') {
-      const name = String(body?.name || '') as CatalogName;
-      if (!CATALOGS.includes(name)) throw new Error('Catálogo de respaldo no permitido.');
-      const rows = Array.isArray(body?.rows) ? body.rows : [];
-      await patchCatalog(name, rows);
-      return NextResponse.json({ ok: true, action, name, count: rows.length });
-    }
-
-    if (action === 'config') {
-      const config = body?.config;
-      if (!config || typeof config !== 'object' || Array.isArray(config)) {
-        throw new Error('Configuración de respaldo inválida.');
-      }
-      await patchAppConfig(config);
-      return NextResponse.json({ ok: true, action });
-    }
-
-    if (action === 'finish') {
-      return NextResponse.json({
-        ok: true,
-        action,
-        skipped: ['users','operaciones','auditoriaSistema','legacy_documents'],
-        note: 'Se conserva el administrador semilla de SQLite local.',
-      });
-    }
-
-    throw new Error('Acción de restauración no reconocida.');
+    const result = await restoreBackupTransaction({ user, backup });
+    const session = await createSession(String(result.preservedAdminId));
+    const response = NextResponse.json({
+      ok: true,
+      action: 'restore',
+      preservedAdmin: result.preservedAdmin,
+      importedUsers: result.importedUsers,
+      skippedUsersWithoutHash: result.skippedUsersWithoutHash,
+      totalRows: result.totalRows,
+      counts: result.counts,
+      safetyBackupCreated: true,
+    });
+    response.cookies.set('posven_session', session.id, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: new URL(request.url).protocol === 'https:',
+      path: '/',
+      expires: new Date(session.expires),
+    });
+    return response;
   } catch (error: any) {
     const message = String(error?.message || error);
     const status = Number(error?.status) || (
-      message.includes('no está configurado') ? 503 :
       message.includes('No autenticado') ? 401 :
       message.includes('Se requiere administrador') ? 403 : 400
     );
