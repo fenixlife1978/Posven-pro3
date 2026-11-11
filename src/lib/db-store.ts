@@ -73,7 +73,7 @@ async function tryTursoOperation(operation: string, payload: any): Promise<any |
   if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('El dispositivo está sin conexión. La operación no se enviará a servidor Turso para evitar duplicados.');
   let response: Response;
   try {
-    response = await fetch('/api/turso/store', {
+    response = await fetch('/api/pos/store', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ operation, ...payload }),
     });
@@ -92,7 +92,7 @@ async function tryTursoSpecialRead(kind: 'config' | 'catalog', name = ''): Promi
   const params = new URLSearchParams({ special: kind });
   if (kind === 'catalog') params.set('name', name);
   let response: Response;
-  try { response = await fetch('/api/turso/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
+  try { response = await fetch('/api/pos/store?' + params.toString(), { credentials: 'include', cache: 'no-store' }); }
   catch { throw new Error('No se pudo consultar Turso.'); }
   if (response.status === 503) throw new Error('Turso no está configurado o no está disponible. servidor Turso no se utilizará como respaldo.');
   let body: any = null; try { body = await response.json(); } catch {}
@@ -112,7 +112,7 @@ async function tryTursoRead(table: string, options: { limit?: number; offset?: n
     if (options.fechaDesde) params.set('fechaDesde', String(options.fechaDesde));
     if (options.fechaHasta) params.set('fechaHasta', String(options.fechaHasta));
     if (options.productoId) params.set('productoId', String(options.productoId));
-    response = await fetch('/api/turso/store?' + params.toString(), {
+    response = await fetch('/api/pos/store?' + params.toString(), {
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
@@ -1393,7 +1393,7 @@ async function getSaleById(saleId: string): Promise<any | null> {
     // El cache local puede contener una versión antigua de la venta migrada
     // sin items y no debe ocultar el payload completo persistido.
     if (typeof window !== 'undefined') {
-      const response = await fetch('/api/turso/store?table=ventas&id=' + encodeURIComponent(id), {
+      const response = await fetch('/api/pos/store?table=ventas&id=' + encodeURIComponent(id), {
         credentials: 'include',
         cache: 'no-store',
       });
@@ -1934,7 +1934,7 @@ export const Store = {
     journal?: any;
   }): Promise<any> {
     // En modo Turso no existe `db` local: Turso es la única fuente operativa.
-    // No debemos bloquear esta ruta antes de llamar al endpoint /api/turso/store.
+    // No debemos bloquear esta ruta antes de llamar al endpoint /api/pos/store.
     if (typeof window === 'undefined') return null;
     const tursoResult = await tryTursoOperation('supplierDebt', params);
     if (tursoResult) {
