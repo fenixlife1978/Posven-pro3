@@ -2425,7 +2425,7 @@ export const Store = {
         })().catch(e => console.error("Error persistiendo productos:", e)));
       } else if (k === 'terminales') {
         // Las terminales se escriben exclusivamente mediante operaciones específicas del servidor LAN.
-      } else if (['ventas', 'cxc', 'cxp', 'devoluciones', 'anulaciones', 'reportesZ', 'caja', 'compras', 'movimientos', 'libroDiario'].includes(String(k))) {
+      } else if (['ventas', 'cxc', 'cxp', 'devoluciones', 'anulaciones', 'reportesZ', 'caja', 'cashHistory', 'compras', 'movimientos', 'libroDiario'].includes(String(k))) {
         // Estas tablas solo cambian dentro de sus transacciones de negocio.
         // Store.set refleja en memoria el resultado confirmado, pero nunca
         // intenta reemplazarlas mediante una sincronización genérica por arrays.
