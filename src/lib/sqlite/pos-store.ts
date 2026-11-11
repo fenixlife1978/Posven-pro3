@@ -722,6 +722,11 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       args: [],
       wantRows: false,
     });
+    await tx.execute({
+      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      args: [String(currentAdmin.id)],
+      wantRows: false,
+    });
 
     const counts: Record<string, number> = {};
     for (const entry of tableKeys) {
