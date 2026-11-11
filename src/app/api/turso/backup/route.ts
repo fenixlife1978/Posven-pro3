@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       // Debemos crear inmediatamente una nueva sesión para que los siguientes
       // bloques del respaldo sigan autenticados sin obligar al usuario a volver a entrar.
       const session = await createSession(String(result.seedAdmin.id));
-      const response = NextResponse.json({ ok: true, action, ...result });
+      const response = NextResponse.json({ ...result, ok: true, action });
       response.cookies.set('posven_session', session.id, {
         httpOnly: true,
         sameSite: 'lax',
