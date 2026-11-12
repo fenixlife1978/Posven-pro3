@@ -1915,7 +1915,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const savedSale=collection==='cxc'?rowFromDb((await tx.execute(txSelect('ventas',receiptId))).rows[0]):null;
       const savedJournal=rowFromDb((await tx.execute({sql:'SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,\'$.referencia\')=? LIMIT 1',args:[receiptId]})).rows[0]);
       const savedTerminal=terminalForOperation?rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]):null;
-      return {appliedUSD:debts.reduce((n:number,d:any)=>n+(Number(d.appliedUSD)||0),0),appliedBS:debts.reduce((n:number,d:any)=>n+(Number(d.appliedBS)||0),0),debts,receiptId,sale:savedSale,journal:savedJournal,terminal:savedTerminal,recovered:true};
+      return {appliedUSD:debts.reduce((n:number,d:any)=>n+(Number(d.appliedUSD)||0),0),appliedBS:debts.reduce((n:number,d:any)=>n+(Number(d.appliedBS)||0),0),debts,receiptId,sale:savedSale,journal:savedJournal?[savedJournal]:[],terminal:savedTerminal,recovered:true};
     }
     const terminal=terminalForOperation?rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]):null;
     if(terminalForOperation&&!terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
@@ -1967,7 +1967,8 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const foundCustomer=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
       const customer=rowFromDb(foundCustomer.rows[0]); if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD)}));
     }
-    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||journal.terminalId):undefined,terminalName:collection==='cxc'?(terminal?.nombre||journal.terminalName):undefined}));
+    const canonicalJournal=journal?.id?{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||journal.terminalId):undefined,terminalName:collection==='cxc'?(terminal?.nombre||journal.terminalName):undefined}:null;
+    if(canonicalJournal) statements.push(rowStatement('libroDiario',canonicalJournal));
 
     // Un cobro de CxC también es una operación visible en el historial del POS,
     // pero NO es una venta de mercancía. Se guarda como registro de tipo
@@ -2022,7 +2023,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
     statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[prefix+'-'+opId,prefix,opId,JSON.stringify({tipo:prefix,operationId:opId,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||'GLOBAL'):undefined})],wantRows:false});
     for(const s of statements) await tx.execute(s);
-    return {appliedUSD,appliedBS,debts,receiptId,sale};
+    return {appliedUSD,appliedBS,debts,receiptId,sale,journal:canonicalJournal?[canonicalJournal]:[],terminal:terminal?{...terminal,id:terminalForOperation,[field]:counter+1}:null};
   });
 }
 export async function applyGlobalProviderPaymentTransaction(params:any){ return applyGlobalPayment(params,'cxp'); }
