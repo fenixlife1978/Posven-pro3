@@ -986,9 +986,12 @@ export async function createSaleTransaction(params: {
       const savedTerminal = terminalId
         ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
         : null;
+      if(terminalId&&!savedTerminal)throw new Error('La terminal de la venta ya no existe.');
+      if(terminalId&&savedTerminal)assertTerminalAccess(params.user,savedTerminal);
+      if(params.user?.rol==='cajero'&&String(savedSale.terminalId||'')!==String(terminalId||''))throw new Error('El cajero solo puede recuperar ventas de su propia terminal.');
       const savedMovements = (await tx.execute({
         sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",
-        args: ['%' + String(saved.referencia) + '%'],
+        args: [String(saleType)+' '+String(saved.referencia)+'%'],
       })).rows.map(rowFromDb).filter(Boolean);
       // Incluir también los componentes descontados por kits, que no aparecen
       // como líneas independientes en el detalle comercial de la factura.
@@ -1002,8 +1005,8 @@ export async function createSaleTransaction(params: {
         if (product) savedProducts.push(product);
       }
       const savedJournals = (await tx.execute({
-        sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia') LIKE ?",
-        args: ['%' + String(saved.referencia) + '%'],
+        sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
+        args: [String(saved.referencia)+'-'+String(terminalId||'GLOBAL')],
       })).rows.map(rowFromDb).filter(Boolean);
       return {
         sale: savedSale, debt: savedDebt, journals: savedJournals, journal: savedJournals,
@@ -1798,6 +1801,9 @@ export async function applyDebtPaymentTransaction(params: {
       const savedTerminal = terminalForOperation
         ? rowFromDb((await tx.execute(txSelect('terminales', terminalForOperation))).rows[0])
         : null;
+      if(terminalForOperation&&!savedTerminal)throw new Error('La caja/terminal del cobro ya no existe.');
+      if(terminalForOperation&&savedTerminal)assertTerminalAccess(params.user,savedTerminal);
+      if(collection==='cxc'&&params.user?.rol==='cajero'&&String(savedPayment.terminalId||savedPayment.terminalForOperation||'')!==String(terminalForOperation||''))throw new Error('El cajero solo puede recuperar cobros de su propia terminal.');
       return {
         ...savedDebt, appliedUSD: Number(savedPayment.montoUSD) || 0,
         appliedBS: Number(savedPayment.montoBS) || 0,
@@ -1915,7 +1921,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const savedSale=collection==='cxc'?rowFromDb((await tx.execute(txSelect('ventas',receiptId))).rows[0]):null;
       const savedJournal=rowFromDb((await tx.execute({sql:'SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,\'$.referencia\')=? LIMIT 1',args:[receiptId]})).rows[0]);
       const savedTerminal=terminalForOperation?rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]):null;
-      return {appliedUSD:debts.reduce((n:number,d:any)=>n+(Number(d.appliedUSD)||0),0),appliedBS:debts.reduce((n:number,d:any)=>n+(Number(d.appliedBS)||0),0),debts,receiptId,sale:savedSale,journal:savedJournal,terminal:savedTerminal,recovered:true};
+      return {appliedUSD:debts.reduce((n:number,d:any)=>n+(Number(d.appliedUSD)||0),0),appliedBS:debts.reduce((n:number,d:any)=>n+(Number(d.appliedBS)||0),0),debts,receiptId,sale:savedSale,journal:savedJournal?[savedJournal]:[],terminal:savedTerminal,recovered:true};
     }
     const terminal=terminalForOperation?rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]):null;
     if(terminalForOperation&&!terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
@@ -1967,7 +1973,8 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const foundCustomer=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
       const customer=rowFromDb(foundCustomer.rows[0]); if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD)}));
     }
-    if(journal?.id) statements.push(rowStatement('libroDiario',{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||journal.terminalId):undefined,terminalName:collection==='cxc'?(terminal?.nombre||journal.terminalName):undefined}));
+    const canonicalJournal=journal?.id?{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||journal.terminalId):undefined,terminalName:collection==='cxc'?(terminal?.nombre||journal.terminalName):undefined}:null;
+    if(canonicalJournal) statements.push(rowStatement('libroDiario',canonicalJournal));
 
     // Un cobro de CxC también es una operación visible en el historial del POS,
     // pero NO es una venta de mercancía. Se guarda como registro de tipo
@@ -2022,7 +2029,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
     statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:[prefix+'-'+opId,prefix,opId,JSON.stringify({tipo:prefix,operationId:opId,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||'GLOBAL'):undefined})],wantRows:false});
     for(const s of statements) await tx.execute(s);
-    return {appliedUSD,appliedBS,debts,receiptId,sale};
+    return {appliedUSD,appliedBS,debts,receiptId,sale,journal:canonicalJournal?[canonicalJournal]:[],terminal:terminal?{...terminal,id:terminalForOperation,[field]:counter+1}:null};
   });
 }
 export async function applyGlobalProviderPaymentTransaction(params:any){ return applyGlobalPayment(params,'cxp'); }
@@ -2102,7 +2109,10 @@ export async function processReturnOrCancellationTransaction(params:any){
       const operationDoc=receiptId?rowFromDb((await tx.execute(txSelect(table,receiptId))).rows[0]):null;
       if(!operationDoc)throw new Error('La devolución/anulación ya fue procesada, pero no se pudo recuperar su comprobante. Consulte el historial antes de repetirla.');
       const savedSale=rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]);
-      const movementRows=await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",args:['%'+receiptId+'%']});
+      if(!savedSale)throw new Error('No se puede recuperar la venta vinculada a esta devolución/anulación.');
+      if(user?.rol==='cajero'&&String(savedSale.terminalId||'')!==String(terminalId||''))throw new Error('El cajero solo puede recuperar operaciones de su propia terminal.');
+      const movementReference=operationType==='ANULACION'?'ANULACIÓN TOTAL FACTURA #'+String(saleId):'DEVOLUCIÓN '+receiptId+' - REF VENTA '+String(saleId);
+      const movementRows=await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia')=?",args:[movementReference]});
       const movements=movementRows.rows.map(rowFromDb).filter(Boolean);
       const productIds=[...new Set([...movements.map((m:any)=>String(m.productoId||'')),...(operationDoc.items||[]).map((it:any)=>String(it.productoId||''))].filter(Boolean))];
       const products:any[]=[];for(const pid of productIds){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(p)products.push(p);}
@@ -2110,6 +2120,8 @@ export async function processReturnOrCancellationTransaction(params:any){
       const debt=debtRows.rows.length?rowFromDb(debtRows.rows[0]):null;
       const journal=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=? LIMIT 1",args:[receiptId]})).rows[0]);
       const terminal=terminalId?rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0]):null;
+      if(terminalId&&!terminal)throw new Error('La terminal de la operación ya no existe.');
+      if(terminalId&&terminal)assertTerminalAccess(user,terminal);
       return {operationId,operationType,receiptId,operationDoc,products,movements,debt,journal,terminal,recovered:true,remainingAfter:operationType==='ANULACION'?0:(operationDoc.items||[]).reduce((n:number,it:any)=>n+(Number(it.cantidad)||0),0)};
     }
 
@@ -2686,6 +2698,9 @@ export async function createCashMovementTransaction(params: {
       const movement=saved.referencia?rowFromDb((await tx.execute(txSelect('libroDiario',String(saved.referencia)))).rows[0]):null;
       if(!movement)throw new Error('El movimiento ya fue procesado, pero no se pudo recuperar. Consulte el libro diario antes de repetirlo.');
       const terminal=terminalId?rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0]):null;
+      if(terminalId&&!terminal)throw new Error('La caja/terminal del movimiento ya no existe.');
+      if(terminalId&&terminal)assertTerminalAccess(params.user,terminal);
+      if(params.user?.rol==='cajero'&&String(movement.terminalId||'')!==String(terminalId||''))throw new Error('El cajero solo puede recuperar movimientos de su propia terminal.');
       return {movement,terminal,recovered:true};
     }
     const terminal = terminalId
