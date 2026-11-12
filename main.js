@@ -23,6 +23,52 @@ let lanDiscoveryServer = null;
 
 const DEFAULT_PORT = 4580;
 
+// Una solicitud solo se considera drenada cuando terminó el handler de Next
+// y la respuesta HTTP terminó o el cliente desconectó. El cierre nunca debe
+// cancelar una transacción SQLite que siga ejecutándose en el handler.
+const activeHttpRequests = new Set();
+const activeHttpRequestWaiters = [];
+const SHUTDOWN_WARNING_MS = 30000;
+
+function trackHttpRequest(request, response, handler) {
+  const state = { handlerDone: false, responseDone: false };
+  activeHttpRequests.add(state);
+  const releaseIfDone = () => {
+    if (!state.handlerDone || !state.responseDone || !activeHttpRequests.delete(state)) return;
+    if (activeHttpRequests.size === 0) {
+      while (activeHttpRequestWaiters.length) activeHttpRequestWaiters.shift()();
+    }
+  };
+  response.once('finish', () => { state.responseDone = true; releaseIfDone(); });
+  response.once('close', () => { state.responseDone = true; releaseIfDone(); });
+
+  try {
+    Promise.resolve(handler(request, response))
+      .catch(error => {
+        console.error('[HTTP] Error no controlado en handler Next.js:', error);
+        if (!response.headersSent && !response.destroyed) {
+          response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          response.end(JSON.stringify({ ok: false, error: 'Error interno del servidor POSVEN3.' }));
+        } else if (!response.destroyed) {
+          response.destroy(error);
+        }
+      })
+      .finally(() => { state.handlerDone = true; releaseIfDone(); });
+  } catch (error) {
+    state.handlerDone = true;
+    if (!response.headersSent && !response.destroyed) {
+      response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      response.end(JSON.stringify({ ok: false, error: 'Error interno del servidor POSVEN3.' }));
+    }
+    releaseIfDone();
+  }
+}
+
+function waitForActiveHttpRequests() {
+  if (activeHttpRequests.size === 0) return Promise.resolve();
+  return new Promise(resolve => activeHttpRequestWaiters.push(resolve));
+}
+
 function fatalError(title, detail) {
   try { dialog.showErrorBox(title, detail); }
   catch (error) { console.error('[FATAL]', title, detail, error); }
@@ -419,7 +465,7 @@ async function startLocalNextServer(port) {
         return;
       }
     }
-    handler(request, response);
+    trackHttpRequest(request, response, handler);
   });
   await new Promise((resolve, reject) => {
     nextServer.once('error', reject);
@@ -538,22 +584,55 @@ async function shutdownLocalServer() {
   nextServer = null;
 
   if (server?.listening) {
-    await new Promise((resolve) => {
+    const serverClosed = new Promise((resolve) => {
       try {
+        // Detiene nuevas conexiones; las solicitudes ya admitidas siguen vivas.
         server.close((error) => {
           if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') {
             console.error('[SHUTDOWN] Error cerrando servidor HTTPS:', error);
           }
           resolve();
         });
-        // Node mantiene conexiones keep-alive inactivas; no deben impedir
-        // que el cierre normal complete después de dejar de aceptar tráfico.
+        // Las conexiones keep-alive sin solicitudes no deben bloquear el cierre.
         server.closeIdleConnections?.();
       } catch (error) {
-        console.error('[SHUTDOWN] No se pudo cerrar el servidor HTTPS:', error);
+        console.error('[SHUTDOWN] No se pudo iniciar el cierre HTTPS:', error);
         resolve();
       }
     });
+
+    let warningTimer;
+    const warningElapsed = new Promise(resolve => {
+      warningTimer = setTimeout(() => resolve(true), SHUTDOWN_WARNING_MS);
+    });
+    const drained = await Promise.race([
+      waitForActiveHttpRequests().then(() => true),
+      warningElapsed,
+    ]);
+    clearTimeout(warningTimer);
+
+    if (!drained) {
+      console.warn('[SHUTDOWN] Continúan solicitudes HTTP activas:', activeHttpRequests.size);
+      try {
+        await dialog.showMessageBox({
+          type: 'warning',
+          title: 'POSVEN3 está terminando operaciones',
+          message: 'Hay operaciones que todavía no han terminado.',
+          detail: 'El servidor seguirá esperando sin interrumpir las solicitudes ni las transacciones SQLite. No apagues el equipo ni fuerces el cierre mientras se completa este proceso.',
+          buttons: ['Continuar esperando'],
+          defaultId: 0,
+          noLink: true,
+        });
+      } catch (error) {
+        console.warn('[SHUTDOWN] No se pudo mostrar el aviso de espera:', error);
+      }
+      await waitForActiveHttpRequests();
+    }
+
+    // Solo después de que los handlers terminaron se eliminan sockets
+    // keep-alive restantes. Nunca se abortan conexiones con operaciones activas.
+    server.closeAllConnections?.();
+    await serverClosed;
   }
 
   const application = nextApplication;
