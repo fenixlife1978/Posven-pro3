@@ -81,9 +81,12 @@ test('transacciones interactivas serializan cajas concurrentes en una sola conex
 
   // Give the second request a chance to queue behind the open transaction.
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(order, ['first-enter']);
-
-  releaseFirst();
+  try {
+    assert.deepEqual(order, ['first-enter']);
+  } finally {
+    // Never leave the first transaction suspended if an assertion fails.
+    releaseFirst();
+  }
   await Promise.all([first, second]);
   assert.deepEqual(order, ['first-enter', 'first-exit', 'second-enter']);
 
