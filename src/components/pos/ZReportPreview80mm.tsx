@@ -33,7 +33,7 @@ const money = (currency: 'Bs' | 'USD', value: number) =>
   currency === 'Bs' ? formatBs(value) : '$' + formatUsd(value).replace('$', '');
 
 const methodCurrency = (method: string): 'Bs' | 'USD' =>
-  ['efectivo_usd', 'zelle', 'transferencia_usd'].includes(String(method).toLowerCase()) ? 'USD' : 'Bs';
+  ['efectivo_usd', 'zelle', 'transferencia_usd', 'usd', 'dolar', 'dolares'].includes(String(method).toLowerCase()) ? 'USD' : 'Bs';
 
 export default function ZReportPreview80mm({ data, onClose }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
