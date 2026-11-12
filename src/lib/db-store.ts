@@ -82,7 +82,13 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
     (operation === 'returnOrCancellation' && !!payload?.operationId) ||
     (operation === 'globalProviderPayment' && !!(payload?.operationId || payload?.payment?.id)) ||
     (operation === 'globalCustomerPayment' && !!(payload?.operationId || payload?.payment?.id)) ||
-    (operation === 'createPurchase' && !!(payload?.operationId || payload?.purchase?.id));
+    (operation === 'createPurchase' && !!(payload?.operationId || payload?.purchase?.id)) ||
+    (operation === 'inventory' && !!payload?.operationId) ||
+    (operation === 'customerDebt' && !!(payload?.operationId || payload?.debt?.id)) ||
+    (operation === 'supplierDebt' && !!(payload?.operationId || payload?.debt?.id)) ||
+    (operation === 'reverseDebtPayment' && !!(payload?.operationId || (payload?.debtId && payload?.paymentId))) ||
+    (operation === 'deleteCustomerDebt' && !!(payload?.operationId || payload?.debtId)) ||
+    (operation === 'deleteCustomerAndDebts' && !!(payload?.operationId || payload?.customerId));
   const send = () => fetch('/api/pos/store', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
     body: requestBody, signal: AbortSignal.timeout(60000),
@@ -2191,6 +2197,9 @@ export const Store = {
       }
       if (serverResult.customer) {
         applyPatch({ clientes: mergeById(cache.clientes, [serverResult.customer]) });
+      }
+      if (serverResult.journal?.id) {
+        applyPatch({ libroDiario: mergeById(cache.libroDiario || [], [serverResult.journal]) });
       }
       return serverResult;
     }
