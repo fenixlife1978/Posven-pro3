@@ -1628,14 +1628,18 @@ export async function createZClosureTransaction(params: {
       const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
       row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
     }));
+    const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'credito']);
     const rawActuals = submitted.arqueoReal && typeof submitted.arqueoReal === 'object' ? submitted.arqueoReal : {};
     const actualByMethod: Record<string, number> = {};
     for (const [rawMethod, rawAmount] of Object.entries(rawActuals)) {
-      const method = normalizeMethod(rawMethod); const amount = Number(String(rawAmount).trim().replace(',', '.'));
+      const method = normalizeMethod(rawMethod);
+      const rawValue = String(rawAmount ?? '').trim();
+      if (!methodKeys.has(method)) throw new Error('El arqueo contiene un medio de pago no reconocido: ' + method + '.');
+      if (!rawValue) throw new Error('El arqueo contiene un conteo vacío para: ' + method + '.');
+      const amount = Number(rawValue.replace(',', '.'));
       if (!Number.isFinite(amount) || amount < 0) throw new Error('El arqueo contiene un monto inválido o negativo.');
       actualByMethod[method] = amount;
     }
-    const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'credito']);
     let differenceBs = 0; let differenceUsd = 0;
     for (const method of methodKeys) {
       const values = ensureMethod(method);
