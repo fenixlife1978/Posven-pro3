@@ -24,7 +24,7 @@ La PC servidor debe permanecer encendida y POSVEN3 debe estar abierto para que l
 
 En el primer inicio se elige SERVIDOR o CLIENTE. En modo cliente, **Buscar servidor automáticamente en la LAN** detecta IP, puerto y huella TLS; el usuario debe comparar la huella con la mostrada por el servidor antes de aceptar. Si el descubrimiento UDP (puerto 4581) está bloqueado, se pueden introducir los datos manualmente. La configuración se guarda localmente en `posven-network.json`.
 
-Se recomienda reservar la IP del servidor en el router. Si la IP dinámica cambia, el cliente detecta que el servidor no responde y permite volver a configurar la dirección. Windows Firewall debe permitir conexiones privadas entrantes al puerto 4580.
+Se recomienda reservar la IP del servidor en el router. Si la IP dinámica cambia, el cliente detecta que el servidor no responde y permite volver a configurar la dirección. Windows Firewall debe permitir conexiones privadas entrantes TCP 4580 y UDP 4581 (descubrimiento automático).
 
 ## Inicio de sesión y usuarios
 
