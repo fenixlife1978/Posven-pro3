@@ -20,6 +20,7 @@ let setupResolver = null;
 let serverTls = null;
 let trustedServerFingerprint = null;
 let lanDiscoveryServer = null;
+let serverShuttingDown = false;
 
 const DEFAULT_PORT = 4580;
 
@@ -415,6 +416,13 @@ async function startLocalNextServer(port) {
   const handler = nextApplication.getRequestHandler();
   serverTls = ensureServerTls();
   nextServer = https.createServer({ pfx:serverTls.pfx, passphrase:serverTls.passphrase, minVersion:'TLSv1.2' }, (request, response) => {
+    // A keep-alive socket can outlive server.close(). Reject any later request
+    // before dispatching Next.js so shutdown cannot start untracked DB work.
+    if (serverShuttingDown) {
+      response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Connection': 'close', 'Retry-After': '5' });
+      response.end(JSON.stringify({ ok: false, error: 'El servidor POSVEN3 está cerrando. Reintenta cuando vuelva a estar disponible.' }));
+      return;
+    }
     const hostHeader = String(request.headers.host || '').trim().toLowerCase();
     let requestHost = '';
     let requestPort = 0;
@@ -576,6 +584,8 @@ app.whenReady().then(async () => {
 // activas y después libera el servidor Next.js. SQLite se cierra al finalizar
 // el proceso, una vez que ya no quedan manejadores HTTP ejecutándose.
 async function shutdownLocalServer() {
+  // Close the dispatch gate before draining the requests already admitted.
+  serverShuttingDown = true;
   if (lanDiscoveryServer) {
     try { lanDiscoveryServer.close(); } catch (error) { console.warn('[SHUTDOWN] UDP discovery:', error); }
     lanDiscoveryServer = null;
