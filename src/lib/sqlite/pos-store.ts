@@ -2856,15 +2856,31 @@ export async function deletePurchaseTransaction(params:any){
 
   return sqliteInteractiveTransaction(async tx=>{
     const previousDelete = await tx.execute({
-      sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args:['ELIMINAR-COMPRA',opId]
     });
-    // Si una ejecución anterior dejó la marca de idempotencia pero la compra
-    // todavía existe, permitimos la recuperación con un nuevo operationId.
-    // Solo una compra realmente inexistente se considera ya eliminada.
-    const deleteOpId = previousDelete.rows.length
-      ? opId + '|RECOVERY-' + crypto.randomUUID()
-      : opId;
+    if(previousDelete.rows.length){
+      let saved:any={};try{saved=JSON.parse(String(previousDelete.rows[0].data_json||'{}'));}catch{}
+      const deletedPurchaseIds=Array.isArray(saved.deletedPurchaseIds)?saved.deletedPurchaseIds.map(String):saved.purchaseId?[String(saved.purchaseId)]:[];
+      const deletedDebtIds=Array.isArray(saved.deletedDebtIds)?saved.deletedDebtIds.map(String):[];
+      const deletedJournalIds=Array.isArray(saved.deletedJournalIds)?saved.deletedJournalIds.map(String):[];
+      const deletedMovementIds=Array.isArray(saved.deletedMovementIds)?saved.deletedMovementIds.map(String):[];
+      const affectedProductIds=Array.isArray(saved.affectedProductIds)?saved.affectedProductIds.map(String):[];
+      const products:any[]=[];
+      for(const pid of affectedProductIds){const product=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(product)products.push(product);}
+      const movements=affectedProductIds.length
+        ? (await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId') IN ("+affectedProductIds.map(()=>'?').join(',')+") ORDER BY fecha ASC,id ASC",args:affectedProductIds})).rows.map(rowFromDb).filter(Boolean)
+        : [];
+      return {
+        deletedMovements:Number(saved.deletedMovements)||deletedMovementIds.length,
+        deletedDebts:Number.isFinite(Number(saved.deletedDebts))?Number(saved.deletedDebts):null,
+        deletedJournals:Number.isFinite(Number(saved.deletedJournals))?Number(saved.deletedJournals):null,
+        deletedPurchase:Number.isFinite(Number(saved.deletedPurchase))?Number(saved.deletedPurchase):(deletedPurchaseIds.length?deletedPurchaseIds.length:0),
+        affectedProducts:affectedProductIds.length,
+        deletedPurchaseIds,deletedDebtIds,deletedJournalIds,deletedMovementIds,
+        products,movements,recovered:true,
+      };
+    }
 
     const purchase=purchaseId?rowFromDb((await tx.execute(txSelect('compras',purchaseId))).rows[0]):null;
     const purchases=(await tx.execute({
@@ -3005,17 +3021,6 @@ export async function deletePurchaseTransaction(params:any){
     if(purchase?.id&&!purchases.some((p:any)=>String(p.id)===String(purchase.id)))
       statements.push({sql:'DELETE FROM compras WHERE id=?',args:[purchase.id],wantRows:false});
 
-    statements.push({
-      sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
-      args:['ELIMINAR-COMPRA-'+deleteOpId,'ELIMINAR-COMPRA',deleteOpId,JSON.stringify({
-        tipo:'ELIMINAR-COMPRA',operationId:deleteOpId,referencia:invoiceNumber,
-        purchaseId:purchaseId||null
-      })],
-      wantRows:false
-    });
-
-    for(const s of statements) await tx.execute(s);
-
     const deletedPurchaseIds=[...new Set([
       ...purchases.map((p:any)=>String(p.id)),
       ...(purchase?.id?[String(purchase.id)]:[])
@@ -3023,6 +3028,19 @@ export async function deletePurchaseTransaction(params:any){
     const deletedDebtIds=debts.map((d:any)=>String(d.id));
     const deletedJournalIds=journals.map((j:any)=>String(j.id));
     const deletedMovementIds=deleted.map((m:any)=>String(m.id));
+    statements.push({
+      sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
+      args:['ELIMINAR-COMPRA-'+opId,'ELIMINAR-COMPRA',opId,JSON.stringify({
+        tipo:'ELIMINAR-COMPRA',operationId:opId,referencia:invoiceNumber,
+        purchaseId:purchaseId||null,deletedPurchaseIds,deletedDebtIds,deletedJournalIds,
+        deletedMovementIds,affectedProductIds:affected,
+        deletedMovements:deleted.length,deletedDebts:debts.length,deletedJournals:journals.length,
+        deletedPurchase:purchases.length+(purchase&&!purchases.some((p:any)=>String(p.id)===String(purchase.id))?1:0)
+      })],
+      wantRows:false
+    });
+
+    for(const s of statements) await tx.execute(s);
 
     return {
       deletedMovements:deleted.length,

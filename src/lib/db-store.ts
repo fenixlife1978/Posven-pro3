@@ -88,7 +88,8 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
     (operation === 'supplierDebt' && !!(payload?.operationId || payload?.debt?.id)) ||
     (operation === 'reverseDebtPayment' && !!(payload?.operationId || (payload?.debtId && payload?.paymentId))) ||
     (operation === 'deleteCustomerDebt' && !!(payload?.operationId || payload?.debtId)) ||
-    (operation === 'deleteCustomerAndDebts' && !!(payload?.operationId || payload?.customerId));
+    (operation === 'deleteCustomerAndDebts' && !!(payload?.operationId || payload?.customerId)) ||
+    (operation === 'deletePurchase' && !!(payload?.operationId || (payload?.invoiceNumber && payload?.supplier)));
   const send = () => fetch('/api/pos/store', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
     body: requestBody, signal: AbortSignal.timeout(60000),
