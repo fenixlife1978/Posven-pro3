@@ -77,7 +77,12 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
   // perdida se recupere sin volver a descontar stock ni aplicar otro abono.
   const canSafelyRetry =
     (operation === 'sale' && !!payload?.operationId) ||
-    (operation === 'debtPayment' && !!(payload?.operationId || payload?.payment?.id));
+    (operation === 'debtPayment' && !!(payload?.operationId || payload?.payment?.id)) ||
+    (operation === 'cashMovement' && !!(payload?.operationId || payload?.movement?.id)) ||
+    (operation === 'returnOrCancellation' && !!payload?.operationId) ||
+    (operation === 'globalProviderPayment' && !!(payload?.operationId || payload?.payment?.id)) ||
+    (operation === 'globalCustomerPayment' && !!(payload?.operationId || payload?.payment?.id)) ||
+    (operation === 'createPurchase' && !!(payload?.operationId || payload?.purchase?.id));
   const send = () => fetch('/api/pos/store', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
     body: requestBody, signal: AbortSignal.timeout(60000),
