@@ -1,4 +1,4 @@
-const test = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -37,6 +37,7 @@ Module._resolveFilename = function resolveTypeScript(request, parent, isMain, op
 
 const sqlite = require('../src/lib/sqlite/client.ts');
 const { sqliteExecute, sqliteInteractiveTransaction, assertSQLiteReady } = sqlite;
+const database = require('../src/lib/sqlite/database.ts');
 
 test('transacciones interactivas serializan cajas concurrentes en una sola conexión', async () => {
   assertSQLiteReady();
@@ -125,7 +126,7 @@ test('el contexto transaccional no permite ejecutar después del COMMIT', async 
   );
 });
 
-test.after(() => {
-  try { sqlite.closeSqliteDatabase?.(); } catch {}
+after(() => {
+  try { database.closeSqliteDatabase(); } catch {}
   try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
 });
