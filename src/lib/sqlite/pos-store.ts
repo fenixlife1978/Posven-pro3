@@ -2108,7 +2108,8 @@ export async function processReturnOrCancellationTransaction(params:any){
       const savedSale=rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]);
       if(!savedSale)throw new Error('No se puede recuperar la venta vinculada a esta devolución/anulación.');
       if(user?.rol==='cajero'&&String(savedSale.terminalId||'')!==String(terminalId||''))throw new Error('El cajero solo puede recuperar operaciones de su propia terminal.');
-      const movementRows=await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",args:['%'+receiptId+'%']});
+      const movementReference=operationType==='ANULACION'?'ANULACIÓN TOTAL FACTURA #'+String(saleId):'DEVOLUCIÓN '+receiptId+' - REF VENTA '+String(saleId);
+      const movementRows=await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia')=?",args:[movementReference]});
       const movements=movementRows.rows.map(rowFromDb).filter(Boolean);
       const productIds=[...new Set([...movements.map((m:any)=>String(m.productoId||'')),...(operationDoc.items||[]).map((it:any)=>String(it.productoId||''))].filter(Boolean))];
       const products:any[]=[];for(const pid of productIds){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(p)products.push(p);}
