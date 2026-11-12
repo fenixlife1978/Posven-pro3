@@ -1767,8 +1767,39 @@ export async function applyDebtPaymentTransaction(params: {
   if (!(Number(amountUSD) > 0)) return null;
   return sqliteInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
-    const check = await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
-    if (check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const check = await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
+    if (check.rows.length) {
+      // Recuperación idempotente: el COMMIT pudo ocurrir aunque la respuesta
+      // HTTP se perdiera. Se devuelve el mismo abono, nunca se aplica otra vez.
+      let saved: any = {};
+      try { saved = JSON.parse(String(check.rows[0].data_json || '{}')); } catch {}
+      const savedDebt = rowFromDb((await tx.execute(txSelect(collection, String(saved.referencia || debtId)))).rows[0]);
+      const receiptId = String(saved.reciboId || '');
+      const savedPayment = (savedDebt?.historialPagos || []).find((item: any) =>
+        (receiptId && String(item?.reciboId || item?.id || '') === receiptId) ||
+        String(item?.operationId || '') === opId
+      );
+      if (!savedDebt || !savedPayment) {
+        throw new Error('El pago ya figura procesado, pero no se pudo recuperar su comprobante. No repita el pago; consulte el historial.');
+      }
+      const savedJournals = (await tx.execute({
+        sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
+        args: [String(receiptId || savedPayment.reciboId || savedPayment.id)],
+      })).rows.map(rowFromDb).filter(Boolean);
+      const savedSale = sale?.id
+        ? rowFromDb((await tx.execute(txSelect('ventas', String(receiptId || savedPayment.reciboId || savedPayment.id))).rows[0]))
+        : null;
+      const savedTerminal = terminalForOperation
+        ? rowFromDb((await tx.execute(txSelect('terminales', terminalForOperation))).rows[0])
+        : null;
+      return {
+        ...savedDebt, appliedUSD: Number(savedPayment.montoUSD) || 0,
+        appliedBS: Number(savedPayment.montoBS) || 0,
+        receiptId: receiptId || savedPayment.reciboId || savedPayment.id,
+        payment: savedPayment, journal: savedJournals, sale: savedSale,
+        terminal: savedTerminal, recovered: true,
+      };
+    }
     const debt = rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
     if (!debt) throw new Error('La deuda ya no existe.');
 
@@ -1813,7 +1844,7 @@ export async function applyDebtPaymentTransaction(params: {
     const paymentWithTerminal = collection === 'cxc'
       ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''}
       : {...payment, terminalId: undefined, terminalName: undefined, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''};
-    const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
+    const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,operationId:opId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
 
     const updated={...debt,abonadoUSD:abonadoRegistrado+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...historialPrevio,pago]};
     const statements:SQLiteStatement[]=[rowStatement(collection,updated)];
@@ -1848,7 +1879,7 @@ export async function applyDebtPaymentTransaction(params: {
     const persistedSale=sale?.id?{...sale,id:receiptId,terminalForOperation:terminalForOperation||sale.terminalForOperation,terminalName:terminal?.nombre||sale.terminalName}:null;
     if(persistedSale) statements.push(rowStatement('ventas',persistedSale));
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['PAGO-DEUDA-'+opId,'PAGO-DEUDA',opId,JSON.stringify({tipo:'PAGO-DEUDA',operationId:opId,referencia:debtId})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['PAGO-DEUDA-'+opId,'PAGO-DEUDA',opId,JSON.stringify({tipo:'PAGO-DEUDA',operationId:opId,referencia:debtId,reciboId,terminalId:terminalForOperation||'ADMIN'})],wantRows:false});
     for(const s of statements) await tx.execute(s);
     return {...updated,appliedUSD:applied,appliedBS,receiptId,payment:pago,journal:journals,sale:persistedSale,terminal:terminal?{...terminal,id:terminalForOperation,[field]:counter+1}:null};
   });
