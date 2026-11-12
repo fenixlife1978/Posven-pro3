@@ -217,7 +217,9 @@ function checkLoginRateLimit(remoteAddress) {
     for (const [ip, item] of loginAttemptsByIp) {
       if (now - item.startedAt >= LOGIN_WINDOW_MS) loginAttemptsByIp.delete(ip);
     }
-    if (loginAttemptsByIp.size > 5000) loginAttemptsByIp.clear();
+    // Nunca borrar contadores activos para liberar espacio: eso permitiría
+    // reiniciar el límite provocando solicitudes desde muchas IP distintas.
+    if (!loginAttemptsByIp.has(key) && loginAttemptsByIp.size >= 5000) return Math.ceil(LOGIN_WINDOW_MS / 1000);
   }
   if (entry.attempts >= LOGIN_MAX_ATTEMPTS) {
     return Math.max(1, Math.ceil((LOGIN_WINDOW_MS - (now - entry.startedAt)) / 1000));
