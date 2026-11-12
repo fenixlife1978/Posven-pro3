@@ -1441,6 +1441,18 @@ export async function createZClosureTransaction(params: {
     if (!current) throw new Error('La terminal ya no existe en SQLite local.');
     assertTerminalAccess(params.user, current);
     const openingOperationId = String(current.cashData?.openDate || current.cashData?.openedAt || current.cashData?.fechaApertura || '');
+    if (current.isCashOpen !== true) {
+      const closureRows = await tx.execute({ sql: 'SELECT data_json FROM operaciones WHERE prefijo=? ORDER BY created_at DESC', args: ['CIERRE-Z'] });
+      for (const row of closureRows.rows) {
+        let saved: any = {};
+        try { saved = JSON.parse(String(row.data_json || '{}')); } catch {}
+        if (String(saved.terminalId || '') !== String(params.terminalId)) continue;
+        const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia))).rows[0])) : null;
+        if (previousReport && Number(previousReport.numeroZ) === Number(current.ultimoZ)) return { report: previousReport, terminal: current };
+        break;
+      }
+      throw new Error('La caja ya está cerrada o no tiene una jornada abierta. Debe realizar una nueva apertura antes de emitir otro Z.');
+    }
     if (!openingOperationId) throw new Error('La jornada no tiene un identificador de apertura. No se puede cerrar de forma idempotente.');
     const closureOperationId = params.terminalId + '|' + openingOperationId;
     const previousClosure = await tx.execute({
@@ -1450,14 +1462,10 @@ export async function createZClosureTransaction(params: {
     if (previousClosure.rows.length) {
       let saved: any = {};
       try { saved = JSON.parse(String(previousClosure.rows[0].data_json || '{}')); } catch {}
-      const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia))).rows[0]) : null;
+      const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia))).rows[0])) : null;
       if (!previousReport) throw new Error('Se encontró un cierre Z previo sin su reporte asociado. Requiere revisión; no se emitirá otro Z.');
       return { report: previousReport, terminal: current };
     }
-    if (current.isCashOpen !== true) {
-      throw new Error('La caja ya está cerrada o no tiene una jornada abierta. Debe realizar una nueva apertura antes de emitir otro Z.');
-    }
-
     // SQLite local calcula el correlativo real dentro de la transacción.
     // Nunca se confía en el número provisional del navegador, que puede
     // estar desactualizado por caché o por otra sesión de la misma caja.
