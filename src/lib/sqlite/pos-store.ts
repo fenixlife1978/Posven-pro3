@@ -1635,7 +1635,7 @@ export async function createZClosureTransaction(params: {
       numeroZ: nextNumber, desdeFactura: sortedSales[0]?.id || 'N/A', hastaFactura: sortedSales[sortedSales.length-1]?.id || 'N/A',
       desdeNotaCredito: sortedReturns[0]?.id || 'N/A', hastaNotaCredito: sortedReturns[sortedReturns.length-1]?.id || 'N/A',
       cantidadAnuladas: voidDocs.length + voidedSales.filter((sale: any) => !voidedIds.has(String(sale.id))).length,
-      ventaBrutaUSD: brUSD, descuentoUSD: discountUSD, devolucionesUSD: devUSD, ventaNetaUSD: netUSD,
+      ventaBrutaUSD: brUSD, totalVentasUSD: brUSD, brUSD, descuentoUSD: discountUSD, devolucionesUSD: devUSD, ventaNetaUSD: netUSD,
       baseImponibleUSD: baseUSD, ivaUSD, exentoUSD: exemptUSD, igtfUSD,
       metodosPago: paymentMethods, metodosArqueo: Object.entries(arqueo).map(([metodo, values]: any) => ({ metodo, ...values, moneda: isUsdMethod(metodo) ? 'USD' : 'BS' })),
       cobrosDeudaUSD: debtUsd, cobrosDeudaBS: debtBs, cobrosDeudaPorMetodo: Object.values(debtByMethod),
@@ -1655,7 +1655,7 @@ export async function createZClosureTransaction(params: {
       acumuladoHistoricoUSD: (Number(current.acumuladoHistorico) || 0) + netUSD,
       stats: { facturas:sales.length, devoluciones:returns.length, anulaciones:voidDocs.length, ticketPromedio:sales.length ? netUSD / sales.length : 0 },
       cajeroId: params.user.id, cajeroNombre: String(params.user.nombre || params.user.username || params.user.id),
-      openedAt: current.cashData?.openDate || null, closedAt, closedBy: String(params.user.nombre || params.user.username || params.user.id), closedById: params.user.id,
+      openedAt: current.cashData?.openDate || null, openedBy: String(current.cashData?.openedBy || current.cashData?.usuarioApertura || params.user.nombre || params.user.username || params.user.id), closedAt, closedBy: String(params.user.nombre || params.user.username || params.user.id), closedById: params.user.id,
       differenceBs: Number(differenceBs.toFixed(2)), differenceUSD: Number(differenceUsd.toFixed(2)),
     };
     report = reportData;
