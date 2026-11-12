@@ -1435,7 +1435,7 @@ function assertOpenCashFieldsUnchanged(current: any, incoming: Record<string, an
   for (const field of PROTECTED_OPEN_CASH_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(incoming, field) &&
         stableJsonValue(incoming[field]) !== stableJsonValue(current[field])) {
-      throw new Error('La caja tiene una jornada abierta. Los datos de caja, el consecutivo Z y su historial solo pueden modificarse mediante el proceso de Corte Z.');
+      throw new Error('Los datos financieros de la terminal, el consecutivo Z y su historial solo pueden modificarse mediante los procesos de apertura y Corte Z.');
     }
   }
 }
@@ -1458,7 +1458,13 @@ export async function patchTerminalTransaction(params: {
     if (!current) throw new Error('La terminal ya no existe en SQLite local.');
     assertTerminalAccess(params.user, current);
     const patch = clean(params.patch);
-    if (current.isCashOpen === true) assertOpenCashFieldsUnchanged(current, patch);
+    // Las modificaciones administrativas nunca pueden reescribir fondos,
+    // jornadas, consecutivo Z ni historial, aunque la caja esté cerrada.
+    // La apertura del cajero sigue su flujo específico y el Corte Z escribe
+    // directamente mediante createZClosureTransaction.
+    if (current.isCashOpen === true || params.user.rol === 'administrador') {
+      assertOpenCashFieldsUnchanged(current, patch);
+    }
     if (params.user.rol === 'cajero') {
       const allowedOpeningFields = new Set(['fondoCajaHoyBS','fondoCajaHoyUSD','isCashOpen','cashData']);
       if (Object.keys(patch).some(key => !allowedOpeningFields.has(key))) {
@@ -1508,11 +1514,12 @@ export async function upsertTerminalTransaction(params: {
   const terminal = await sqliteInteractiveTransaction(async tx => {
     const current = rowFromDb((await tx.execute(txSelect('terminales', String(params.terminal.id)))).rows[0]);
     const incoming = clean(params.terminal);
-    if (current?.isCashOpen === true) {
+    if (current) {
+      // En terminales existentes, tanto abiertas como cerradas, la edición
+      // administrativa solo modifica datos generales. Los campos financieros
+      // se conservan y cualquier intento de cambiarlos se rechaza.
       assertOpenCashFieldsUnchanged(current, incoming);
       const updated = { ...current, ...incoming, id: String(params.terminal.id) };
-      // Una edición administrativa de datos generales nunca debe borrar por
-      // omisión la jornada abierta ni el historial financiero de la caja.
       for (const field of PROTECTED_OPEN_CASH_FIELDS) (updated as any)[field] = current[field];
       await tx.execute(rowStatement('terminales', updated));
       return updated;
@@ -1534,6 +1541,15 @@ export async function deleteTerminalTransaction(params: {
     if (!current) return { terminalId: params.terminalId };
     if (current.isCashOpen === true) {
       throw new Error('No se puede eliminar una terminal con caja abierta. Ejecute primero el Corte Z y cierre su jornada.');
+    }
+    const hasFinancialHistory =
+      Number(current.ultimoZ || 0) > 0 ||
+      !!current.fechaUltimoZ ||
+      Number(current.acumuladoHistorico || 0) !== 0 ||
+      (Array.isArray(current.cashHistory) && current.cashHistory.length > 0) ||
+      !!current.cashData;
+    if (hasFinancialHistory) {
+      throw new Error('No se puede eliminar una terminal que conserva historial de caja o cierres Z. Manténgala para preservar la trazabilidad contable.');
     }
     await tx.execute({ sql: 'DELETE FROM terminales WHERE id=?', args: [params.terminalId], wantRows: false });
     return { terminalId: params.terminalId };
