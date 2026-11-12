@@ -89,7 +89,10 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
     (operation === 'reverseDebtPayment' && !!(payload?.operationId || (payload?.debtId && payload?.paymentId))) ||
     (operation === 'deleteCustomerDebt' && !!(payload?.operationId || payload?.debtId)) ||
     (operation === 'deleteCustomerAndDebts' && !!(payload?.operationId || payload?.customerId)) ||
-    (operation === 'deletePurchase' && !!(payload?.operationId || (payload?.invoiceNumber && payload?.supplier)));
+    (operation === 'deletePurchase' && !!(payload?.operationId || (payload?.invoiceNumber && payload?.supplier))) ||
+    // El servidor identifica el Z por terminal + apertura y recupera el
+    // reporte ya persistido si el primer COMMIT perdió su respuesta.
+    (operation === 'zClosure' && !!payload?.terminalId && !!payload?.report);
   const send = () => fetch('/api/pos/store', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
     body: requestBody, signal: AbortSignal.timeout(60000),
