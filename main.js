@@ -406,18 +406,21 @@ app.whenReady().then(async () => {
         if (!networkConfig) { app.quit(); return; }
         if (networkConfig.mode === 'server') {
           const port = await startLocalNextServer(networkConfig.port);
-          createWindow('http://127.0.0.1:' + port);
+          configurePinnedCertificate(serverTls.fingerprint, new Set(['localhost','127.0.0.1','::1',...getLanIPv4Addresses()]));
+          createWindow('https://127.0.0.1:' + port);
           const addresses = getLanIPv4Addresses();
           dialog.showMessageBox({
             type: 'info', title: 'Servidor POSVEN3 activo',
             message: 'Esta computadora está funcionando como servidor local.',
             detail: 'Direcciones para conectar las PC clientes:\n' +
-              (addresses.length ? addresses.map(ip => 'http://' + ip + ':' + port).join('\n') : 'No se detectó una IP privada IPv4. Verifica la conexión de red.') +
+              (addresses.length ? addresses.map(ip => 'https://' + ip + ':' + port).join('\n') : 'No se detectó una IP privada IPv4. Verifica la conexión de red.') +
+              '\n\nHuella SHA-256 del certificado (compártela por un canal seguro):\n' + serverTls.fingerprint.match(/.{1,2}/g).join(':') +
               '\n\nMantén esta computadora encendida para que las demás cajas puedan operar.',
           });
           return;
         }
-        url = await verifyServer(networkConfig.host, networkConfig.port);
+        url = await verifyServer(networkConfig.host, networkConfig.port, networkConfig.fingerprint);
+        configurePinnedCertificate(networkConfig.fingerprint, new Set([networkConfig.host]));
       }
       createWindow(url);
     }
