@@ -294,7 +294,6 @@ async function startLocalNextServer(port) {
   nextApplication = next({ dev: false, dir: app.getAppPath() });
   await nextApplication.prepare();
   const handler = nextApplication.getRequestHandler();
-  const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', ...getLanIPv4Addresses()]);
   serverTls = ensureServerTls();
   nextServer = https.createServer({ pfx:serverTls.pfx, passphrase:serverTls.passphrase, minVersion:'TLSv1.2' }, (request, response) => {
     const hostHeader = String(request.headers.host || '').trim().toLowerCase();
@@ -306,6 +305,9 @@ async function startLocalNextServer(port) {
       requestPort = Number(parsedHost.port || 443);
     } catch {}
     const configuredPort = Number(port);
+    // Recalcular las IP locales en cada petición para admitir cambios DHCP
+    // sin reiniciar el servidor ni aceptar hosts ajenos a las interfaces LAN.
+    const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', ...getLanIPv4Addresses()]);
     if (!allowedHosts.has(requestHost) || requestPort !== configuredPort) {
       response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       response.end(JSON.stringify({ ok: false, error: 'Host no autorizado para el servidor POSVEN3.' }));
