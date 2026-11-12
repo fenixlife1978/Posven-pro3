@@ -1442,7 +1442,7 @@ export async function createZClosureTransaction(params: {
     assertTerminalAccess(params.user, current);
     const openingOperationId = String(current.cashData?.openDate || current.cashData?.openedAt || current.cashData?.fechaApertura || '');
     if (current.isCashOpen !== true) {
-      const closureRows = await tx.execute({ sql: 'SELECT data_json FROM operaciones WHERE prefijo=? ORDER BY created_at DESC', args: ['CIERRE-Z'] });
+      const closureRows = await tx.execute({ sql: 'SELECT data_json FROM operaciones WHERE prefijo=? ORDER BY rowid DESC', args: ['CIERRE-Z'] });
       for (const row of closureRows.rows) {
         let saved: any = {};
         try { saved = JSON.parse(String(row.data_json || '{}')); } catch {}
