@@ -18,11 +18,11 @@ El archivo se crea bajo el directorio de datos de usuario de Electron:
 
 SQLite usa WAL, `synchronous=FULL`, claves foráneas y espera de bloqueo de hasta 10 segundos. Los respaldos de seguridad de restauraciones se guardan en el subdirectorio `data/backups`.
 
-La PC servidor debe permanecer encendida y POSVEN3 debe estar abierto para que las cajas cliente puedan operar. Mantén el puerto 4580 dentro de una red privada confiable, protegida con WPA2/WPA3; no configures reenvío del puerto hacia Internet. El tráfico LAN usa HTTP local, por lo que no debe utilizarse en redes públicas o no confiables. Si se pierde Internet pero la red local sigue funcionando, las cajas continúan trabajando contra el servidor. Si se pierde la LAN o se apaga el servidor, los clientes no pueden registrar operaciones hasta reconectar; POSVEN3 no confirma ventas en una cola local independiente.
+La PC servidor debe permanecer encendida y POSVEN3 debe estar abierto para que las cajas cliente puedan operar. Mantén el puerto 4580 dentro de una red privada confiable, protegida con WPA2/WPA3; no configures reenvío del puerto hacia Internet. El tráfico de datos LAN usa HTTPS con huella SHA-256 fijada en cada cliente. El descubrimiento UDP no autentica el servidor ni sustituye la verificación TLS. No expongas los puertos LAN a Internet. Si se pierde Internet pero la red local sigue funcionando, las cajas continúan trabajando contra el servidor. Si se pierde la LAN o se apaga el servidor, los clientes no pueden registrar operaciones hasta reconectar; POSVEN3 no confirma ventas en una cola local independiente.
 
 ## Configuración de red
 
-En el primer inicio se elige SERVIDOR o CLIENTE. En modo cliente se introduce la IP privada y puerto que muestra el servidor. La configuración se guarda localmente en `posven-network.json`.
+En el primer inicio se elige SERVIDOR o CLIENTE. En modo cliente, **Buscar servidor automáticamente en la LAN** detecta IP, puerto y huella TLS; el usuario debe comparar la huella con la mostrada por el servidor antes de aceptar. Si el descubrimiento UDP (puerto 4581) está bloqueado, se pueden introducir los datos manualmente. La configuración se guarda localmente en `posven-network.json`.
 
 Se recomienda reservar la IP del servidor en el router. Si la IP dinámica cambia, el cliente detecta que el servidor no responde y permite volver a configurar la dirección. Windows Firewall debe permitir conexiones privadas entrantes al puerto 4580.
 
