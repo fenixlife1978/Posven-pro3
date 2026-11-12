@@ -969,10 +969,43 @@ export async function createSaleTransaction(params: {
 
   return sqliteInteractiveTransaction(async tx => {
     const opCheck = await tx.execute({
-      sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      sql: 'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args: ['VENTA', operationId],
     });
-    if (opCheck.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    if (opCheck.rows.length) {
+      // El cliente pudo perder la respuesta después del COMMIT. Devolver el
+      // resultado ya persistido permite repetir la misma solicitud sin vender
+      // otra vez ni descontar inventario por segunda ocasión.
+      let saved: any = {};
+      try { saved = JSON.parse(String(opCheck.rows[0].data_json || '{}')); } catch {}
+      const savedSale = saved.referencia
+        ? rowFromDb((await tx.execute(txSelect('ventas', String(saved.referencia)))).rows[0])
+        : null;
+      if (!savedSale) throw new Error('La venta ya fue procesada, pero no se pudo recuperar su comprobante. No repita el cobro; consulte el historial.');
+      const savedDebt = rowFromDb((await tx.execute(txSelect('cxc', 'CRD-' + String(saved.referencia)))).rows[0]);
+      const savedTerminal = terminalId
+        ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
+        : null;
+      const savedProductIds = [...new Set((savedSale.items || []).map((item: any) => String(item.productoId || '')).filter(Boolean))];
+      const savedProducts: any[] = [];
+      for (const pid of savedProductIds) {
+        const product = rowFromDb((await tx.execute(txSelect('productos', pid))).rows[0]);
+        if (product) savedProducts.push(product);
+      }
+      const savedMovements = (await tx.execute({
+        sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",
+        args: ['%' + String(saved.referencia) + '%'],
+      })).rows.map(rowFromDb).filter(Boolean);
+      const savedJournals = (await tx.execute({
+        sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia') LIKE ?",
+        args: ['%' + String(saved.referencia) + '%'],
+      })).rows.map(rowFromDb).filter(Boolean);
+      return {
+        sale: savedSale, debt: savedDebt, journals: savedJournals, journal: savedJournals,
+        products: savedProducts, movements: savedMovements, terminal: savedTerminal,
+        recovered: true,
+      };
+    }
 
     const terminal = terminalId
       ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
