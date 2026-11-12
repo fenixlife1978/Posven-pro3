@@ -1412,6 +1412,34 @@ export async function applyInventoryMovementsTransaction(params: {
 }
 
 
+const PROTECTED_OPEN_CASH_FIELDS = [
+  'isCashOpen', 'cashData', 'fondoCajaHoyBS', 'fondoCajaHoyUSD',
+  'ultimoZ', 'fechaUltimoZ', 'acumuladoHistorico', 'cashHistory',
+] as const;
+
+function stableJsonValue(value: any): string {
+  const normalize = (item: any): any => {
+    if (Array.isArray(item)) return item.map(normalize);
+    if (item && typeof item === 'object') {
+      return Object.keys(item).sort().reduce((result: Record<string, any>, key) => {
+        result[key] = normalize(item[key]);
+        return result;
+      }, {});
+    }
+    return item;
+  };
+  return JSON.stringify(normalize(value ?? null));
+}
+
+function assertOpenCashFieldsUnchanged(current: any, incoming: Record<string, any>) {
+  for (const field of PROTECTED_OPEN_CASH_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(incoming, field) &&
+        stableJsonValue(incoming[field]) !== stableJsonValue(current[field])) {
+      throw new Error('La caja tiene una jornada abierta. Los datos de caja, el consecutivo Z y su historial solo pueden modificarse mediante el proceso de Corte Z.');
+    }
+  }
+}
+
 function assertTerminalAccess(user: { rol: string; id: string }, terminal: any) {
   if (user.rol === 'administrador') return;
   const assigned = String(terminal?.usuarioId || '');
@@ -1430,6 +1458,7 @@ export async function patchTerminalTransaction(params: {
     if (!current) throw new Error('La terminal ya no existe en SQLite local.');
     assertTerminalAccess(params.user, current);
     const patch = clean(params.patch);
+    if (current.isCashOpen === true) assertOpenCashFieldsUnchanged(current, patch);
     if (params.user.rol === 'cajero') {
       const allowedOpeningFields = new Set(['fondoCajaHoyBS','fondoCajaHoyUSD','isCashOpen','cashData']);
       if (Object.keys(patch).some(key => !allowedOpeningFields.has(key))) {
@@ -1465,10 +1494,22 @@ export async function upsertTerminalTransaction(params: {
   assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
   if (!params.terminal?.id) throw new Error('La terminal no tiene id.');
-  await sqliteInteractiveTransaction(async tx => {
-    await tx.execute(rowStatement('terminales', params.terminal));
+  const terminal = await sqliteInteractiveTransaction(async tx => {
+    const current = rowFromDb((await tx.execute(txSelect('terminales', String(params.terminal.id)))).rows[0]);
+    const incoming = clean(params.terminal);
+    if (current?.isCashOpen === true) {
+      assertOpenCashFieldsUnchanged(current, incoming);
+      const updated = { ...current, ...incoming, id: String(params.terminal.id) };
+      // Una edición administrativa de datos generales nunca debe borrar por
+      // omisión la jornada abierta ni el historial financiero de la caja.
+      for (const field of PROTECTED_OPEN_CASH_FIELDS) (updated as any)[field] = current[field];
+      await tx.execute(rowStatement('terminales', updated));
+      return updated;
+    }
+    await tx.execute(rowStatement('terminales', incoming));
+    return incoming;
   });
-  return { terminal: params.terminal };
+  return { terminal };
 }
 
 export async function deleteTerminalTransaction(params: {
@@ -1478,6 +1519,11 @@ export async function deleteTerminalTransaction(params: {
   assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
   return sqliteInteractiveTransaction(async tx => {
+    const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
+    if (!current) return { terminalId: params.terminalId };
+    if (current.isCashOpen === true) {
+      throw new Error('No se puede eliminar una terminal con caja abierta. Ejecute primero el Corte Z y cierre su jornada.');
+    }
     await tx.execute({ sql: 'DELETE FROM terminales WHERE id=?', args: [params.terminalId], wantRows: false });
     return { terminalId: params.terminalId };
   });
