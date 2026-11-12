@@ -2052,8 +2052,16 @@ export async function createCustomerDebtTransaction(params:any){
   assertSQLiteReady();
   return sqliteInteractiveTransaction(async tx=>{
     const opId=String(params.operationId||params.debt?.id);
-    const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['DEUDA-CXC',opId]});
-    if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['DEUDA-CXC',opId]});
+    if(check.rows.length){
+      let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
+      const debt=saved.referencia?rowFromDb((await tx.execute(txSelect('cxc',String(saved.referencia))).rows[0]):null;
+      if(!debt)throw new Error('La deuda CxC ya fue procesada, pero no se pudo recuperar. Consulte CxC antes de repetirla.');
+      const customerId=String(saved.customerId||params.customerId||'');
+      const customer=customerId?rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]):null;
+      const journal=params.journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(params.journal.id))).rows[0]):null;
+      return {debt,customer,journal,recovered:true};
+    }
     const debt=params.debt; if(!debt?.id) throw new Error('La deuda no tiene id.');
     if((await tx.execute(txSelect('cxc',debt.id))).rows.length) throw new Error('La deuda ya existe en SQLite local.');
     const statements:SQLiteStatement[]=[rowStatement('cxc',debt)];
@@ -2076,7 +2084,7 @@ export async function createCustomerDebtTransaction(params:any){
       statements.push(rowStatement('clientes',customer));
     }
     if(params.journal?.id) statements.push(rowStatement('libroDiario',params.journal));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['DEUDA-CXC-'+opId,'DEUDA-CXC',opId,JSON.stringify({tipo:'DEUDA-CXC',operationId:opId,referencia:debt.id})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['DEUDA-CXC-'+opId,'DEUDA-CXC',opId,JSON.stringify({tipo:'DEUDA-CXC',operationId:opId,referencia:debt.id,customerId:customer?.id||params.customerId||null})],wantRows:false});
     for(const s of statements) await tx.execute(s); return {debt,customer};
   });
 }
@@ -2084,8 +2092,14 @@ export async function createSupplierDebtTransaction(params:any){
   assertSQLiteReady();
   return sqliteInteractiveTransaction(async tx=>{
     const opId=String(params.operationId||params.debt?.id);
-    const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['DEUDA-CXP',opId]});
-    if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['DEUDA-CXP',opId]});
+    if(check.rows.length){
+      let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
+      const debt=saved.referencia?rowFromDb((await tx.execute(txSelect('cxp',String(saved.referencia))).rows[0]):null;
+      if(!debt)throw new Error('La deuda CxP ya fue procesada, pero no se pudo recuperar. Consulte CxP antes de repetirla.');
+      const journal=params.journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(params.journal.id))).rows[0]):null;
+      return {debt,journal,recovered:true};
+    }
     const debt=params.debt; if(!debt?.id) throw new Error('La deuda no tiene id.');
     if((await tx.execute(txSelect('cxp',debt.id))).rows.length) throw new Error('La deuda ya existe en SQLite local.');
     const statements:SQLiteStatement[]=[rowStatement('cxp',debt)]; if(params.journal?.id) statements.push(rowStatement('libroDiario',params.journal));
@@ -2751,8 +2765,15 @@ export async function reverseDebtPaymentTransaction(params:any){
   const {operationId,collection,debtId,paymentId,journalId}=params;
   return sqliteInteractiveTransaction(async tx=>{
     const opId=String(operationId||collection+'|'+debtId+'|'+paymentId+'|REVERSE');
-    const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['REVERSAR-PAGO',opId]});
-    if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['REVERSAR-PAGO',opId]});
+    if(check.rows.length){
+      let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
+      const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
+      if(!debt)throw new Error('El abono fue reversado, pero la deuda ya no existe para recuperar el resultado.');
+      if(!saved.reversedPayment)throw new Error('El abono ya fue reversado. Consulte el historial de auditoría; el registro anterior no conserva una copia del comprobante.');
+      const journal=journalId?rowFromDb((await tx.execute(txSelect('libroDiario',String(journalId))).rows[0]):null;
+      return {...debt,reversedPayment:saved.reversedPayment,journal,recovered:true};
+    }
     const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]); if(!debt) throw new Error('La deuda ya no existe.');
     const historial=Array.isArray(debt.historialPagos)?debt.historialPagos:[]; const idx=historial.findIndex((p:any)=>String(p?.id||'')===String(paymentId));
     if(idx<0) throw new Error('El abono ya fue eliminado o no existe en la deuda.');
@@ -2770,7 +2791,7 @@ export async function reverseDebtPaymentTransaction(params:any){
         else statements.push(rowStatement('libroDiario',{...journal,montoUSD:monto,montoBS:montoBS,concepto:String(journal.concepto||'').replace(/ \(abono revertido\)$/i,'')+' (abono revertido)'}));
       }
     }
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['REVERSAR-PAGO-'+opId,'REVERSAR-PAGO',opId,JSON.stringify({tipo:'REVERSAR-PAGO',operationId:opId,referencia:paymentId})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['REVERSAR-PAGO-'+opId,'REVERSAR-PAGO',opId,JSON.stringify({tipo:'REVERSAR-PAGO',operationId:opId,referencia:paymentId,collection,debtId,reversedPayment:pago,journalId:journalId||null})],wantRows:false});
     for(const s of statements) await tx.execute(s);
     return {...updated,reversedPayment:pago};
   });
@@ -2779,8 +2800,11 @@ export async function deleteCustomerAndDebtsTransaction(params:any){
   assertSQLiteReady();
   return sqliteInteractiveTransaction(async tx=>{
     const {operationId,customerId,customerName,customerCedula}=params; const opId=String(operationId||customerId);
-    const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CLIENTE',opId]});
-    if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CLIENTE',opId]});
+    if(check.rows.length){
+      let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
+      return {customer:saved.customerSnapshot||null,deletedDebts:Number.isFinite(Number(saved.deletedDebts))?Number(saved.deletedDebts):null,recovered:true};
+    }
     const customer=customerId?rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]):null; if(!customer) throw new Error('El cliente ya no existe.');
     const exact=customerCedula?String(customerName||customer.cliente||customer.nombre||'')+' ['+customerCedula+']':String(customerName||customer.cliente||customer.nombre||'');
     const found=await tx.execute({sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente') IN (?,?)",args:[exact,String(customerName||customer.cliente||customer.nombre||'')]});
@@ -2788,7 +2812,7 @@ export async function deleteCustomerAndDebtsTransaction(params:any){
     const active=debts.find((d:any)=>d.estado!=='pagada'&&(Number(d.saldoUSD)||0)>.001); if(active) throw new Error('El cliente tiene una deuda pendiente.');
     for(const d of debts) await tx.execute({sql:'DELETE FROM cxc WHERE id=?',args:[d.id],wantRows:false});
     await tx.execute({sql:'DELETE FROM clientes WHERE id=?',args:[customerId],wantRows:false});
-    await tx.execute({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CLIENTE-'+opId,'ELIMINAR-CLIENTE',opId,JSON.stringify({tipo:'ELIMINAR-CLIENTE',operationId:opId,referencia:customerId})],wantRows:false});
+    await tx.execute({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CLIENTE-'+opId,'ELIMINAR-CLIENTE',opId,JSON.stringify({tipo:'ELIMINAR-CLIENTE',operationId:opId,referencia:customerId,customerSnapshot:customer,deletedDebts:debts.length})],wantRows:false});
     return {customer,deletedDebts:debts.length};
   });
 }
@@ -3017,5 +3041,5 @@ export async function deletePurchaseTransaction(params:any){
 }
 export async function deleteCustomerDebtTransaction(params:any){
   assertSQLiteReady(); const {operationId,debtId,customerCedula,customerId}=params; const opId=String(operationId||debtId);
-  return sqliteInteractiveTransaction(async tx=>{ if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CXC',opId]})).rows.length)throw new Error('Esta operación ya fue procesada.'); const debt=rowFromDb((await tx.execute(txSelect('cxc',debtId))).rows[0]);if(!debt)throw new Error('La deuda ya no existe.');const saldo=Number(debt.saldoUSD)||0;let customer:any=null,customerRefId:any=null;if(customerId){customerRefId=customerId;customer=rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]);}else if(customerCedula){customer=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]})).rows[0]);if(customer)customerRefId=customer.id;}const statements:SQLiteStatement[]=[{sql:'DELETE FROM cxc WHERE id=?',args:[debtId],wantRows:false}];if(customer&&customerRefId)statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo),id:customerRefId}));statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CXC-'+opId,'ELIMINAR-CXC',opId,JSON.stringify({tipo:'ELIMINAR-CXC',operationId:opId,referencia:debtId})],wantRows:false});for(const s of statements)await tx.execute(s);return {debt,customer:customer?{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo)}:null};});
+  return sqliteInteractiveTransaction(async tx=>{ const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CXC',opId]});if(check.rows.length){let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}return {debt:saved.debtSnapshot||null,customer:saved.customerSnapshot||null,recovered:true};} const debt=rowFromDb((await tx.execute(txSelect('cxc',debtId))).rows[0]);if(!debt)throw new Error('La deuda ya no existe.');const saldo=Number(debt.saldoUSD)||0;let customer:any=null,customerRefId:any=null;if(customerId){customerRefId=customerId;customer=rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]);}else if(customerCedula){customer=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]})).rows[0]);if(customer)customerRefId=customer.id;}const statements:SQLiteStatement[]=[{sql:'DELETE FROM cxc WHERE id=?',args:[debtId],wantRows:false}];if(customer&&customerRefId)statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo),id:customerRefId}));const updatedCustomer=customer?{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo)}:null;statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CXC-'+opId,'ELIMINAR-CXC',opId,JSON.stringify({tipo:'ELIMINAR-CXC',operationId:opId,referencia:debtId,debtSnapshot:debt,customerSnapshot:updatedCustomer})],wantRows:false});for(const s of statements)await tx.execute(s);return {debt,customer:updatedCustomer};});
 }
