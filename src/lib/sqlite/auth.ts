@@ -144,10 +144,10 @@ export async function ensureSeedAdmin() {
     const temporaryFile = credentialFile + '.tmp';
     fs.mkdirSync(path.dirname(credentialFile), { recursive: true });
     fs.writeFileSync(temporaryFile,
-      'POSVEN3 - CREDENCIAL INICIAL DEL ADMINISTRADOR\\n\\n' +
-      'Usuario: admin\\n' +
-      'Contraseña temporal: ' + seedPassword + '\\n\\n' +
-      'Inicia sesión y cambia esta contraseña inmediatamente. Después elimina este archivo.\\n',
+      'POSVEN3 - CREDENCIAL INICIAL DEL ADMINISTRADOR\n\n' +
+      'Usuario: admin\n' +
+      'Contraseña temporal: ' + seedPassword + '\n\n' +
+      'Inicia sesión y cambia esta contraseña inmediatamente. Después elimina este archivo.\n',
       { encoding: 'utf8', mode: 0o600, flag: 'w' });
     fs.renameSync(temporaryFile, credentialFile);
   }
