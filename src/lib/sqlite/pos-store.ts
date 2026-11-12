@@ -1791,9 +1791,10 @@ export async function applyDebtPaymentTransaction(params: {
         sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
         args: [String(receiptId || savedPayment.reciboId || savedPayment.id)],
       })).rows.map(rowFromDb).filter(Boolean);
-      const savedSale = sale?.id
-        ? rowFromDb((await tx.execute(txSelect('ventas', String(receiptId || savedPayment.reciboId || savedPayment.id))).rows[0]))
+      const savedSaleResult = sale?.id
+        ? await tx.execute(txSelect('ventas', String(receiptId || savedPayment.reciboId || savedPayment.id)))
         : null;
+      const savedSale = savedSaleResult ? rowFromDb(savedSaleResult.rows[0]) : null;
       const savedTerminal = terminalForOperation
         ? rowFromDb((await tx.execute(txSelect('terminales', terminalForOperation))).rows[0])
         : null;
@@ -1884,7 +1885,7 @@ export async function applyDebtPaymentTransaction(params: {
     const persistedSale=sale?.id?{...sale,id:receiptId,terminalForOperation:terminalForOperation||sale.terminalForOperation,terminalName:terminal?.nombre||sale.terminalName}:null;
     if(persistedSale) statements.push(rowStatement('ventas',persistedSale));
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['PAGO-DEUDA-'+opId,'PAGO-DEUDA',opId,JSON.stringify({tipo:'PAGO-DEUDA',operationId:opId,referencia:debtId,reciboId,terminalId:terminalForOperation||'ADMIN'})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['PAGO-DEUDA-'+opId,'PAGO-DEUDA',opId,JSON.stringify({tipo:'PAGO-DEUDA',operationId:opId,referencia:debtId,reciboId:receiptId,terminalId:terminalForOperation||'ADMIN'})],wantRows:false});
     for(const s of statements) await tx.execute(s);
     return {...updated,appliedUSD:applied,appliedBS,receiptId,payment:pago,journal:journals,sale:persistedSale,terminal:terminal?{...terminal,id:terminalForOperation,[field]:counter+1}:null};
   });
