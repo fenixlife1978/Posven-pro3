@@ -28,7 +28,7 @@ Los respaldos de seguridad previos a una restauración se guardan en `data/backu
 3. POSVEN3 mostrará la dirección IP privada y el puerto para conectar las demás computadoras.
 4. En cada PC cliente instala POSVEN3, selecciona **CLIENTE** e introduce la IP y el puerto mostrados por el servidor.
 5. Se recomienda reservar la IP del servidor en el router para evitar que cambie. Si cambia, el cliente permite volver a configurar la dirección.
-6. En Windows Firewall permite conexiones privadas entrantes al puerto 4580.
+6. En Windows Firewall debe permitir conexiones privadas entrantes TCP 4580 y UDP 4581 (descubrimiento automático).
 
 La computadora servidor debe permanecer encendida y con POSVEN3 abierto mientras operen las cajas cliente. Mantén el puerto 4580 dentro de una red privada confiable, protegida con WPA2/WPA3; no configures reenvío del puerto hacia Internet. El tráfico LAN usa HTTPS con certificado local y huella SHA-256 fijada en cada cliente. El descubrimiento UDP (puerto 4581) solo anuncia los datos de conexión y no sustituye la verificación TLS. No expongas los puertos LAN a Internet.
 
