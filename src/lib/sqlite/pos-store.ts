@@ -1430,7 +1430,7 @@ export async function deleteTerminalTransaction(params: {
 }
 
 export async function createZClosureTransaction(params: {
-  user: { rol: string; id: string };
+  user: { rol: string; id: string; nombre?: string; username?: string };
   terminalId: string;
   report: any;
   terminalPatch: Record<string, any>;
@@ -1517,10 +1517,20 @@ export async function createZClosureTransaction(params: {
     }
 
     // Reporte, correlativo, fondos y cierre de sesión se confirman atómicamente.
-    const closedAt = String(report.closedAt || report.fecha || report.generatedAt || new Date().toISOString());
+    // La identidad del cierre y la hora de confirmación provienen del servidor,
+    // nunca de los campos enviados por el navegador.
+    const closedAt = new Date().toISOString();
+    report = {
+      ...report,
+      terminalId: params.terminalId,
+      terminalName: String(current.nombre || current.name || params.terminalId),
+      numeroZ: nextNumber,
+      closedAt,
+      closedBy: String(params.user.nombre || params.user.username || params.user.id),
+      closedById: params.user.id,
+    };
     const updatedTerminal = {
       ...current,
-      ...clean(params.terminalPatch),
       id: params.terminalId,
       ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ) || 0),
       fechaUltimoZ: closedAt,
