@@ -2055,11 +2055,11 @@ export async function createCustomerDebtTransaction(params:any){
     const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['DEUDA-CXC',opId]});
     if(check.rows.length){
       let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
-      const debt=saved.referencia?rowFromDb((await tx.execute(txSelect('cxc',String(saved.referencia))).rows[0]):null;
+      const debt=saved.referencia?rowFromDb((await tx.execute(txSelect('cxc',String(saved.referencia)))).rows[0]):null;
       if(!debt)throw new Error('La deuda CxC ya fue procesada, pero no se pudo recuperar. Consulte CxC antes de repetirla.');
       const customerId=String(saved.customerId||params.customerId||'');
       const customer=customerId?rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]):null;
-      const journal=params.journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(params.journal.id))).rows[0]):null;
+      const journal=params.journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(params.journal.id)))).rows[0]):null;
       return {debt,customer,journal,recovered:true};
     }
     const debt=params.debt; if(!debt?.id) throw new Error('La deuda no tiene id.');
@@ -2095,9 +2095,9 @@ export async function createSupplierDebtTransaction(params:any){
     const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['DEUDA-CXP',opId]});
     if(check.rows.length){
       let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
-      const debt=saved.referencia?rowFromDb((await tx.execute(txSelect('cxp',String(saved.referencia))).rows[0]):null;
+      const debt=saved.referencia?rowFromDb((await tx.execute(txSelect('cxp',String(saved.referencia)))).rows[0]):null;
       if(!debt)throw new Error('La deuda CxP ya fue procesada, pero no se pudo recuperar. Consulte CxP antes de repetirla.');
-      const journal=params.journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(params.journal.id))).rows[0]):null;
+      const journal=params.journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(params.journal.id)))).rows[0]):null;
       return {debt,journal,recovered:true};
     }
     const debt=params.debt; if(!debt?.id) throw new Error('La deuda no tiene id.');
@@ -2771,7 +2771,7 @@ export async function reverseDebtPaymentTransaction(params:any){
       const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
       if(!debt)throw new Error('El abono fue reversado, pero la deuda ya no existe para recuperar el resultado.');
       if(!saved.reversedPayment)throw new Error('El abono ya fue reversado. Consulte el historial de auditoría; el registro anterior no conserva una copia del comprobante.');
-      const journal=journalId?rowFromDb((await tx.execute(txSelect('libroDiario',String(journalId))).rows[0]):null;
+      const journal=journalId?rowFromDb((await tx.execute(txSelect('libroDiario',String(journalId)))).rows[0]):null;
       return {...debt,reversedPayment:saved.reversedPayment,journal,recovered:true};
     }
     const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]); if(!debt) throw new Error('La deuda ya no existe.');
