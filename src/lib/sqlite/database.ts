@@ -6,19 +6,30 @@ const globalKey = '__POSVEN_SQLITE_DATABASE__';
 
 function resolveDatabasePath() {
   const configured = String(process.env.POSVEN_SQLITE_PATH || '').trim();
-  if (configured) return path.resolve(configured);
-  return path.join(process.cwd(), '.posven-data', 'posven-pro3.sqlite');
+  if (!configured) {
+    throw new Error(
+      'POSVEN_SQLITE_PATH no está configurado. El servidor local debe indicar explícitamente la ubicación única de la base SQLite.',
+    );
+  }
+  if (!path.isAbsolute(configured)) {
+    throw new Error(
+      'POSVEN_SQLITE_PATH debe ser una ruta absoluta. Se rechazó la configuración para evitar crear una base SQLite en una ubicación accidental.',
+    );
+  }
+  return path.normalize(configured);
 }
 
 export function getSqliteDatabase(): SqliteDatabase {
   const root = globalThis as typeof globalThis & { [globalKey]?: SqliteDatabase };
   if (root[globalKey]) return root[globalKey];
 
+  // Resolve and validate the one authoritative path before loading the native
+  // driver or creating directories. Never fall back to cwd or a second DB.
+  const filename = resolveDatabasePath();
   // better-sqlite3 is a native dependency and is externalized by Next.js.
   // It is loaded only by the Node.js server runtime, never by the browser.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const BetterSqlite3 = require('better-sqlite3');
-  const filename = resolveDatabasePath();
   fs.mkdirSync(path.dirname(filename), { recursive: true });
 
   const db = new BetterSqlite3(filename);
