@@ -449,8 +449,62 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('before-quit', () => {
-  if (nextServer) { try { nextServer.close(); } catch {} nextServer = null; }
+// Cierre ordenado del servidor local antes de terminar Electron.
+// Primero deja de aceptar conexiones nuevas, permite terminar las solicitudes
+// activas y después libera el servidor Next.js. SQLite se cierra al finalizar
+// el proceso, una vez que ya no quedan manejadores HTTP ejecutándose.
+async function shutdownLocalServer() {
+  const server = nextServer;
+  nextServer = null;
+
+  if (server?.listening) {
+    await new Promise((resolve) => {
+      try {
+        server.close((error) => {
+          if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') {
+            console.error('[SHUTDOWN] Error cerrando servidor HTTPS:', error);
+          }
+          resolve();
+        });
+        // Node mantiene conexiones keep-alive inactivas; no deben impedir
+        // que el cierre normal complete después de dejar de aceptar tráfico.
+        server.closeIdleConnections?.();
+      } catch (error) {
+        console.error('[SHUTDOWN] No se pudo cerrar el servidor HTTPS:', error);
+        resolve();
+      }
+    });
+  }
+
+  const application = nextApplication;
+  nextApplication = null;
+  if (application && typeof application.close === 'function') {
+    try {
+      await application.close();
+    } catch (error) {
+      console.error('[SHUTDOWN] Error cerrando Next.js:', error);
+    }
+  }
+
+  serverTls = null;
+  trustedServerFingerprint = null;
+}
+
+let shutdownStarted = false;
+let shutdownComplete = false;
+
+app.on('before-quit', (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+
+  shutdownLocalServer()
+    .catch((error) => console.error('[SHUTDOWN] Cierre local incompleto:', error))
+    .finally(() => {
+      shutdownComplete = true;
+      app.quit();
+    });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
