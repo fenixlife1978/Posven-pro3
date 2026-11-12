@@ -163,7 +163,7 @@ function ensureServerTls() {
     const password = crypto.randomBytes(32).toString('base64url');
     const safePfx = pfxPath.replace(/'/g, "''");
     const safeCer = cerPath.replace(/'/g, "''");
-    const ps = "$ErrorActionPreference='Stop'; $cert=New-SelfSignedCertificate -Subject 'CN=POSVEN3-LAN' -DnsName @('localhost',$env:COMPUTERNAME) -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(5); $pwd=ConvertTo-SecureString '" + password + "' -AsPlainText -Force; Export-PfxCertificate -Cert $cert -FilePath '" + safePfx + "' -Password $pwd | Out-Null; Export-Certificate -Cert $cert -FilePath '" + safeCer + "' -Type CERT | Out-Null";
+    const ps = "$ErrorActionPreference='Stop'; $cert=New-SelfSignedCertificate -Subject 'CN=POSVEN3-LAN' -DnsName @('localhost',$env:COMPUTERNAME) -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 3072 -KeyExportPolicy Exportable -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(5); $pwd=ConvertTo-SecureString '" + password + "' -AsPlainText -Force; Export-PfxCertificate -Cert $cert -FilePath '" + safePfx + "' -Password $pwd | Out-Null; Export-Certificate -Cert $cert -FilePath '" + safeCer + "' -Type CERT | Out-Null";
     const result = spawnSync('powershell.exe', ['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',ps], { encoding:'utf8', windowsHide:true });
     if (result.status !== 0 || !fs.existsSync(pfxPath) || !fs.existsSync(cerPath)) throw new Error('No se pudo generar el certificado TLS local: ' + String(result.stderr || result.stdout || 'PowerShell falló.'));
     fs.writeFileSync(passwordPath, password, { encoding:'utf8', mode:0o600 });
