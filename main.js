@@ -245,7 +245,7 @@ async function startLocalNextServer(port) {
     try {
       const parsedHost = new URL('http://' + hostHeader);
       requestHost = parsedHost.hostname.replaceAll('[', '').replaceAll(']', '');
-      requestPort = Number(parsedHost.port || DEFAULT_PORT);
+      requestPort = Number(parsedHost.port || 80);
     } catch {}
     const configuredPort = Number(port);
     if (!allowedHosts.has(requestHost) || requestPort !== configuredPort) {
