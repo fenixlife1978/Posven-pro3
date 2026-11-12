@@ -30,7 +30,7 @@ Se recomienda reservar la IP del servidor en el router. Si la IP dinámica cambi
 
 - Las contraseñas locales se almacenan con hash scrypt.
 - Los roles admitidos son administrador y cajero.
-- El usuario semilla local `admin` se crea cuando no existe un administrador activo. En una instalación nueva, la contraseña inicial predeterminada es `admin123`; debe cambiarse antes de usar el sistema con datos reales.
+- El usuario semilla local `admin` se crea cuando no existe un administrador activo. Si no se define `POSVEN_SEED_ADMIN_PASSWORD`, se genera una contraseña aleatoria criptográficamente segura y se escribe una sola vez en `data/POSVEN3-CLAVE-INICIAL.txt` dentro del directorio de datos del servidor. El administrador debe iniciar sesión, cambiarla inmediatamente y eliminar ese archivo. No existe una contraseña predeterminada compartida entre instalaciones.
 - Los clientes se autentican contra la misma tabla de usuarios del servidor y guardan sesiones en SQLite.
 
 ## Respaldos y restauración
