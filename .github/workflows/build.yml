@@ -36,6 +36,9 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Validate Electron main process syntax
+        run: node --check main.js
+
       - name: Install dependencies from the committed lockfile
         run: npm ci --no-audit --no-fund
 
