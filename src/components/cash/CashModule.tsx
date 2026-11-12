@@ -55,26 +55,33 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
     }
   }, []);
 
-  const handleOpen = () => {
+  const handleOpen = async () => {
     const amountBs = parseFloat(openAmountBs) || 0;
     const amountUsd = parseFloat(openAmountUsd) || 0;
-    
+
     // Validar que al menos un fondo tenga valor
     if (amountBs === 0 && amountUsd === 0) {
-      toast({ 
-        variant: "destructive", 
-        title: "Error", 
-        description: "Debe ingresar al menos un monto de apertura en Bs. o USD." 
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Debe ingresar al menos un monto de apertura en Bs. o USD."
       });
       return;
     }
 
     const terminal = currentTerminal();
-    const state = Store.get();
-    
+    if (!terminal?.id) {
+      toast({
+        variant: "destructive",
+        title: "Apertura no disponible",
+        description: "No se encontró la terminal asignada a este usuario."
+      });
+      return;
+    }
+
     const session: CashSession = {
-      terminalId: terminal?.id,
-      terminalName: terminal?.nombre,
+      terminalId: terminal.id,
+      terminalName: terminal.nombre,
       openDate: new Date().toISOString(),
       openAmount: amountBs,
       openAmountBs: amountBs,
@@ -91,61 +98,43 @@ export function CashModule({ onStatusChange }: { onStatusChange: (s: boolean) =>
       totalCollections: 0,
       saleCount: 0
     };
-    
-    // ✅ ACTUALIZAR EL ESTADO DE CAJA DE ESTE TERMINAL (por caja)
-    Store.set({ terminales: Utils.patchTerminal(state.terminales, terminal?.id, {
-      fondoCajaHoyBS: amountBs,
-      fondoCajaHoyUSD: amountUsd,
-      isCashOpen: true,
-      cashData: session
-    }) });
-    
-    setIsOpen(true);
-    setCurrentSession(session);
-    onStatusChange(true);
-    
-    toast({ 
-      title: "✅ Caja Abierta", 
-      description: `Iniciada con Bs. ${amountBs.toFixed(2)} y $${amountUsd.toFixed(2)}` 
-    });
+
+    try {
+      // No confirmar visualmente la apertura hasta que SQLite responda.
+      const confirmed = await Store.openCashTransaction({
+        terminalId: String(terminal.id),
+        patch: {
+          fondoCajaHoyBS: amountBs,
+          fondoCajaHoyUSD: amountUsd,
+          isCashOpen: true,
+          cashData: session
+        }
+      });
+      const confirmedSession = (confirmed.cashData || session) as CashSession;
+      setIsOpen(confirmed.isCashOpen === true);
+      setCurrentSession(confirmedSession);
+      setHistory(Array.isArray(confirmed.cashHistory) ? confirmed.cashHistory : []);
+      onStatusChange(confirmed.isCashOpen === true);
+
+      toast({
+        title: "✅ Caja Abierta",
+        description: `Iniciada con Bs. ${amountBs.toFixed(2)} y ${amountUsd.toFixed(2)}`
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Apertura no confirmada",
+        description: error?.message || "SQLite local no confirmó la apertura. La caja no se marcará como abierta."
+      });
+    }
   };
 
   const handleClose = () => {
     if (!currentSession) return;
-    const amount = parseFloat(closeAmount) || 0;
-    const terminal = currentTerminal();
-    const state = Store.get();
-    
-    const closed: CashSession = {
-      ...currentSession,
-      closeDate: new Date().toISOString(),
-      closeAmount: amount,
-      closeAmountBs: amount,
-      closeAmountUsd: currentSession.openAmountUsd || 0,
-      closeNotes,
-      difference: amount - (currentSession.openAmount + currentSession.totalSales + currentSession.totalCollections)
-    };
-
-    const newHistory = [closed, ...(state.terminales.find(t => t.id === terminal?.id)?.cashHistory || [])];
-    
-    // ✅ LIMPIAR LOS FONDOS DE ESTE TERMINAL AL CERRAR
-    Store.set({ terminales: Utils.patchTerminal(state.terminales, terminal?.id, {
-      fondoCajaHoyBS: 0,
-      fondoCajaHoyUSD: 0,
-      isCashOpen: false,
-      cashData: null,
-      cashHistory: newHistory
-    }) });
-    
-    setIsOpen(false);
-    setCurrentSession(null);
-    setHistory(newHistory);
-    onStatusChange(false);
-    
-    toast({ 
-      title: "Caja Cerrada", 
-      variant: closed.difference === 0 ? "default" : "destructive",
-      description: closed.difference === 0 ? "Sin descuadres." : `Descuadre de Bs. ${closed.difference?.toFixed(2)}`
+    toast({
+      variant: "destructive",
+      title: "Cierre mediante Corte Z",
+      description: "La jornada solo puede finalizarse con el proceso de Corte Z. No se modificó la caja ni su historial."
     });
   };
 
