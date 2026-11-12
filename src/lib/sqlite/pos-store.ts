@@ -986,16 +986,21 @@ export async function createSaleTransaction(params: {
       const savedTerminal = terminalId
         ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
         : null;
-      const savedProductIds = [...new Set((savedSale.items || []).map((item: any) => String(item.productoId || '')).filter(Boolean))];
+      const savedMovements = (await tx.execute({
+        sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",
+        args: ['%' + String(saved.referencia) + '%'],
+      })).rows.map(rowFromDb).filter(Boolean);
+      // Incluir también los componentes descontados por kits, que no aparecen
+      // como líneas independientes en el detalle comercial de la factura.
+      const savedProductIds = [...new Set([
+        ...(savedSale.items || []).map((item: any) => String(item.productoId || '')),
+        ...savedMovements.map((movement: any) => String(movement.productoId || '')),
+      ].filter(Boolean))];
       const savedProducts: any[] = [];
       for (const pid of savedProductIds) {
         const product = rowFromDb((await tx.execute(txSelect('productos', pid))).rows[0]);
         if (product) savedProducts.push(product);
       }
-      const savedMovements = (await tx.execute({
-        sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",
-        args: ['%' + String(saved.referencia) + '%'],
-      })).rows.map(rowFromDb).filter(Boolean);
       const savedJournals = (await tx.execute({
         sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia') LIKE ?",
         args: ['%' + String(saved.referencia) + '%'],
