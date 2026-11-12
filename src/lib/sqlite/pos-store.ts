@@ -1464,8 +1464,19 @@ export async function patchTerminalTransaction(params: {
       if (Object.keys(patch).some(key => !allowedOpeningFields.has(key))) {
         throw new Error('El cajero solo puede registrar la apertura de su propia caja.');
       }
-      if (current.isCashOpen === true || patch.isCashOpen !== true) {
+      if (current.isCashOpen === true) {
+        const requestedOpenId = String(patch.cashData?.openOperationId || patch.cashData?.openDate || '');
+        const currentOpenId = String(current.cashData?.openOperationId || current.cashData?.openDate || '');
+        // Si SQLite confirmó la apertura pero se perdió la respuesta HTTP,
+        // el mismo payload puede reintentarse sin crear otra jornada.
+        // Los campos financieros ya fueron comparados arriba y deben ser idénticos.
+        if (patch.isCashOpen === true && requestedOpenId && requestedOpenId === currentOpenId) {
+          return { terminal: current };
+        }
         throw new Error('El cajero no puede modificar una caja abierta ni cerrarla manualmente. Use el proceso de Corte Z.');
+      }
+      if (patch.isCashOpen !== true) {
+        throw new Error('El cajero solo puede registrar una nueva apertura de caja.');
       }
     }
     if (patch.isCashOpen === true) {
