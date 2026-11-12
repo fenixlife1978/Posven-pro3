@@ -1523,9 +1523,10 @@ export async function createZClosureTransaction(params: {
       const result = await tx.execute({ sql: 'SELECT id,data_json FROM ' + table, args: [] });
       return result.rows.map((row: any) => rowFromDb(row)).filter(Boolean);
     };
-    const [allSales, allReturns, allVoids, allJournal] = await Promise.all([
-      loadRows('ventas'), loadRows('devoluciones'), loadRows('anulaciones'), loadRows('libro_diario'),
-    ]);
+    const allSales = await loadRows('ventas');
+    const allReturns = await loadRows('devoluciones');
+    const allVoids = await loadRows('anulaciones');
+    const allJournal = await loadRows('libro_diario');
     const cutoff = String(current.fechaUltimoZ || current.cashData?.openDate || '');
     const inWindow = (value: any) => String(value || '') > cutoff;
     const isDebtCollection = (sale: any) => ['COBRO DEUDA','ABONO DEUDA','COBRO_DEUDA'].includes(String(sale?.type || '').trim().toUpperCase());
@@ -1544,7 +1545,7 @@ export async function createZClosureTransaction(params: {
     const exemptUSD = sales.reduce((sum: number, sale: any) => sum + (Number(sale.exentoUSD) || 0), 0);
     const igtfUSD = sales.reduce((sum: number, sale: any) => sum + (Number(sale.igtfUSD) || 0), 0);
     const normalizeMethod = (value: any) => {
-      const method = String(value || 'otros').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/\\s+/g, '_');
+      const method = String(value || 'otros').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
       if (['punto_venta','punto_de_venta','punto_pago','punto_de_pago','tarjeta_debito','tarjeta_credito'].includes(method)) return 'tarjeta';
       return method === 'pago_movil' ? 'pagomovil' : method;
     };
@@ -1616,6 +1617,8 @@ export async function createZClosureTransaction(params: {
       baseImponibleUSD: baseUSD, ivaUSD, exentoUSD: exemptUSD, igtfUSD,
       metodosPago: paymentMethods, metodosArqueo: Object.entries(arqueo).map(([metodo, values]: any) => ({ metodo, ...values, moneda: isUsdMethod(metodo) ? 'USD' : 'BS' })),
       cobrosDeudaUSD: debtUsd, cobrosDeudaBS: debtBs, cobrosDeudaPorMetodo: Object.values(debtByMethod),
+      manualSalidas: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualEntradas: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
       manualSalidasBS: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
       manualSalidasUSD: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
       manualEntradasBS: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
@@ -1628,17 +1631,18 @@ export async function createZClosureTransaction(params: {
       stats: { facturas:sales.length, devoluciones:returns.length, anulaciones:voidDocs.length, ticketPromedio:sales.length ? netUSD / sales.length : 0 },
       cajeroId: params.user.id, cajeroNombre: String(params.user.nombre || params.user.username || params.user.id),
       openedAt: current.cashData?.openDate || null, closedAt, closedBy: String(params.user.nombre || params.user.username || params.user.id), closedById: params.user.id,
-      differenceBs: Number(submitted.differenceBs) || 0, differenceUSD: Number(submitted.differenceUSD) || 0,
+      differenceBs: Number(((Number(submitted.totalNetoEfectivoBS) || 0) - estimatedBs).toFixed(2)),
+      differenceUSD: Number(((Number(submitted.totalNetoEfectivoUSD) || 0) - estimatedUsd).toFixed(2)),
     };
     report = reportData;
 
     // La identidad de cierre ya fue fijada por el servidor en reportData.
-    const closedAt = String(report.closedAt);
+    const committedAt = String(report.closedAt);
     const updatedTerminal = {
       ...current,
       id: params.terminalId,
       ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ) || 0),
-      fechaUltimoZ: closedAt,
+      fechaUltimoZ: committedAt,
       acumuladoHistorico: Number(report.acumuladoHistoricoUSD) || 0,
       isCashOpen: false, cashData: null, fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0,
     };
