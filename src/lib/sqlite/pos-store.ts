@@ -1440,6 +1440,20 @@ export async function createZClosureTransaction(params: {
     const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
     if (!current) throw new Error('La terminal ya no existe en SQLite local.');
     assertTerminalAccess(params.user, current);
+    const openingOperationId = String(current.cashData?.openDate || current.cashData?.openedAt || current.cashData?.fechaApertura || '');
+    if (!openingOperationId) throw new Error('La jornada no tiene un identificador de apertura. No se puede cerrar de forma idempotente.');
+    const closureOperationId = params.terminalId + '|' + openingOperationId;
+    const previousClosure = await tx.execute({
+      sql: 'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      args: ['CIERRE-Z', closureOperationId],
+    });
+    if (previousClosure.rows.length) {
+      let saved: any = {};
+      try { saved = JSON.parse(String(previousClosure.rows[0].data_json || '{}')); } catch {}
+      const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia))).rows[0]) : null;
+      if (!previousReport) throw new Error('Se encontró un cierre Z previo sin su reporte asociado. Requiere revisión; no se emitirá otro Z.');
+      return { report: previousReport, terminal: current };
+    }
     if (current.isCashOpen !== true) {
       throw new Error('La caja ya está cerrada o no tiene una jornada abierta. Debe realizar una nueva apertura antes de emitir otro Z.');
     }
@@ -1680,6 +1694,15 @@ export async function createZClosureTransaction(params: {
     };
     await tx.execute(rowStatement('reportesZ', report));
     await tx.execute(rowStatement('terminales', updatedTerminal));
+    await tx.execute({
+      sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
+      args: [
+        'CIERRE-Z-' + String(params.terminalId) + '-' + String(report.numeroZ),
+        'CIERRE-Z', closureOperationId,
+        JSON.stringify({ tipo:'CIERRE-Z', operationId:closureOperationId, referencia:report.id, terminalId:params.terminalId }),
+      ],
+      wantRows: false,
+    });
     return { report, terminal: updatedTerminal };
   });
 }
