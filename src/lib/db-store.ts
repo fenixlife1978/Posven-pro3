@@ -71,15 +71,30 @@ function handleExpiredLocalSession(response: Response) {
 
 async function tryLocalServerOperation(operation: string, payload: any): Promise<any | null> {
   if (typeof window === 'undefined') throw new Error('La operación debe ejecutarse desde la aplicación de escritorio conectada al servidor LAN.');
+  const requestBody = JSON.stringify({ operation, ...payload });
+  // Solo repetimos solicitudes cuyo servidor ya puede resolver idempotentemente.
+  // El mismo operationId y cuerpo hacen que un primer COMMIT con respuesta
+  // perdida se recupere sin volver a descontar stock ni aplicar otro abono.
+  const canSafelyRetry =
+    (operation === 'sale' && !!payload?.operationId) ||
+    (operation === 'debtPayment' && !!(payload?.operationId || payload?.payment?.id));
+  const send = () => fetch('/api/pos/store', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: requestBody, signal: AbortSignal.timeout(60000),
+  });
   let response: Response;
   try {
-    response = await fetch('/api/pos/store', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ operation, ...payload }),
-      signal: AbortSignal.timeout(60000),
-    });
-  } catch {
-    throw new Error('No se pudo contactar con el servidor LAN. La operación no se guardó ni quedó en cola.');
+    response = await send();
+  } catch (firstError) {
+    if (!canSafelyRetry) {
+      throw new Error('Se perdió la comunicación con el servidor LAN. El resultado de la operación es incierto; no la repita hasta consultar el historial.');
+    }
+    await new Promise(resolve => setTimeout(resolve, 350));
+    try {
+      response = await send();
+    } catch {
+      throw new Error('No se pudo recuperar la respuesta del servidor. El resultado de la operación es incierto; consulte el historial antes de volver a intentarla.');
+    }
   }
   handleExpiredLocalSession(response);
   if (response.status === 503) throw new Error('El servidor SQLite local no está disponible. La operación fue rechazada.');
