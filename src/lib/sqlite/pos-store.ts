@@ -2773,14 +2773,14 @@ export async function createPurchaseTransaction(params:any){
     const prior=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['COMPRA',opId]});
     if(prior.rows.length){
       let saved:any={};try{saved=JSON.parse(String(prior.rows[0].data_json||'{}'));}catch{}
-      const savedPurchase=saved.referencia?rowFromDb((await tx.execute(txSelect('compras',String(saved.referencia))).rows[0]):null;
+      const savedPurchase=saved.referencia?rowFromDb((await tx.execute(txSelect('compras',String(saved.referencia)))).rows[0]):null;
       if(!savedPurchase)throw new Error('La compra ya fue procesada, pero no se pudo recuperar el comprobante. Consulte Compras antes de repetirla.');
       const movementRows=await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia')=?",args:[`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`]});
       const movements=movementRows.rows.map(rowFromDb).filter(Boolean);
       const ids=[...new Set([...(savedPurchase.items||[]).map((it:any)=>String(it.productoId||'')),...movements.map((m:any)=>String(m.productoId||''))].filter(Boolean))];
       const products:any[]=[];for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(p)products.push(p);}
-      const savedDebt=debt?.id?rowFromDb((await tx.execute(txSelect('cxp',String(debt.id))).rows[0]):null;
-      const savedJournal=journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(journal.id))).rows[0]):null;
+      const savedDebt=debt?.id?rowFromDb((await tx.execute(txSelect('cxp',String(debt.id)))).rows[0]):null;
+      const savedJournal=journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(journal.id)))).rows[0]):null;
       return {purchase:savedPurchase,journal:savedJournal,debt:savedDebt,products,movements,recovered:true};
     }
     if((await tx.execute(txSelect('compras',String(purchase.id)))).rows.length) throw new Error('Esta compra ya existe en SQLite local.');
