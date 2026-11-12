@@ -159,7 +159,12 @@ function ensureServerTls() {
   const pfxPath = path.join(dataDir, 'posven3-server.pfx');
   const cerPath = path.join(dataDir, 'posven3-server.cer');
   const passwordPath = path.join(dataDir, 'posven3-server.pass');
-  if (![pfxPath, cerPath, passwordPath].every(file => fs.existsSync(file))) {
+  const tlsFiles = [pfxPath, cerPath, passwordPath];
+  if (!tlsFiles.every(file => fs.existsSync(file))) {
+    // Recover cleanly from an interrupted first-time certificate setup.
+    // Export-PfxCertificate/Export-Certificate may refuse existing partial
+    // outputs, so regenerate the set as one unit rather than mixing files.
+    for (const file of tlsFiles) fs.rmSync(file, { force: true });
     const password = crypto.randomBytes(32).toString('base64url');
     const safePfx = pfxPath.replace(/'/g, "''");
     const safeCer = cerPath.replace(/'/g, "''");
