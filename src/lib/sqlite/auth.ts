@@ -1,4 +1,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { getSqliteDatabasePath } from '@/lib/sqlite/database';
 import { sqliteExecute, sqliteTransaction } from '@/lib/sqlite/client';
 import { ensureSqliteSchema } from '@/lib/sqlite/schema-init';
 
@@ -134,7 +137,20 @@ export async function ensureSeedAdmin() {
 
   // The seed account is only reset when no active administrator exists.
   // This repairs stale/incompatible hashes after a reset or failed first setup.
-  const seedPassword = process.env.POSVEN_SEED_ADMIN_PASSWORD || 'admin123';
+  const configuredPassword = String(process.env.POSVEN_SEED_ADMIN_PASSWORD || '').trim();
+  const seedPassword = configuredPassword || randomBytes(24).toString('base64url');
+  if (!configuredPassword) {
+    const credentialFile = path.join(path.dirname(getSqliteDatabasePath()), 'POSVEN3-CLAVE-INICIAL.txt');
+    const temporaryFile = credentialFile + '.tmp';
+    fs.mkdirSync(path.dirname(credentialFile), { recursive: true });
+    fs.writeFileSync(temporaryFile,
+      'POSVEN3 - CREDENCIAL INICIAL DEL ADMINISTRADOR\\n\\n' +
+      'Usuario: admin\\n' +
+      'Contraseña temporal: ' + seedPassword + '\\n\\n' +
+      'Inicia sesión y cambia esta contraseña inmediatamente. Después elimina este archivo.\\n',
+      { encoding: 'utf8', mode: 0o600, flag: 'w' });
+    fs.renameSync(temporaryFile, credentialFile);
+  }
   const existingSeed = await sqliteExecute({
     sql: `SELECT id FROM users WHERE lower(username)='admin' LIMIT 1`,
   });
