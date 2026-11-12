@@ -74,7 +74,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
     return Array.from(methods.values()).map((r) => {
       const method = String(r.metodo);
       const currency: "BS" | "USD" =
-        ["efectivo_usd", "zelle", "transferencia_usd"].includes(method) ? "USD" : "BS";
+        ["efectivo_usd", "zelle", "transferencia_usd", "usd", "dolar", "dolares"].includes(method) ? "USD" : "BS";
 
       const opening =
         method === "efectivo_bs"
