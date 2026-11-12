@@ -42,7 +42,7 @@ export async function POST(request: Request) {
 
     response.cookies.set('posven_session', session.id, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: 'strict',
       secure: new URL(request.url).protocol === 'https:',
       path: '/',
       expires: new Date(session.expires),
