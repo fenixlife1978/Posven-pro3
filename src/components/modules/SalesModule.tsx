@@ -661,6 +661,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       devEfectivoUSD: Number(data.devEfectivoUSD) || 0,
       totalNetoEfectivoBS: realBs,
       totalNetoEfectivoUSD: realUSD,
+      arqueoReal: { ...real },
       salidasCajaUSD: data.manualSalidas,
       entradasCajaUSD: data.manualEntradas,
       fondoAperturaUSD: data.fondoAperturaUSD,
