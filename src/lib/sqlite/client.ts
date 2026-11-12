@@ -1,4 +1,4 @@
-import { getSqliteDatabase } from './database';
+import { getSqliteDatabase, getSqliteDatabasePath } from './database';
 
 export type SQLiteStatement = {
   sql: string;
@@ -56,7 +56,12 @@ function executeDirect(statement: SQLiteStatement): SQLiteResult {
 }
 
 export function isSQLiteConfigured() {
-  return true;
+  try {
+    getSqliteDatabasePath();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function assertSQLiteReady() {
