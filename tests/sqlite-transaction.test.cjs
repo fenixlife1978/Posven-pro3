@@ -26,6 +26,10 @@ require.extensions['.ts'] = (loadedModule, filename) => {
 const originalResolveFilename = Module._resolveFilename;
 Module._resolveFilename = function resolveTypeScript(request, parent, isMain, options) {
   try {
+    if (typeof request === 'string' && request.startsWith('@/')) {
+      const mapped = path.join(process.cwd(), 'src', request.slice(2));
+      return originalResolveFilename.call(this, path.extname(mapped) ? mapped : mapped + '.ts', parent, isMain, options);
+    }
     return originalResolveFilename.call(this, request, parent, isMain, options);
   } catch (error) {
     if (typeof request === 'string' && !path.extname(request)) {
@@ -38,6 +42,8 @@ Module._resolveFilename = function resolveTypeScript(request, parent, isMain, op
 const sqlite = require('../src/lib/sqlite/client.ts');
 const { sqliteExecute, sqliteInteractiveTransaction, assertSQLiteReady } = sqlite;
 const database = require('../src/lib/sqlite/database.ts');
+const schema = require('../src/lib/sqlite/schema-init.ts');
+const posStore = require('../src/lib/sqlite/pos-store.ts');
 
 test('transacciones interactivas serializan cajas concurrentes en una sola conexión', async () => {
   assertSQLiteReady();
@@ -127,6 +133,91 @@ test('el contexto transaccional no permite ejecutar después del COMMIT', async 
     closedTransaction.execute({ sql: 'SELECT 1 AS ok' }),
     /transacción SQLite ya fue cerrada/,
   );
+});
+
+
+test('dos cajas mantienen ventas y Corte Z independientes; reintentar el mismo cierre no duplica el Z', async () => {
+  await schema.ensureSqliteSchema();
+
+  const openedAt = '2026-11-12T10:00:00.000Z';
+  const saleAt = '2026-11-12T11:00:00.000Z';
+  const terminals = [
+    {
+      id: 'CAJA1', nombre: 'Caja 1', prefijoCaja: 'CAJA01',
+      isCashOpen: true, cashData: { openDate: openedAt, openedBy: 'Prueba' },
+      ultimoZ: 0, fechaUltimoZ: '', acumuladoHistorico: 0,
+      fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0, cashHistory: [],
+    },
+    {
+      id: 'CAJA2', nombre: 'Caja 2', prefijoCaja: 'CAJA02',
+      isCashOpen: true, cashData: { openDate: openedAt, openedBy: 'Prueba' },
+      ultimoZ: 0, fechaUltimoZ: '', acumuladoHistorico: 0,
+      fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0, cashHistory: [],
+    },
+  ];
+
+  for (const terminal of terminals) {
+    await sqliteExecute({
+      sql: 'INSERT INTO terminales(id,data_json,fecha) VALUES(?,?,?)',
+      args: [terminal.id, JSON.stringify(terminal), openedAt],
+      wantRows: false,
+    });
+  }
+
+  const sales = [
+    {
+      id: 'V-CAJA1-000000001', fecha: saleAt, estado: 'completada', terminalId: 'CAJA1',
+      totalUSD: 10, totalBS: 0, descuentoUSD: 0, baseImponibleUSD: 10,
+      ivaUSD: 0, exentoUSD: 0, igtfUSD: 0, metodoPago: 'efectivo_usd',
+      payments: [{ metodo: 'efectivo_usd', montoUSD: 10, montoBS: 0 }], type: 'VENTA',
+    },
+    {
+      id: 'V-CAJA2-000000001', fecha: saleAt, estado: 'completada', terminalId: 'CAJA2',
+      totalUSD: 25, totalBS: 0, descuentoUSD: 0, baseImponibleUSD: 25,
+      ivaUSD: 0, exentoUSD: 0, igtfUSD: 0, metodoPago: 'efectivo_usd',
+      payments: [{ metodo: 'efectivo_usd', montoUSD: 25, montoBS: 0 }], type: 'VENTA',
+    },
+  ];
+  for (const sale of sales) {
+    await sqliteExecute({
+      sql: 'INSERT INTO ventas(id,data_json,fecha) VALUES(?,?,?)',
+      args: [sale.id, JSON.stringify(sale), sale.fecha],
+      wantRows: false,
+    });
+  }
+
+  const user = { id: 'admin-regression', rol: 'administrador', nombre: 'Prueba' };
+  const close = (terminalId, countedUsd) => posStore.createZClosureTransaction({
+    user,
+    terminalId,
+    report: { arqueoReal: { efectivo_usd: countedUsd } },
+    terminalPatch: {},
+  });
+
+  const [firstCaja1, retryCaja1, firstCaja2] = await Promise.all([
+    close('CAJA1', 10),
+    close('CAJA1', 10),
+    close('CAJA2', 25),
+  ]);
+
+  assert.equal(firstCaja1.report.id, retryCaja1.report.id);
+  assert.equal(firstCaja1.report.numeroZ, 1);
+  assert.equal(firstCaja2.report.numeroZ, 1);
+  assert.notEqual(firstCaja1.report.id, firstCaja2.report.id);
+  assert.equal(firstCaja1.report.ventaBrutaUSD, 10);
+  assert.equal(firstCaja2.report.ventaBrutaUSD, 25);
+  assert.equal(firstCaja1.terminal.isCashOpen, false);
+  assert.equal(firstCaja2.terminal.isCashOpen, false);
+
+  const reports = await sqliteExecute({
+    sql: 'SELECT id,data_json FROM reportes_z ORDER BY id',
+  });
+  assert.equal(reports.rows.length, 2);
+  const operations = await sqliteExecute({
+    sql: "SELECT operation_id FROM operaciones WHERE prefijo='CIERRE-Z' ORDER BY operation_id",
+  });
+  assert.equal(operations.rows.length, 2);
+  assert.equal(new Set(operations.rows.map(row => row.operation_id)).size, 2);
 });
 
 after(() => {
