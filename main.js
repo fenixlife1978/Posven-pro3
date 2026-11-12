@@ -237,7 +237,37 @@ async function startLocalNextServer(port) {
   nextApplication = next({ dev: false, dir: app.getAppPath() });
   await nextApplication.prepare();
   const handler = nextApplication.getRequestHandler();
+  const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', ...getLanIPv4Addresses()]);
   nextServer = http.createServer((request, response) => {
+    const hostHeader = String(request.headers.host || '').trim().toLowerCase();
+    let requestHost = '';
+    let requestPort = 0;
+    try {
+      const parsedHost = new URL('http://' + hostHeader);
+      requestHost = parsedHost.hostname.replace(/^\\[|\\]$/g, '');
+      requestPort = Number(parsedHost.port || DEFAULT_PORT);
+    } catch {}
+    const configuredPort = Number(port);
+    if (!allowedHosts.has(requestHost) || requestPort !== configuredPort) {
+      response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      response.end(JSON.stringify({ ok: false, error: 'Host no autorizado para el servidor POSVEN3.' }));
+      return;
+    }
+    const requestPath = request.url?.split('?')[0] || '/';
+    const isApiMutation = requestPath.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
+    if (isApiMutation) {
+      const origin = String(request.headers.origin || '').trim();
+      let originMatchesHost = false;
+      try {
+        const parsedOrigin = new URL(origin);
+        originMatchesHost = parsedOrigin.protocol === 'http:' && parsedOrigin.host.toLowerCase() === hostHeader;
+      } catch {}
+      if (!originMatchesHost) {
+        response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        response.end(JSON.stringify({ ok: false, error: 'Origen no autorizado para modificar datos de POSVEN3.' }));
+        return;
+      }
+    }
     const remote = request.socket.remoteAddress || '';
     if (!isAllowedLanAddress(remote)) {
       response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
