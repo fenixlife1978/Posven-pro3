@@ -254,18 +254,25 @@ function checkLoginRateLimit(remoteAddress) {
   const now = Date.now();
   const key = String(remoteAddress || 'unknown').replace(/^::ffff:/i, '');
   let entry = loginAttemptsByIp.get(key);
-  if (!entry || now - entry.startedAt >= LOGIN_WINDOW_MS) {
+
+  if (entry && now - entry.startedAt >= LOGIN_WINDOW_MS) {
+    loginAttemptsByIp.delete(key);
+    entry = undefined;
+  }
+
+  if (!entry) {
+    // Bound memory even if an attacker connects through many source IPs.
+    // Expire old windows first; never evict active counters to make room.
+    if (loginAttemptsByIp.size >= 5000) {
+      for (const [ip, item] of loginAttemptsByIp) {
+        if (now - item.startedAt >= LOGIN_WINDOW_MS) loginAttemptsByIp.delete(ip);
+      }
+      if (loginAttemptsByIp.size >= 5000) return Math.ceil(LOGIN_WINDOW_MS / 1000);
+    }
     entry = { startedAt: now, attempts: 0 };
     loginAttemptsByIp.set(key, entry);
   }
-  if (loginAttemptsByIp.size > 5000) {
-    for (const [ip, item] of loginAttemptsByIp) {
-      if (now - item.startedAt >= LOGIN_WINDOW_MS) loginAttemptsByIp.delete(ip);
-    }
-    // Nunca borrar contadores activos para liberar espacio: eso permitiría
-    // reiniciar el límite provocando solicitudes desde muchas IP distintas.
-    if (!loginAttemptsByIp.has(key) && loginAttemptsByIp.size >= 5000) return Math.ceil(LOGIN_WINDOW_MS / 1000);
-  }
+
   if (entry.attempts >= LOGIN_MAX_ATTEMPTS) {
     return Math.max(1, Math.ceil((LOGIN_WINDOW_MS - (now - entry.startedAt)) / 1000));
   }
