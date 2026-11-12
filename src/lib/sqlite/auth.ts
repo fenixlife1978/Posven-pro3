@@ -127,7 +127,7 @@ export async function createUser(input: {
  * deliberate SQLite local data reset both bootstrap on the first login attempt.
  * Never create a backdoor seed account while another active administrator exists.
  */
-export async function ensureSeedAdmin() {
+async function ensureSeedAdminInternal() {
   await ensureSqliteSchema();
 
   const activeAdmins = await sqliteExecute({
@@ -184,6 +184,18 @@ export async function ensureSeedAdmin() {
       sql: `SELECT id FROM users WHERE lower(username)='admin' AND is_seed_admin=1 LIMIT 1`,
     });
     if (!winner.rows.length) throw error;
+  }
+}
+
+let seedAdminBootstrap: Promise<void> | null = null;
+
+export async function ensureSeedAdmin() {
+  if (seedAdminBootstrap) return seedAdminBootstrap;
+  seedAdminBootstrap = ensureSeedAdminInternal();
+  try {
+    await seedAdminBootstrap;
+  } finally {
+    seedAdminBootstrap = null;
   }
 }
 
