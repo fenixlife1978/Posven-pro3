@@ -709,7 +709,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     }
     const zConfirmado = zPersistido.report;
 
-    toast({ title: `Corte Z ${zConfirmado.id} confirmado en SQLite local`, description: `Diferencia Bs. ${Utils.fmtBS(diff.bs)} · USD ${Utils.fmtUSD(diff.usd)}` });
+    toast({ title: `Corte Z ${zConfirmado.id} confirmado en SQLite local`, description: `Diferencia Bs. ${Utils.fmtBS(zConfirmado.differenceBs)} · USD ${Utils.fmtUSD(zConfirmado.differenceUSD)}` });
 
     // Después de confirmar el arqueo, el Z NO desaparece sin comprobante:
     // se muestra inmediatamente la vista previa térmica 80mm del Reporte Z,
@@ -731,8 +731,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       closedBy: data.cajeroNombre,
       openedAt: session?.openDate || session?.openedAt || session?.fechaApertura || data.openedAt,
       openedBy: session?.openedBy || session?.usuarioApertura || data.cajeroNombre,
-      differenceBs: Number(diff.bs) || 0,
-      differenceUSD: Number(diff.usd) || 0,
+      differenceBs: Number(zConfirmado.differenceBs) || 0,
+      differenceUSD: Number(zConfirmado.differenceUSD) || 0,
     });
     setShowReportType('REPORT_Z');
   };
