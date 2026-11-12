@@ -1,5 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
-const http = require('http');
+const https = require('https');
+const crypto = require('crypto');
+const { X509Certificate } = require('crypto');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -13,6 +16,8 @@ let nextServer = null;
 let nextApplication = null;
 let networkConfig = null;
 let setupResolver = null;
+let serverTls = null;
+let trustedServerFingerprint = null;
 
 const DEFAULT_PORT = 4580;
 
@@ -61,8 +66,9 @@ function readNetworkConfig() {
     if (value?.mode === 'client') {
       const host = String(value.host || '').trim();
       const port = Number(value.port || DEFAULT_PORT);
-      if (isPrivateIPv4(host) && Number.isInteger(port) && port >= 1024 && port <= 65535) {
-        return { mode: 'client', host, port };
+      const fingerprint = String(value.fingerprint || '').replace(/[^a-f0-9]/gi, '').toLowerCase();
+      if (isPrivateIPv4(host) && Number.isInteger(port) && port >= 1024 && port <= 65535 && /^[a-f0-9]{64}$/.test(fingerprint)) {
+        return { mode: 'client', host, port, fingerprint };
       }
     }
   } catch {}
@@ -80,7 +86,9 @@ function saveNetworkConfig(value) {
     if (!isPrivateIPv4(host) || host.startsWith('127.') || host.startsWith('169.254.')) {
       throw new Error('Indique la IP privada IPv4 del equipo servidor (por ejemplo, 192.168.1.100).');
     }
-    config = { mode: 'client', host, port };
+    const fingerprint = String(value?.fingerprint || '').replace(/[^a-f0-9]/gi, '').toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(fingerprint)) throw new Error('Ingrese la huella SHA-256 del certificado que muestra el servidor POSVEN3.');
+    config = { mode: 'client', host, port, fingerprint };
   } else {
     throw new Error('Seleccione si este equipo será servidor o cliente.');
   }
@@ -107,13 +115,13 @@ h1{margin:0 0 7px;font-size:25px}p{color:#64748b;line-height:1.5}.choice{display
 <h1>Configurar POSVEN3</h1><p>Selecciona cómo se conectará esta computadora. La base de datos SQLite estará únicamente en el equipo servidor.</p>
 <label class="choice"><input type="radio" name="mode" value="server" checked><span><strong>Este equipo será el SERVIDOR</strong><span class="hint">Aloja SQLite y permite que las demás cajas se conecten por la red local.</span></span></label>
 <label class="choice"><input type="radio" name="mode" value="client"><span><strong>Este equipo será CLIENTE</strong><span class="hint">Se conecta a la base de datos del servidor. No crea una base de datos independiente.</span></span></label>
-<div id="hostBox" class="field hidden"><label for="host">IP del equipo servidor</label><input id="host" placeholder="192.168.1.100" inputmode="decimal"><div class="hint">Usa la IP local que muestra POSVEN3 en la computadora servidor.</div></div>
+<div id="hostBox" class="field hidden"><label for="host">IP del equipo servidor</label><input id="host" placeholder="192.168.1.100" inputmode="decimal"><div class="hint">Usa la IP local que muestra POSVEN3 en la computadora servidor.</div><label for="fingerprint" style="margin-top:12px">Huella SHA-256 del certificado</label><input id="fingerprint" placeholder="Pega aquí la huella de 64 caracteres"><div class="hint">Debe coincidir exactamente con la huella mostrada en el servidor. No aceptes una huella enviada por un desconocido.</div></div>
 <div class="field"><label for="port">Puerto</label><input id="port" type="number" min="1024" max="65535" value="4580"></div>
 <div id="error"></div><button id="save">Guardar y continuar</button>
 <p class="hint">Recomendación: reserva la IP del servidor en el router para evitar que cambie.</p>
 </main><script>
 const hostBox=document.getElementById('hostBox');document.querySelectorAll('input[name="mode"]').forEach(el=>el.addEventListener('change',()=>{hostBox.classList.toggle('hidden',document.querySelector('input[name="mode"]:checked').value!=='client')}));
-document.getElementById('save').addEventListener('click',async()=>{const mode=document.querySelector('input[name="mode"]:checked').value;const host=document.getElementById('host').value.trim();const port=Number(document.getElementById('port').value);const error=document.getElementById('error');error.textContent='';try{await window.electronAPI.saveNetworkConfig({mode,host,port})}catch(e){error.textContent=e.message||'No se pudo guardar la configuración.'}});
+document.getElementById('save').addEventListener('click',async()=>{const mode=document.querySelector('input[name="mode"]:checked').value;const host=document.getElementById('host').value.trim();const fingerprint=document.getElementById('fingerprint').value.trim();const port=Number(document.getElementById('port').value);const error=document.getElementById('error');error.textContent='';try{await window.electronAPI.saveNetworkConfig({mode,host,port,fingerprint})}catch(e){error.textContent=e.message||'No se pudo guardar la configuración.'}});
 </script></body></html>`;
     setupWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
     setupWindow.on('closed', () => {
@@ -140,6 +148,43 @@ ipcMain.handle('get-network-info', () => ({
   addresses: networkConfig?.mode === 'server' ? getLanIPv4Addresses() : [],
 }));
 
+function normalizeFingerprint(value) { return String(value || '').replace(/[^a-f0-9]/gi, '').toLowerCase(); }
+
+function getCertificateFingerprint(certPem) { return normalizeFingerprint(new X509Certificate(certPem).fingerprint256); }
+
+function ensureServerTls() {
+  if (process.platform !== 'win32') throw new Error('La generación automática del certificado TLS requiere Windows.');
+  const dataDir = path.join(app.getPath('userData'), 'security');
+  fs.mkdirSync(dataDir, { recursive: true });
+  const pfxPath = path.join(dataDir, 'posven3-server.pfx');
+  const cerPath = path.join(dataDir, 'posven3-server.cer');
+  const passwordPath = path.join(dataDir, 'posven3-server.pass');
+  if (![pfxPath, cerPath, passwordPath].every(file => fs.existsSync(file))) {
+    const password = crypto.randomBytes(32).toString('base64url');
+    const safePfx = pfxPath.replace(/'/g, "''");
+    const safeCer = cerPath.replace(/'/g, "''");
+    const ps = "$ErrorActionPreference='Stop'; $cert=New-SelfSignedCertificate -Subject 'CN=POSVEN3-LAN' -DnsName @('localhost',$env:COMPUTERNAME) -CertStoreLocation 'Cert:\\CurrentUser\\My' -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(5); $pwd=ConvertTo-SecureString '" + password + "' -AsPlainText -Force; Export-PfxCertificate -Cert $cert -FilePath '" + safePfx + "' -Password $pwd | Out-Null; Export-Certificate -Cert $cert -FilePath '" + safeCer + "' -Type CERT | Out-Null";
+    const result = spawnSync('powershell.exe', ['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',ps], { encoding:'utf8', windowsHide:true });
+    if (result.status !== 0 || !fs.existsSync(pfxPath) || !fs.existsSync(cerPath)) throw new Error('No se pudo generar el certificado TLS local: ' + String(result.stderr || result.stdout || 'PowerShell falló.'));
+    fs.writeFileSync(passwordPath, password, { encoding:'utf8', mode:0o600 });
+  }
+  const certPem = fs.readFileSync(cerPath);
+  return { pfx:fs.readFileSync(pfxPath), passphrase:fs.readFileSync(passwordPath,'utf8'), certPem, fingerprint:getCertificateFingerprint(certPem) };
+}
+
+function configurePinnedCertificate(fingerprint, allowedHosts) {
+  const expected = normalizeFingerprint(fingerprint);
+  if (!/^[a-f0-9]{64}$/.test(expected)) throw new Error('No existe una huella TLS válida para esta conexión.');
+  trustedServerFingerprint = expected;
+  const { session } = require('electron');
+  session.defaultSession.setCertificateVerifyProc((request, callback) => {
+    try {
+      const host = String(request.hostname || '').toLowerCase();
+      const actual = getCertificateFingerprint(request.certificate.data);
+      callback(allowedHosts.has(host) && actual === trustedServerFingerprint ? 0 : -2);
+    } catch { callback(-2); }
+  });
+}
 function showSplash() {
   try {
     splashWindow = new BrowserWindow({
@@ -238,14 +283,15 @@ async function startLocalNextServer(port) {
   await nextApplication.prepare();
   const handler = nextApplication.getRequestHandler();
   const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', ...getLanIPv4Addresses()]);
-  nextServer = http.createServer((request, response) => {
+  serverTls = ensureServerTls();
+  nextServer = https.createServer({ pfx:serverTls.pfx, passphrase:serverTls.passphrase, minVersion:'TLSv1.2' }, (request, response) => {
     const hostHeader = String(request.headers.host || '').trim().toLowerCase();
     let requestHost = '';
     let requestPort = 0;
     try {
-      const parsedHost = new URL('http://' + hostHeader);
+      const parsedHost = new URL('https://' + hostHeader);
       requestHost = parsedHost.hostname.replaceAll('[', '').replaceAll(']', '');
-      requestPort = Number(parsedHost.port || 80);
+      requestPort = Number(parsedHost.port || 443);
     } catch {}
     const configuredPort = Number(port);
     if (!allowedHosts.has(requestHost) || requestPort !== configuredPort) {
@@ -260,7 +306,7 @@ async function startLocalNextServer(port) {
       let originMatchesHost = false;
       try {
         const parsedOrigin = new URL(origin);
-        originMatchesHost = parsedOrigin.protocol === 'http:' && parsedOrigin.host.toLowerCase() === hostHeader;
+        originMatchesHost = parsedOrigin.protocol === 'https:' && parsedOrigin.host.toLowerCase() === hostHeader;
       } catch {}
       if (!originMatchesHost) {
         response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -297,11 +343,21 @@ async function startLocalNextServer(port) {
   return address.port;
 }
 
-async function verifyServer(host, port) {
-  const url = 'http://' + host + ':' + port + '/api/pos/health';
-  const response = await fetch(url, { signal: AbortSignal.timeout(6000), cache: 'no-store' });
-  if (!response.ok) throw new Error('El servidor respondió con HTTP ' + response.status + '.');
-  const body = await response.json();
+async function verifyServer(host, port, expectedFingerprint) {
+  const expected = normalizeFingerprint(expectedFingerprint);
+  if (!/^[a-f0-9]{64}$/.test(expected)) throw new Error('Falta la huella de seguridad del servidor.');
+  const url = 'https://' + host + ':' + port + '/api/pos/health';
+  const body = await new Promise((resolve, reject) => {
+    const req = https.get(url, { rejectUnauthorized:false, timeout:6000, minVersion:'TLSv1.2' }, response => {
+      const peer = response.socket.getPeerCertificate(true);
+      const actual = peer?.raw ? normalizeFingerprint(crypto.createHash('sha256').update(peer.raw).digest('hex')) : '';
+      if (actual !== expected) { response.destroy(new Error('La huella TLS del servidor no coincide. Conexión rechazada.')); return; }
+      let raw=''; response.setEncoding('utf8'); response.on('data', chunk => raw += chunk);
+      response.on('end', () => { try { if (response.statusCode < 200 || response.statusCode >= 300) throw new Error('El servidor respondió con HTTP ' + response.statusCode + '.'); resolve(JSON.parse(raw)); } catch(error) { reject(error); } });
+    });
+    req.on('timeout', () => req.destroy(new Error('Tiempo de espera agotado al verificar el servidor.')));
+    req.on('error', reject);
+  });
   if (body?.ok !== true || body?.database !== 'sqlite') throw new Error('La IP indicada no corresponde a un servidor POSVEN3 SQLite disponible.');
   return url.replace('/api/pos/health', '');
 }
@@ -319,19 +375,21 @@ app.whenReady().then(async () => {
 
     if (networkConfig.mode === 'server') {
       const port = await startLocalNextServer(networkConfig.port);
-      createWindow('http://127.0.0.1:' + port);
+      configurePinnedCertificate(serverTls.fingerprint, new Set(['localhost','127.0.0.1','::1',...getLanIPv4Addresses()]));
+      createWindow('https://127.0.0.1:' + port);
       const addresses = getLanIPv4Addresses();
       dialog.showMessageBox({
         type: 'info', title: 'Servidor POSVEN3 activo',
         message: 'Esta computadora está funcionando como servidor local.',
         detail: 'Direcciones para conectar las PC clientes:\n' +
-          (addresses.length ? addresses.map(ip => 'http://' + ip + ':' + port).join('\n') : 'No se detectó una IP privada IPv4. Verifica la conexión de red.') +
-          '\n\nMantén esta computadora encendida para que las demás cajas puedan operar.',
+          (addresses.length ? addresses.map(ip => 'https://' + ip + ':' + port).join('\n') : 'No se detectó una IP privada IPv4. Verifica la conexión de red.') +
+          '\n\nHuella SHA-256 del certificado (compártela por un canal seguro):\n' + serverTls.fingerprint.match(/.{1,2}/g).join(':') + '\n\nMantén esta computadora encendida para que las demás cajas puedan operar.',
       });
     } else {
       let url;
       try {
-        url = await verifyServer(networkConfig.host, networkConfig.port);
+        url = await verifyServer(networkConfig.host, networkConfig.port, networkConfig.fingerprint);
+        configurePinnedCertificate(networkConfig.fingerprint, new Set([networkConfig.host]));
       } catch (connectionError) {
         await dialog.showMessageBox({
           type: 'warning',
@@ -366,8 +424,8 @@ app.whenReady().then(async () => {
 
     app.on('activate', () => {
       if (mainWindow === null && networkConfig) {
-        if (networkConfig.mode === 'client') createWindow('http://' + networkConfig.host + ':' + networkConfig.port);
-        else if (nextServer?.address()) createWindow('http://127.0.0.1:' + networkConfig.port);
+        if (networkConfig.mode === 'client') createWindow('https://' + networkConfig.host + ':' + networkConfig.port);
+        else if (nextServer?.address()) createWindow('https://127.0.0.1:' + networkConfig.port);
       }
     });
   } catch (error) {
