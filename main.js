@@ -613,15 +613,19 @@ async function shutdownLocalServer() {
 
     if (!drained) {
       console.warn('[SHUTDOWN] Continúan solicitudes HTTP activas:', activeHttpRequests.size);
-      await dialog.showMessageBox({
-        type: 'warning',
-        title: 'POSVEN3 está terminando operaciones',
-        message: 'Hay operaciones que todavía no han terminado.',
-        detail: 'El servidor seguirá esperando sin interrumpir las solicitudes ni las transacciones SQLite. No apagues el equipo ni fuerces el cierre mientras se completa este proceso.',
-        buttons: ['Continuar esperando'],
-        defaultId: 0,
-        noLink: true,
-      });
+      try {
+        await dialog.showMessageBox({
+          type: 'warning',
+          title: 'POSVEN3 está terminando operaciones',
+          message: 'Hay operaciones que todavía no han terminado.',
+          detail: 'El servidor seguirá esperando sin interrumpir las solicitudes ni las transacciones SQLite. No apagues el equipo ni fuerces el cierre mientras se completa este proceso.',
+          buttons: ['Continuar esperando'],
+          defaultId: 0,
+          noLink: true,
+        });
+      } catch (error) {
+        console.warn('[SHUTDOWN] No se pudo mostrar el aviso de espera:', error);
+      }
       await waitForActiveHttpRequests();
     }
 
