@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const https = require('https');
+const dgram = require('dgram');
 const crypto = require('crypto');
 const { X509Certificate } = require('crypto');
 const { spawnSync } = require('child_process');
@@ -18,6 +19,7 @@ let networkConfig = null;
 let setupResolver = null;
 let serverTls = null;
 let trustedServerFingerprint = null;
+let lanDiscoveryServer = null;
 
 const DEFAULT_PORT = 4580;
 
@@ -53,6 +55,65 @@ function getLanIPv4Addresses() {
     }
   }
   return [...new Set(found)];
+}
+
+const LAN_DISCOVERY_PORT = 4581;
+const LAN_DISCOVERY_REQUEST = 'POSVEN3_DISCOVER_V1';
+
+function startLanDiscovery(port) {
+  if (lanDiscoveryServer) { try { lanDiscoveryServer.close(); } catch {} }
+  const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  const lastResponseByIp = new Map();
+  socket.on('error', error => console.warn('[LAN discovery] UDP:', error.message));
+  socket.on('message', (message, remote) => {
+    if (message.toString('utf8') !== LAN_DISCOVERY_REQUEST || !isAllowedLanAddress(remote.address)) return;
+    const now = Date.now();
+    if (now - (lastResponseByIp.get(remote.address) || 0) < 750) return;
+    lastResponseByIp.set(remote.address, now);
+    const response = Buffer.from(JSON.stringify({
+      protocol: LAN_DISCOVERY_REQUEST, port: Number(port), addresses: getLanIPv4Addresses(),
+      fingerprint: serverTls?.fingerprint || '', serverName: os.hostname(),
+    }));
+    socket.send(response, remote.port, remote.address, error => {
+      if (error) console.warn('[LAN discovery] Respuesta fallida:', error.message);
+    });
+  });
+  socket.bind(LAN_DISCOVERY_PORT, '0.0.0.0', () => { try { socket.setBroadcast(true); } catch {} });
+  lanDiscoveryServer = socket;
+}
+
+function discoverLanServers(timeoutMs = 2200) {
+  return new Promise(resolve => {
+    const socket = dgram.createSocket('udp4');
+    const found = new Map();
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      try { socket.close(); } catch {}
+      resolve([...found.values()]);
+    };
+    socket.on('error', finish);
+    socket.on('message', message => {
+      try {
+        const data = JSON.parse(message.toString('utf8'));
+        const fingerprint = normalizeFingerprint(data?.fingerprint);
+        const port = Number(data?.port);
+        const addresses = [...new Set((Array.isArray(data?.addresses) ? data.addresses : [])
+          .map(String).filter(ip => isPrivateIPv4(ip) && !ip.startsWith('127.') && !ip.startsWith('169.254.')))];
+        if (data?.protocol !== LAN_DISCOVERY_REQUEST || !Number.isInteger(port) || port < 1024 || port > 65535 ||
+            !/^[a-f0-9]{64}$/.test(fingerprint) || !addresses.length) return;
+        found.set(fingerprint, { addresses, port, fingerprint, serverName: String(data.serverName || 'POSVEN3') });
+      } catch {}
+    });
+    socket.bind(0, () => {
+      try {
+        socket.setBroadcast(true);
+        socket.send(Buffer.from(LAN_DISCOVERY_REQUEST), LAN_DISCOVERY_PORT, '255.255.255.255', error => { if (error) finish(); });
+      } catch { finish(); }
+    });
+    setTimeout(finish, Math.max(500, Math.min(5000, Number(timeoutMs) || 2200)));
+  });
 }
 
 function readNetworkConfig() {
@@ -115,12 +176,12 @@ h1{margin:0 0 7px;font-size:25px}p{color:#64748b;line-height:1.5}.choice{display
 <h1>Configurar POSVEN3</h1><p>Selecciona cómo se conectará esta computadora. La base de datos SQLite estará únicamente en el equipo servidor.</p>
 <label class="choice"><input type="radio" name="mode" value="server" checked><span><strong>Este equipo será el SERVIDOR</strong><span class="hint">Aloja SQLite y permite que las demás cajas se conecten por la red local.</span></span></label>
 <label class="choice"><input type="radio" name="mode" value="client"><span><strong>Este equipo será CLIENTE</strong><span class="hint">Se conecta a la base de datos del servidor. No crea una base de datos independiente.</span></span></label>
-<div id="hostBox" class="field hidden"><label for="host">IP del equipo servidor</label><input id="host" placeholder="192.168.1.100" inputmode="decimal"><div class="hint">Usa la IP local que muestra POSVEN3 en la computadora servidor.</div><label for="fingerprint" style="margin-top:12px">Huella SHA-256 del certificado</label><input id="fingerprint" placeholder="Pega aquí la huella de 64 caracteres"><div class="hint">Debe coincidir exactamente con la huella mostrada en el servidor. No aceptes una huella enviada por un desconocido.</div></div>
+<div id="hostBox" class="field hidden"><label for="host">IP del equipo servidor</label><input id="host" placeholder="192.168.1.100" inputmode="decimal"><div class="hint">Usa la IP local que muestra POSVEN3 en la computadora servidor.</div><button type="button" id="discover" style="background:#0f766e">Buscar servidor automáticamente en la LAN</button><div class="hint" id="discoveryStatus" aria-live="polite"></div><label for="fingerprint" style="margin-top:12px">Huella SHA-256 del certificado</label><input id="fingerprint" placeholder="Pega aquí la huella de 64 caracteres"><div class="hint">Debe coincidir exactamente con la huella mostrada en el servidor. No aceptes una huella enviada por un desconocido.</div></div>
 <div class="field"><label for="port">Puerto</label><input id="port" type="number" min="1024" max="65535" value="4580"></div>
 <div id="error"></div><button id="save">Guardar y continuar</button>
 <p class="hint">Recomendación: reserva la IP del servidor en el router para evitar que cambie.</p>
 </main><script>
-const hostBox=document.getElementById('hostBox');document.querySelectorAll('input[name="mode"]').forEach(el=>el.addEventListener('change',()=>{hostBox.classList.toggle('hidden',document.querySelector('input[name="mode"]:checked').value!=='client')}));
+document.getElementById('discover').addEventListener('click',async()=>{const status=document.getElementById('discoveryStatus');status.textContent='Buscando equipos POSVEN3 en esta red…';try{const servers=await window.electronAPI.discoverLanServers();if(!servers.length){status.textContent='No se encontró servidor. Verifica que esté encendido y que el firewall permita UDP 4581.';return;}const chosen=servers[0];document.getElementById('host').value=chosen.addresses[0];document.getElementById('port').value=chosen.port;document.getElementById('fingerprint').value=chosen.fingerprint;document.querySelector('input[name="mode"][value="client"]').checked=true;hostBox.classList.remove('hidden');status.textContent=(servers.length>1?'Se encontraron '+servers.length+' servidores; se seleccionó ':'Servidor encontrado: ')+chosen.serverName+'. Compara la huella con la que muestra el servidor antes de guardar.';}catch(e){status.textContent=e.message||'No se pudo buscar el servidor.';}});\nconst hostBox=document.getElementById('hostBox');document.querySelectorAll('input[name="mode"]').forEach(el=>el.addEventListener('change',()=>{hostBox.classList.toggle('hidden',document.querySelector('input[name="mode"]:checked').value!=='client')}));
 document.getElementById('save').addEventListener('click',async()=>{const mode=document.querySelector('input[name="mode"]:checked').value;const host=document.getElementById('host').value.trim();const fingerprint=document.getElementById('fingerprint').value.trim();const port=Number(document.getElementById('port').value);const error=document.getElementById('error');error.textContent='';try{await window.electronAPI.saveNetworkConfig({mode,host,port,fingerprint})}catch(e){error.textContent=e.message||'No se pudo guardar la configuración.'}});
 </script></body></html>`;
     setupWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
@@ -140,6 +201,8 @@ ipcMain.handle('save-network-config', (event, value) => {
   if (setupWindow && !setupWindow.isDestroyed()) setupWindow.close();
   return { ok: true };
 });
+
+ipcMain.handle('discover-lan-servers', () => discoverLanServers());
 
 ipcMain.handle('get-network-info', () => ({
   mode: networkConfig?.mode || 'unknown',
@@ -352,6 +415,7 @@ async function startLocalNextServer(port) {
     nextServer.once('error', reject);
     nextServer.listen(port, '0.0.0.0', resolve);
   });
+  startLanDiscovery(port);
   const address = nextServer.address();
   if (!address || typeof address === 'string') throw new Error('No se pudo abrir el servidor LAN de POSVEN3.');
   return address.port;
