@@ -1447,7 +1447,7 @@ export async function createZClosureTransaction(params: {
         let saved: any = {};
         try { saved = JSON.parse(String(row.data_json || '{}')); } catch {}
         if (String(saved.terminalId || '') !== String(params.terminalId)) continue;
-        const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia))).rows[0])) : null;
+        const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia)))).rows[0])) : null;
         if (previousReport && Number(previousReport.numeroZ) === Number(current.ultimoZ)) return { report: previousReport, terminal: current };
         break;
       }
@@ -1462,7 +1462,7 @@ export async function createZClosureTransaction(params: {
     if (previousClosure.rows.length) {
       let saved: any = {};
       try { saved = JSON.parse(String(previousClosure.rows[0].data_json || '{}')); } catch {}
-      const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia))).rows[0])) : null;
+      const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia)))).rows[0])) : null;
       if (!previousReport) throw new Error('Se encontró un cierre Z previo sin su reporte asociado. Requiere revisión; no se emitirá otro Z.');
       return { report: previousReport, terminal: current };
     }
