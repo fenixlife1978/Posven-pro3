@@ -1311,10 +1311,20 @@ export async function applyInventoryMovementsTransaction(params: {
 
   return sqliteInteractiveTransaction(async tx => {
     const check = await tx.execute({
-      sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      sql: 'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args: ['INVENTARIO', params.operationId],
     });
-    if (check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    if (check.rows.length) {
+      let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
+      const movementIds=Array.isArray(saved.movementIds)?saved.movementIds:params.movements.map((m:any)=>String(m.id||'')).filter(Boolean);
+      const movements:any[]=[];
+      for(const movementId of movementIds){const m=rowFromDb((await tx.execute(txSelect('movimientos',String(movementId)))).rows[0]);if(m)movements.push(m);}
+      const productIds=[...new Set([...(Array.isArray(saved.productIds)?saved.productIds:[]),...params.movements.map((m:any)=>String(m.productoId||''))].filter(Boolean))];
+      const products:any[]=[];
+      for(const pid of productIds){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(p)products.push(p);}
+      if(!movements.length||!products.length)throw new Error('El ajuste de inventario ya fue procesado, pero no se pudo recuperar completamente. Consulte el Kardex antes de repetirlo.');
+      return {movements,productIds,products,recovered:true};
+    }
 
     const productIds = [...new Set(params.movements.map(m => String(m.productoId || '')).filter(Boolean))];
     if (params.movements.length + productIds.length + 2 > 450) {
@@ -1341,13 +1351,7 @@ export async function applyInventoryMovementsTransaction(params: {
       configuredRate = Number(config?.tasa) || 0;
     } catch {}
 
-    const statements: SQLiteStatement[] = [{
-      sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
-      args: ['INVENTARIO-' + params.operationId, 'INVENTARIO', params.operationId, JSON.stringify({
-        tipo: params.operationType, operationId: params.operationId,
-      })],
-      wantRows: false,
-    }];
+    const statements: SQLiteStatement[] = [];
 
     const persistedMovements: any[] = [];
     const persistedProducts: any[] = [];
@@ -1393,6 +1397,15 @@ export async function applyInventoryMovementsTransaction(params: {
       statements.push(rowStatement('productos', persistedProduct));
     }
 
+    statements.unshift({
+      sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
+      args: ['INVENTARIO-' + params.operationId, 'INVENTARIO', params.operationId, JSON.stringify({
+        tipo: params.operationType, operationId: params.operationId,
+        movementIds: persistedMovements.map(m => String(m.id)),
+        productIds: persistedProducts.map(p => String(p.id)),
+      })],
+      wantRows: false,
+    });
     for (const statement of statements) await tx.execute(statement);
     return { movements: persistedMovements, productIds, products: persistedProducts };
   });
