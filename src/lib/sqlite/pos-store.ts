@@ -1606,6 +1606,28 @@ export async function createZClosureTransaction(params: {
       const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
       row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
     }));
+    const rawActuals = submitted.arqueoReal && typeof submitted.arqueoReal === 'object' ? submitted.arqueoReal : {};
+    const actualByMethod: Record<string, number> = {};
+    for (const [rawMethod, rawAmount] of Object.entries(rawActuals)) {
+      const method = normalizeMethod(rawMethod); const amount = Number(String(rawAmount).trim().replace(',', '.'));
+      if (!Number.isFinite(amount) || amount < 0) throw new Error('El arqueo contiene un monto inválido o negativo.');
+      actualByMethod[method] = amount;
+    }
+    const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'credito']);
+    let differenceBs = 0; let differenceUsd = 0;
+    for (const method of methodKeys) {
+      const values = ensureMethod(method);
+      const opening = method === 'efectivo_bs' ? openingBs : method === 'efectivo_usd' ? openingUsd : 0;
+      const usd = isUsdMethod(method);
+      const systemAmount = opening + (usd ? values.ventasUSD + values.cobrosUSD + values.movPlusUSD - values.devUSD - values.movMinusUSD : values.ventasBS + values.cobrosBS + values.movPlusBS - values.devBS - values.movMinusBS);
+      if (Math.abs(systemAmount) >= 0.01 && !Object.prototype.hasOwnProperty.call(actualByMethod, method)) {
+        throw new Error('Falta registrar el conteo real del medio de pago: ' + method + '. El Corte Z no se ejecutó.');
+      }
+      if (Object.prototype.hasOwnProperty.call(actualByMethod, method)) {
+        const delta = actualByMethod[method] - systemAmount;
+        if (usd) differenceUsd += delta; else differenceBs += delta;
+      }
+    }
     const closedAt = new Date().toISOString();
     const reportData = {
       id: report.id, fecha: closedAt, generatedAt: closedAt,
@@ -1619,31 +1641,41 @@ export async function createZClosureTransaction(params: {
       cobrosDeudaUSD: debtUsd, cobrosDeudaBS: debtBs, cobrosDeudaPorMetodo: Object.values(debtByMethod),
       manualSalidas: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
       manualEntradas: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      salidasCajaUSD: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      entradasCajaUSD: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
       manualSalidasBS: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
       manualSalidasUSD: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
       manualEntradasBS: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
       manualEntradasUSD: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
       devEfectivoBS: cashBs.devBS, devEfectivoUSD: cashUsd.devUSD,
-      totalNetoEfectivoBS: Number(submitted.totalNetoEfectivoBS) || 0, totalNetoEfectivoUSD: Number(submitted.totalNetoEfectivoUSD) || 0,
+      totalNetoEfectivoBS: actualByMethod.efectivo_bs || 0, totalNetoEfectivoUSD: actualByMethod.efectivo_usd || 0,
+      arqueoReal: actualByMethod,
       estimadoEfectivoBS: { entradas:0, egresos:0, total:estimatedBs }, estimadoEfectivoUSD: { entradas:0, egresos:0, total:estimatedUsd },
       fondoAperturaBS: openingBs, fondoAperturaUSD: openingUsd,
       acumuladoHistoricoUSD: (Number(current.acumuladoHistorico) || 0) + netUSD,
       stats: { facturas:sales.length, devoluciones:returns.length, anulaciones:voidDocs.length, ticketPromedio:sales.length ? netUSD / sales.length : 0 },
       cajeroId: params.user.id, cajeroNombre: String(params.user.nombre || params.user.username || params.user.id),
       openedAt: current.cashData?.openDate || null, closedAt, closedBy: String(params.user.nombre || params.user.username || params.user.id), closedById: params.user.id,
-      differenceBs: Number(((Number(submitted.totalNetoEfectivoBS) || 0) - estimatedBs).toFixed(2)),
-      differenceUSD: Number(((Number(submitted.totalNetoEfectivoUSD) || 0) - estimatedUsd).toFixed(2)),
+      differenceBs: Number(differenceBs.toFixed(2)), differenceUSD: Number(differenceUsd.toFixed(2)),
     };
     report = reportData;
 
     // La identidad de cierre ya fue fijada por el servidor en reportData.
     const committedAt = String(report.closedAt);
+    const closedSession = current.cashData ? {
+      ...current.cashData, closeDate: committedAt,
+      closeAmount: Number(report.totalNetoEfectivoBS) || 0,
+      closeAmountBs: Number(report.totalNetoEfectivoBS) || 0,
+      closeAmountUsd: Number(report.totalNetoEfectivoUSD) || 0,
+      closeNotes: 'Cierre por Corte Z ' + report.id,
+    } : null;
     const updatedTerminal = {
       ...current,
       id: params.terminalId,
       ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ) || 0),
       fechaUltimoZ: committedAt,
       acumuladoHistorico: Number(report.acumuladoHistoricoUSD) || 0,
+      cashHistory: closedSession ? [closedSession, ...(Array.isArray(current.cashHistory) ? current.cashHistory : [])] : (current.cashHistory || []),
       isCashOpen: false, cashData: null, fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0,
     };
     await tx.execute(rowStatement('reportesZ', report));
