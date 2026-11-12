@@ -78,8 +78,10 @@ function startLanDiscovery(port) {
     if (!lastResponseByIp.has(remote.address) && lastResponseByIp.size >= 512) return;
     lastResponseByIp.set(remote.address, now);
     const response = Buffer.from(JSON.stringify({
+      // UDP discovery is intentionally unauthenticated: advertise only
+      // connection coordinates, never the TLS trust anchor.
       protocol: LAN_DISCOVERY_REQUEST, port: Number(port), addresses: getLanIPv4Addresses(),
-      fingerprint: serverTls?.fingerprint || '', serverName: os.hostname(),
+      serverName: os.hostname(),
     }));
     socket.send(response, remote.port, remote.address, error => {
       if (error) console.warn('[LAN discovery] Respuesta fallida:', error.message);
@@ -104,13 +106,14 @@ function discoverLanServers(timeoutMs = 2200) {
     socket.on('message', message => {
       try {
         const data = JSON.parse(message.toString('utf8'));
-        const fingerprint = normalizeFingerprint(data?.fingerprint);
         const port = Number(data?.port);
         const addresses = [...new Set((Array.isArray(data?.addresses) ? data.addresses : [])
           .map(String).filter(ip => isPrivateIPv4(ip) && !ip.startsWith('127.') && !ip.startsWith('169.254.')))];
         if (data?.protocol !== LAN_DISCOVERY_REQUEST || !Number.isInteger(port) || port < 1024 || port > 65535 ||
-            !/^[a-f0-9]{64}$/.test(fingerprint) || !addresses.length) return;
-        found.set(fingerprint, { addresses, port, fingerprint, serverName: String(data.serverName || 'POSVEN3') });
+            !addresses.length) return;
+        const serverName = String(data.serverName || 'POSVEN3').slice(0, 80);
+        const key = serverName + '|' + addresses.join(',') + '|' + port;
+        found.set(key, { addresses, port, serverName });
       } catch {}
     });
     socket.bind(0, () => {
