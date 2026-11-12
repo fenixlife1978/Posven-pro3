@@ -986,9 +986,12 @@ export async function createSaleTransaction(params: {
       const savedTerminal = terminalId
         ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
         : null;
+      if(terminalId&&!savedTerminal)throw new Error('La terminal de la venta ya no existe.');
+      if(terminalId&&savedTerminal)assertTerminalAccess(params.user,savedTerminal);
+      if(params.user?.rol==='cajero'&&String(savedSale.terminalId||'')!==String(terminalId||''))throw new Error('El cajero solo puede recuperar ventas de su propia terminal.');
       const savedMovements = (await tx.execute({
         sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",
-        args: ['%' + String(saved.referencia) + '%'],
+        args: [String(saleType)+' '+String(saved.referencia)+'%'],
       })).rows.map(rowFromDb).filter(Boolean);
       // Incluir también los componentes descontados por kits, que no aparecen
       // como líneas independientes en el detalle comercial de la factura.
@@ -1002,8 +1005,8 @@ export async function createSaleTransaction(params: {
         if (product) savedProducts.push(product);
       }
       const savedJournals = (await tx.execute({
-        sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia') LIKE ?",
-        args: ['%' + String(saved.referencia) + '%'],
+        sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
+        args: [String(saved.referencia)+'-'+String(terminalId||'GLOBAL')],
       })).rows.map(rowFromDb).filter(Boolean);
       return {
         sale: savedSale, debt: savedDebt, journals: savedJournals, journal: savedJournals,
