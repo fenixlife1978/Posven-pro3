@@ -86,13 +86,14 @@ export default function LicoreriaPOS() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showApertura, setShowApertura] = useState(false);
   const [aperturaData, setAperturaData] = useState({ bs: '', usd: '' });
+  const [isOpening, setIsOpening] = useState(false);
   
   // Estados para Notificaciones de CxP
   const [dueDebts, setDueDebts] = useState<Debt[]>([]);
@@ -130,151 +131,80 @@ export default function LicoreriaPOS() {
 
     const timerSafety = setTimeout(() => setLoading(false), 8000);
 
-    const restoreOfflineCashier = (): boolean => {
+    const initializeFromLocalServer = async () => {
       try {
-        if (typeof navigator !== 'undefined' && navigator.onLine) return false;
-        const raw = localStorage.getItem('posven_offline_session_v1');
-        if (!raw) return false;
-        const saved = JSON.parse(raw);
-        if (saved?.role !== 'cajero' || !saved?.terminalId || !saved?.userId) return false;
-        const cachedState = Store.get();
-        const terminal = (cachedState.terminales || []).find((t: Terminal) => String(t.id) === String(saved.terminalId));
-        // Solo se permite recuperar offline una caja previamente abierta.
-        // Una caja cerrada no puede abrirse ni generar un nuevo turno sin Turso.
-        if (!terminal || terminal.isCashOpen !== true) return false;
-        const profile = {
-          uid: String(saved.userId),
-          id: String(saved.userId),
-          email: String(saved.email || ''),
-          nombre: String(saved.nombre || 'Cajero'),
-          rol: 'cajero',
-          terminalId: String(terminal.id),
-          accesoBloqueado: false,
-        };
-        setUserRole('cajero');
-        setUserProfile(profile);
-        setUser(profile);
-        setState({ ...cachedState, user: profile, isAuthenticated: true } as AppState);
-        setShowApertura(false);
-        setActiveTab('ventas');
-        setIsOnline(false);
-        setLoading(false);
-        return true;
-      } catch (error) {
-        console.warn('[POS] No se pudo recuperar la sesión offline:', error);
-        return false;
-      }
-    };
-
-    const initializeFromTurso = async () => {
-      try {
-        const response = await fetch('/api/auth/session', { cache: 'no-store' });
-        if (response.ok) {
-          const data = await response.json();
-          const currentUser = data.user;
-          const legacyUid = currentUser?.id;
-          const profile = {
-            ...currentUser,
-            uid: legacyUid,
-            accesoBloqueado: false,
-          };
-          setUserRole(currentUser.rol);
-          setUserProfile(profile);
-          setUser({ uid: legacyUid, email: currentUser.email, ...currentUser });
-          setState(prev => ({ ...prev, user: profile, isAuthenticated: true } as AppState));
-
-          if (currentUser.rol === 'cajero') {
-            // Turso es la única fuente de verdad de autenticación, usuarios y terminales.
-            const terminalsResponse = await fetch('/api/turso/store?table=terminales&limit=500', {
-              credentials: 'include',
-              cache: 'no-store',
-            });
-            if (!terminalsResponse.ok) {
-              throw new Error('No se pudieron consultar los terminales en Turso.');
-            }
-            const terminalsBody = await terminalsResponse.json();
-            const terminals = Array.isArray(terminalsBody?.records) ? terminalsBody.records as Terminal[] : [];
-            const myTerm = terminals.find((t: Terminal) =>
-              String(t?.usuarioId || '') === String(currentUser.id)
-            );
-            if (!myTerm) {
-              await fetch('/api/auth/logout', { method: 'POST' });
-              alert("ACCESO RESTRINGIDO: Su usuario no tiene un terminal asignado.");
-              router.push('/login');
-              return;
-            }
-
-            // La identidad operativa de un cajero queda fijada al terminal
-            // resuelto en Turso. No dependemos de identificadores heredados
-            // para volver a encontrar la caja después de un Z y una nueva
-            // apertura.
-            const profileWithTerminal = { ...profile, terminalId: String(myTerm.id) };
-            setUserProfile(profileWithTerminal);
-            setUser({ uid: legacyUid, email: currentUser.email, ...currentUser, terminalId: String(myTerm.id) });
-            setState(prev => ({ ...prev, user: profileWithTerminal, isAuthenticated: true } as AppState));
-            try {
-              localStorage.setItem('posven_offline_session_v1', JSON.stringify({
-                userId: String(currentUser.id),
-                email: String(currentUser.email || ''),
-                nombre: String(currentUser.nombre || currentUser.name || 'Cajero'),
-                role: 'cajero',
-                terminalId: String(myTerm.id),
-                savedAt: new Date().toISOString(),
-              }));
-            } catch (error) {
-              console.warn('[POS] No se pudo guardar la identidad de continuidad offline:', error);
-            }
-
-            if (myTerm.id) Store.startTerminalSync(myTerm.id, false, [myTerm]);
-
-            // Regla de continuidad de caja:
-            // - Sin corte Z => isCashOpen=true: NO se crea una nueva apertura.
-            //   Se recupera la jornada existente y se conservan sus ventas,
-            //   movimientos y demás registros persistidos en Turso.
-            // - Con corte Z / caja cerrada => isCashOpen=false: se exige una
-            //   nueva apertura antes de entrar al POS.
-            //
-            // El estado de caja vive en el documento de la terminal, no en
-            // sessionStorage/localStorage; por eso un reinicio/corte de luz
-            // no debe convertir una jornada abierta en una jornada nueva.
-            const jornadaAbierta = myTerm.isCashOpen === true;
-            setShowApertura(!jornadaAbierta);
-            setActiveTab('ventas');
-          } else {
-            Store.startTerminalSync(undefined, true);
-            setShowApertura(false);
-
-            // Un administrador nunca entra al POS/caja, aunque esta pestaña
-            // conserve de una sesión anterior el módulo "ventas".
-            // La caja es exclusiva del rol cajero.
-            const savedModule = sessionStorage.getItem('posven_active_module') || 'dashboard';
-            const safeModule = savedModule === 'ventas' ? 'dashboard' : savedModule;
-            if (safeModule !== savedModule) {
-              sessionStorage.setItem('posven_active_module', safeModule);
-            }
-            setActiveTab(safeModule);
-          }
-          setLoading(false);
-          return;
-        }
-        if (response.status !== 503) {
+        const response = await fetch('/api/auth/session', { cache: 'no-store', credentials: 'include' });
+        if (response.status === 401) {
           router.push('/login');
           return;
         }
-        if (restoreOfflineCashier()) return;
-      } catch {
-        if (restoreOfflineCashier()) return;
+        if (!response.ok) throw new Error('No se pudo validar la sesión en SQLite local (HTTP ' + response.status + ').');
+        const data = await response.json();
+        const currentUser = data?.user;
+        if (!currentUser?.id) {
+          router.push('/login');
+          return;
+        }
+
+        const profile = {
+          ...currentUser,
+          uid: String(currentUser.id),
+          accesoBloqueado: false,
+        };
+        setUserRole(String(currentUser.rol || ''));
+        setUserProfile(profile);
+        setUser({ ...profile, email: currentUser.email });
+        setState(prev => ({ ...prev, user: profile, isAuthenticated: true } as AppState));
+
+        if (currentUser.rol === 'cajero') {
+          const terminalsResponse = await fetch('/api/pos/store?table=terminales&limit=500', {
+            credentials: 'include',
+            cache: 'no-store',
+          });
+          if (!terminalsResponse.ok) {
+            throw new Error('No se pudieron consultar las cajas en el servidor LAN.');
+          }
+          const terminalsBody = await terminalsResponse.json();
+          const terminals = Array.isArray(terminalsBody?.records) ? terminalsBody.records as Terminal[] : [];
+          const myTerminal = terminals.find((terminal: Terminal) =>
+            String(terminal?.usuarioId || '') === String(currentUser.id)
+          );
+          if (!myTerminal) {
+            await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+            alert('ACCESO RESTRINGIDO: Su usuario no tiene una caja asignada.');
+            router.push('/login');
+            return;
+          }
+
+          const profileWithTerminal = { ...profile, terminalId: String(myTerminal.id) };
+          setUserProfile(profileWithTerminal);
+          setUser({ ...profileWithTerminal, email: currentUser.email });
+          setState(prev => ({ ...prev, user: profileWithTerminal, isAuthenticated: true } as AppState));
+          Store.startTerminalSync(String(myTerminal.id), false, [myTerminal]);
+          setShowApertura(myTerminal.isCashOpen !== true);
+          setActiveTab('ventas');
+        } else {
+          Store.startTerminalSync(undefined, true);
+          setShowApertura(false);
+          const savedModule = sessionStorage.getItem('posven_active_module') || 'dashboard';
+          const safeModule = savedModule === 'ventas' ? 'dashboard' : savedModule;
+          if (safeModule !== savedModule) sessionStorage.setItem('posven_active_module', safeModule);
+          setActiveTab(safeModule);
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error('[POSVEN3] No se pudo iniciar la sesión local:', error);
+        setIsOnline(false);
+        setLoading(false);
+        router.push('/login');
       }
-
-
     };
 
-    initializeFromTurso();
+    initializeFromLocalServer();
 
     const unsubscribeStore = Store.subscribe((dbUpdate: Partial<AppState>) => {
-      // La sesión autenticada por Turso es la autoridad para usuario/terminal.
-      // El cache local del Store puede contener un usuario histórico y no debe
-      // reemplazar el terminalId resuelto al iniciar sesión.
+      // La sesión autenticada por SQLite local es la autoridad para usuario/terminal.
+      // El cache de interfaz no puede reemplazar el terminalId de la sesión activa.
       const { user: _cachedUser, isAuthenticated: _cachedAuth, ...dbPatch } = dbUpdate as any;
       setState(prev => ({ ...prev, ...dbPatch }) as AppState);
     });
@@ -290,22 +220,28 @@ export default function LicoreriaPOS() {
     const clearRuntimeMarker = () => { try { localStorage.removeItem('posven_runtime_marker'); } catch {} };
     window.addEventListener('beforeunload', clearRuntimeMarker);
 
+    const checkLanServer = async () => {
+      try {
+        const response = await fetch('/api/pos/health', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+        const health = await response.json().catch(() => ({}));
+        setIsOnline(response.ok && health?.ok === true && health?.database === 'sqlite');
+      } catch {
+        setIsOnline(false);
+      }
+    };
+    void checkLanServer();
+    const serverHealthTimer = setInterval(() => { void checkLanServer(); }, 5000);
+
     if (typeof window !== 'undefined') {
-      setIsOnline(navigator.onLine);
-      const hOnline = () => setIsOnline(true);
-      const hOffline = () => setIsOnline(false);
-      window.addEventListener('online', hOnline);
-      window.addEventListener('offline', hOffline);
       return () => {
         unsubscribeStore();
         clearInterval(timerClock);
         clearInterval(runtimeHeartbeat);
+        clearInterval(serverHealthTimer);
         window.removeEventListener('beforeunload', clearRuntimeMarker);
         clearTimeout(timerSafety);
         document.removeEventListener('click', preventCriticalDoubleClick, true);
         window.removeEventListener('error', captureError);
-        window.removeEventListener('online', hOnline);
-        window.removeEventListener('offline', hOffline);
       };
     }
 
@@ -381,9 +317,6 @@ export default function LicoreriaPOS() {
       setLoading(true);
       try {
         if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(POSVEN_TAB_SESSION_KEY);
-        // Un cierre de sesión explícito invalida también la continuidad offline
-        // para impedir que el siguiente usuario herede la caja autenticada.
-        try { localStorage.removeItem('posven_offline_session_v1'); } catch {}
         await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
         router.push('/login');
       } catch (e) {
@@ -556,16 +489,18 @@ export default function LicoreriaPOS() {
               </div>
 
               <button 
-                disabled={aperturaData.bs === '' || aperturaData.usd === ''} 
-                onClick={() => { 
+                disabled={aperturaData.bs === '' || aperturaData.usd === '' || isOpening} 
+                onClick={async () => { 
+                  if (isOpening) return;
+                  setIsOpening(true);
+                  try {
                   const bsValue = parseFloat(aperturaData.bs) || 0;
                   const usdValue = parseFloat(aperturaData.usd) || 0;
                   
                   // ✅ GUARDAR LA APERTURA EN EL TERMINAL (caja) DE ESTE OPERADOR,
                   // no en un estado global. Cada caja abre/cierra su propia jornada.
                   const currentState = Store.get();
-                  // La identidad de caja viene de la sesión Turso resuelta al iniciar
-                  // sesión. Store puede conservar un usuario cacheado antiguo, por lo
+                  // La identidad de caja viene de la sesión SQLite local resuelta al iniciar sesión. Store puede conservar un usuario cacheado antiguo, por lo
                   // que nunca debemos usarlo por encima de la identidad React actual.
                   const currentUser: any = user || (state as any).user || (currentState as any).user || null;
                   const sessionTerminalId = String(
@@ -581,7 +516,7 @@ export default function LicoreriaPOS() {
                       .find(t => currentIds.includes(String(t.usuarioId || '')))?.id || ''
                   );
                   if (!termId) {
-                    alert('No se pudo identificar la caja asignada en Turso. No se puede abrir una caja global.');
+                    alert('No se pudo identificar la caja asignada en SQLite local. No se puede abrir una caja global.');
                     return;
                   }
                   const terminalActual = (currentState.terminales || []).find(t => String(t.id) === String(termId));
@@ -604,36 +539,41 @@ export default function LicoreriaPOS() {
                     totalCollections: 0,
                     saleCount: 0
                   };
+                  const openOperationId = 'OPEN-' + Store.uid();
+                  session.openOperationId = openOperationId;
+                  const persistedTerminal = await Store.openCashTransaction({
+                    terminalId: termId,
+                    patch: {
+                      fondoCajaHoyBS: bsValue,
+                      fondoCajaHoyUSD: usdValue,
+                      isCashOpen: true,
+                      cashData: session,
+                    },
+                  });
                   const updatedTerminals = (currentState.terminales || []).map(t =>
-                    t.id === termId ? { ...t, fondoCajaHoyBS: bsValue, fondoCajaHoyUSD: usdValue, isCashOpen: true, cashData: session } : t
+                    String(t.id) === String(termId) ? persistedTerminal : t
                   );
-                  // Mantener la identidad operativa de Turso al salir de la apertura.
-                  // currentState puede contener un usuario cacheado antiguo sin terminalId;
-                  // si lo copiamos completo a React, el POS pierde la caja inmediatamente
-                  // después de confirmar la apertura y vuelve a mostrar "caja no disponible".
-                  const authoritativeUser = {
-                    ...(currentUser || {}),
-                    terminalId: termId
-                  };
+                  // La caja solo pasa a abierta en la interfaz después del commit SQLite.
+                  const authoritativeUser = { ...(currentUser || {}), terminalId: termId };
                   const newState: AppState = {
                     ...currentState,
                     user: authoritativeUser,
                     terminales: updatedTerminals
                   };
-                  Store.set({
-                    user: authoritativeUser,
-                    terminales: updatedTerminals
-                  });
                   setUser(authoritativeUser);
                   setUserProfile(authoritativeUser);
                   setState(newState);
-                  
                   localStorage.removeItem('posven_apertura_done');
-                  setShowApertura(false); 
+                  setShowApertura(false);
+                  } catch (error: any) {
+                    alert(error?.message || 'SQLite local no confirmó la apertura. La caja permanece cerrada.');
+                  } finally {
+                    setIsOpening(false);
+                  }
                 }} 
                 className="w-full h-14 bg-brand-gold text-ink font-black text-sm rounded-xl shadow-xl shadow-brand-gold/10 hover:bg-brand-gold-deep hover:text-white transition-all uppercase tracking-widest"
               >
-                Confirmar Apertura
+                {isOpening ? 'Abriendo caja…' : 'Confirmar Apertura'}
               </button>
 
               <button
@@ -747,10 +687,10 @@ export default function LicoreriaPOS() {
                 {mounted && isOnline ? <Wifi className="w-4 h-4 text-status-success" /> : <WifiOff className="w-4 h-4 text-status-danger" />}
               </div>
               <div className="flex flex-col">
-                <span className="text-[0.65rem] font-black uppercase text-ink opacity-50 leading-none mb-0.5">Cloud Sync</span>
+                <span className="text-[0.65rem] font-black uppercase text-ink opacity-50 leading-none mb-0.5">Servidor LAN</span>
                 <div className="flex items-center gap-1.5 leading-none">
                   <div className={`w-1.5 h-1.5 rounded-full ${mounted ? (isOnline ? 'bg-status-success animate-pulse' : 'bg-status-danger') : 'bg-ink/20'}`} />
-                  <span className={`text-[0.74rem] font-black uppercase ${mounted ? (isOnline ? 'text-status-success' : 'text-status-danger') : 'text-ink/20'}`}>{mounted ? (isOnline ? 'En Línea' : 'Modo Offline') : 'Iniciando...'}</span>
+                  <span className={`text-[0.74rem] font-black uppercase ${mounted ? (isOnline ? 'text-status-success' : 'text-status-danger') : 'text-ink/20'}`}>{mounted ? (isOnline ? 'Conectado' : 'Sin conexión') : 'Iniciando...'}</span>
                 </div>
               </div>
             </div>
@@ -786,10 +726,10 @@ export default function LicoreriaPOS() {
         <div className="p-3 sm:p-7 flex-1 min-w-0 overflow-x-hidden overflow-y-auto">{renderModule()}</div>
 
         <footer className="px-8 py-6 border-t border-line text-[0.76rem] font-black text-ink flex flex-col sm:flex-row justify-between gap-4 no-print bg-surface-warm/30">
-          <div>© 2026 PosVEN Pro · Persistencia Offline Activa</div>
+          <div>© 2026 PosVEN Pro · SQLite Local en red</div>
           <div className="flex gap-4 items-center">
             <span className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-status-success animate-pulse' : 'bg-status-warn'}`} /> {isOnline ? 'Nube Sincronizada' : 'Sincronización Pendiente'}
+              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-status-success animate-pulse' : 'bg-status-warn'}`} /> {isOnline ? 'Servidor LAN conectado' : 'Conexión pendiente'}
             </span>
             <span className="px-2 py-0.5 bg-white border border-line rounded text-[0.65rem] font-black">v2.5.6-resilient</span>
           </div>

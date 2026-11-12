@@ -190,7 +190,6 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
       };
 
       const resultadoDev = await Store.processReturnOrCancellationTransaction({ operationId: idDev, operationType: 'DEVOLUCION', saleId: selectedSale.id, operationDoc: nuevaDevolucion, movements: nuevosMovimientos, journal: nuevoAsiento, refundItems: returnItems });
-      if (resultadoDev?.queuedOffline) { toast({ title: 'Devolución guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' }); setView('list'); setSelectedSale(null); setReturnItems([]); return; }
 
       const devolucionFinal = resultadoDev?.operationDoc || nuevaDevolucion;
       updateState({
@@ -262,10 +261,6 @@ export default function ReturnsModule({ state, updateState, onBackToPOS, termina
         operationId: idAnu, operationType: 'ANULACION', saleId: selectedSale.id, operationDoc: nuevaAnulacion,
         movements: nuevosMovimientos, journal: nuevosAsientosDiario[0], fullCancellation: true
       });
-      if (resultadoAnu?.queuedOffline) {
-        toast({ title: 'Anulación guardada sin conexión', description: 'Quedó pendiente de sincronización automática.' });
-        setView('list'); setSelectedSale(null); return;
-      }
       const anulacionFinal = resultadoAnu?.operationDoc || nuevaAnulacion;
       updateState({
         ventas: nuevasVentas,

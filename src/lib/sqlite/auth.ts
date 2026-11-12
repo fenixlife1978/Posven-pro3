@@ -1,6 +1,9 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { tursoExecute, tursoTransaction } from '@/lib/turso/client';
-import { ensureTursoSchema } from '@/lib/turso/schema-init';
+import fs from 'node:fs';
+import path from 'node:path';
+import { getSqliteDatabasePath } from '@/lib/sqlite/database';
+import { sqliteExecute, sqliteTransaction } from '@/lib/sqlite/client';
+import { ensureSqliteSchema } from '@/lib/sqlite/schema-init';
 
 export type AppRole = 'administrador' | 'cajero';
 
@@ -63,10 +66,10 @@ function mapUser(row: any): AuthUser {
 }
 
 export async function findUser(identifier: string) {
-  await ensureTursoSchema();
+  await ensureSqliteSchema();
   const value = String(identifier || '').trim().toLowerCase();
   if (!value) return null;
-  const result = await tursoExecute({
+  const result = await sqliteExecute({
     sql: `SELECT * FROM users WHERE lower(username)=? OR lower(COALESCE(email,''))=? LIMIT 1`,
     args: [value, value],
   });
@@ -74,9 +77,9 @@ export async function findUser(identifier: string) {
 }
 
 export async function getUserWithSecret(identifier: string) {
-  await ensureTursoSchema();
+  await ensureSqliteSchema();
   const value = String(identifier || '').trim().toLowerCase();
-  const result = await tursoExecute({
+  const result = await sqliteExecute({
     sql: `SELECT * FROM users WHERE lower(username)=? OR lower(COALESCE(email,''))=? LIMIT 1`,
     args: [value, value],
   });
@@ -91,13 +94,13 @@ export async function createUser(input: {
   rol: AppRole;
   isSeedAdmin?: boolean;
 }) {
-  await ensureTursoSchema();
+  await ensureSqliteSchema();
   const username = input.username.trim().toLowerCase();
   const email = input.email?.trim().toLowerCase() || null;
   if (!username || !input.nombre.trim()) throw new Error('Nombre y usuario son obligatorios.');
   if (!['administrador', 'cajero'].includes(input.rol)) throw new Error('Rol inválido.');
 
-  const existing = await tursoExecute({
+  const existing = await sqliteExecute({
     sql: `SELECT id FROM users WHERE lower(username)=? OR (? IS NOT NULL AND lower(email)=?) LIMIT 1`,
     args: [username, email, email],
   });
@@ -107,7 +110,7 @@ export async function createUser(input: {
   const fecha = nowIso();
   const passwordHash = hashPassword(input.password);
 
-  await tursoExecute({
+  await sqliteExecute({
     sql: `INSERT INTO users
       (id, username, email, nombre, rol, password_hash, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json)
       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, '{}')`,
@@ -121,26 +124,39 @@ export async function createUser(input: {
 /**
  * Ensure the database is recoverable when it has no active administrator.
  * This is called before credential lookup on login, so first install and a
- * deliberate Turso data reset both bootstrap on the first login attempt.
+ * deliberate SQLite local data reset both bootstrap on the first login attempt.
  * Never create a backdoor seed account while another active administrator exists.
  */
-export async function ensureSeedAdmin() {
-  await ensureTursoSchema();
+async function ensureSeedAdminInternal() {
+  await ensureSqliteSchema();
 
-  const activeAdmins = await tursoExecute({
+  const activeAdmins = await sqliteExecute({
     sql: `SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 LIMIT 1`,
   });
   if (activeAdmins.rows.length) return;
 
   // The seed account is only reset when no active administrator exists.
   // This repairs stale/incompatible hashes after a reset or failed first setup.
-  const seedPassword = process.env.POSVEN_SEED_ADMIN_PASSWORD || 'admin123';
-  const existingSeed = await tursoExecute({
+  const configuredPassword = String(process.env.POSVEN_SEED_ADMIN_PASSWORD || '').trim();
+  const seedPassword = configuredPassword || randomBytes(24).toString('base64url');
+  if (!configuredPassword) {
+    const credentialFile = path.join(path.dirname(getSqliteDatabasePath()), 'POSVEN3-CLAVE-INICIAL.txt');
+    const temporaryFile = credentialFile + '.tmp';
+    fs.mkdirSync(path.dirname(credentialFile), { recursive: true });
+    fs.writeFileSync(temporaryFile,
+      'POSVEN3 - CREDENCIAL INICIAL DEL ADMINISTRADOR\n\n' +
+      'Usuario: admin\n' +
+      'Contraseña temporal: ' + seedPassword + '\n\n' +
+      'Inicia sesión y cambia esta contraseña inmediatamente. Después elimina este archivo.\n',
+      { encoding: 'utf8', mode: 0o600, flag: 'w' });
+    fs.renameSync(temporaryFile, credentialFile);
+  }
+  const existingSeed = await sqliteExecute({
     sql: `SELECT id FROM users WHERE lower(username)='admin' LIMIT 1`,
   });
 
   if (existingSeed.rows.length) {
-    await tursoExecute({
+    await sqliteExecute({
       sql: `UPDATE users
         SET rol='administrador', acceso_bloqueado=0, is_seed_admin=1,
             email=COALESCE(email, 'admin@posven.local'),
@@ -164,19 +180,31 @@ export async function ensureSeedAdmin() {
   } catch (error) {
     // Two first-login requests may race. If the other request created the
     // seed account, treat that as success; otherwise preserve the real error.
-    const winner = await tursoExecute({
+    const winner = await sqliteExecute({
       sql: `SELECT id FROM users WHERE lower(username)='admin' AND is_seed_admin=1 LIMIT 1`,
     });
     if (!winner.rows.length) throw error;
   }
 }
 
+let seedAdminBootstrap: Promise<void> | null = null;
+
+export async function ensureSeedAdmin() {
+  if (seedAdminBootstrap) return seedAdminBootstrap;
+  seedAdminBootstrap = ensureSeedAdminInternal();
+  try {
+    await seedAdminBootstrap;
+  } finally {
+    seedAdminBootstrap = null;
+  }
+}
+
 export async function createSession(userId: string) {
-  await ensureTursoSchema();
+  await ensureSqliteSchema();
   const id = randomBytes(32).toString('hex');
   const created = nowIso();
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
-  await tursoExecute({
+  await sqliteExecute({
     sql: `INSERT INTO sessions (id, user_id, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
     args: [id, userId, expires, created, created],
     wantRows: false,
@@ -185,38 +213,40 @@ export async function createSession(userId: string) {
 }
 
 export async function getSessionUser(sessionId: string | null | undefined) {
-  await ensureTursoSchema();
+  await ensureSqliteSchema();
   if (!sessionId) return null;
-  const result = await tursoExecute({
+  const result = await sqliteExecute({
     sql: `SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
-      WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at > CURRENT_TIMESTAMP
+      WHERE s.id=? AND s.revoked_at IS NULL AND s.expires_at > ?
       LIMIT 1`,
-    args: [sessionId],
+    args: [sessionId, nowIso()],
   });
   if (!result.rows[0]) return null;
   const user = mapUser(result.rows[0]);
   if (user.accesoBloqueado) return null;
-  await tursoExecute({
-    sql: `UPDATE sessions SET last_seen_at=? WHERE id=?`,
-    args: [nowIso(), sessionId],
+  const touchBefore = new Date(Date.now() - 30000).toISOString();
+  await sqliteExecute({
+    sql: `UPDATE sessions SET last_seen_at=? WHERE id=? AND (last_seen_at IS NULL OR last_seen_at < ?)`,
+    args: [nowIso(), sessionId, touchBefore],
     wantRows: false,
   });
   return user;
 }
 
 export async function revokeSession(sessionId: string | null | undefined) {
-  await ensureTursoSchema();
+  await ensureSqliteSchema();
   if (!sessionId) return;
-  await tursoExecute({
+  await sqliteExecute({
     sql: `UPDATE sessions SET revoked_at=? WHERE id=?`,
     args: [nowIso(), sessionId],
     wantRows: false,
   });
 }
 
+
 export async function listUsers() {
-  await ensureTursoSchema();
-  const result = await tursoExecute({
+  await ensureSqliteSchema();
+  const result = await sqliteExecute({
     sql: `SELECT id, username, email, nombre, rol, acceso_bloqueado, is_seed_admin, fecha_creacion
       FROM users ORDER BY lower(nombre), lower(username)`,
   });
@@ -224,8 +254,8 @@ export async function listUsers() {
 }
 
 export async function setUserBlocked(id: string, blocked: boolean) {
-  await ensureTursoSchema();
-  const target = await tursoExecute({
+  await ensureSqliteSchema();
+  const target = await sqliteExecute({
     sql: `SELECT rol, is_seed_admin, acceso_bloqueado FROM users WHERE id=? LIMIT 1`,
     args: [id],
   });
@@ -235,7 +265,7 @@ export async function setUserBlocked(id: string, blocked: boolean) {
   if (wasBlocked === blocked) return;
 
   if (blocked && String(target.rows[0].rol) === 'administrador') {
-    const activeAdmins = await tursoExecute({
+    const activeAdmins = await sqliteExecute({
       sql: `SELECT COUNT(*) AS total FROM users
         WHERE rol='administrador' AND acceso_bloqueado=0 AND id<>?`,
       args: [id],
@@ -249,7 +279,7 @@ export async function setUserBlocked(id: string, blocked: boolean) {
     }
   }
 
-  await tursoTransaction([
+  await sqliteTransaction([
     {
       sql: `UPDATE users SET acceso_bloqueado=? WHERE id=?`,
       args: [blocked ? 1 : 0, id],
@@ -262,8 +292,8 @@ export async function setUserBlocked(id: string, blocked: boolean) {
 }
 
 export async function deleteUser(id: string) {
-  await ensureTursoSchema();
-  const target = await tursoExecute({
+  await ensureSqliteSchema();
+  const target = await sqliteExecute({
     sql: `SELECT is_seed_admin FROM users WHERE id=? LIMIT 1`,
     args: [id],
   });
@@ -271,7 +301,7 @@ export async function deleteUser(id: string) {
   if (Number(target.rows[0].is_seed_admin) === 1) {
     throw new Error('El administrador semilla no puede eliminarse.');
   }
-  await tursoTransaction([
+  await sqliteTransaction([
     { sql: `DELETE FROM sessions WHERE user_id=?`, args: [id], wantRows: false },
     { sql: `DELETE FROM users WHERE id=?`, args: [id], wantRows: false },
   ]);

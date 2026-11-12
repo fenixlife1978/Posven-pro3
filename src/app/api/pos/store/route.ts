@@ -1,7 +1,7 @@
-import { getRequestSessionId, getSessionUser } from '@/lib/auth/turso-auth';
+import { getRequestSessionId, getSessionUser } from '@/lib/sqlite/auth';
 import { NextResponse } from 'next/server';
 import {
-  assertTursoReady,
+  assertSQLiteReady,
   getRecord,
   listRecords,
   countRecords,
@@ -33,8 +33,8 @@ import {
   deleteCustomerDebtTransaction,
   createPurchaseTransaction,
   deletePurchaseTransaction,
-  type TursoStoreTable,
-} from '@/lib/turso/pos-store';
+  type SQLiteStoreTable,
+} from '@/lib/sqlite/pos-store';
 
 export const runtime = 'nodejs';
 
@@ -43,10 +43,10 @@ const TABLES = new Set([
   'devoluciones','anulaciones','terminales','libroDiario','reportesZ','caja','compras',
 ]);
 
-function table(value: unknown): TursoStoreTable {
+function table(value: unknown): SQLiteStoreTable {
   const name = String(value || '');
   if (!TABLES.has(name)) throw new Error('Tabla POSVEN no permitida.');
-  return name as TursoStoreTable;
+  return name as SQLiteStoreTable;
 }
 
 async function requireUser(request: Request) {
@@ -57,7 +57,7 @@ async function requireUser(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    assertTursoReady();
+    assertSQLiteReady();
     await requireUser(request);
     const url = new URL(request.url);
     const special = url.searchParams.get('special');
@@ -87,7 +87,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    assertTursoReady();
+    assertSQLiteReady();
     const user = await requireUser(request);
     const body = await request.json();
 
@@ -123,10 +123,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'recordsSync': {
-        const allowed = new Set(['clientes', 'proveedores', 'movimientos', 'libroDiario']);
+        const allowed = new Set(['clientes', 'proveedores']);
         const target = String(body.table || '');
         if (!allowed.has(target)) throw new Error('Tabla no permitida para sincronización general.');
         if (target === 'proveedores' && user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+        if (target === 'clientes' && Array.isArray(body.deletedIds) && body.deletedIds.length && user.rol !== 'administrador') throw new Error('Solo un administrador puede eliminar clientes.');
         const result = await syncRecords({
           table: target as any,
           records: Array.isArray(body.records) ? body.records : [],
@@ -140,15 +141,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'inventoryStockSync': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await syncProductsStockFromKardex();
         return NextResponse.json({ ok: true, ...result });
       }
       case 'inventory': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador para ajustar inventario.');
         const result = await applyInventoryMovementsTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'sale': {
-        const result = await createSaleTransaction(body);
+        const result = await createSaleTransaction({ ...body, user });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'terminalPatch': {
@@ -164,7 +167,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       case 'debtPayment': {
-        const result = await applyDebtPaymentTransaction(body);
+        const result = await applyDebtPaymentTransaction({ ...body, user });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'cashMovement': {
@@ -172,36 +175,43 @@ export async function POST(request: Request) {
           operationId: String(body.operationId || ''),
           movement: body.movement,
           terminalId: String(body.terminalId || body.movement?.terminalId || ''),
+          user,
         });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'globalProviderPayment': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await applyGlobalProviderPaymentTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'globalCustomerPayment': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await applyGlobalCustomerPaymentTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'customerDebt': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await createCustomerDebtTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'supplierDebt': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result = await createSupplierDebtTransaction(body);
         return NextResponse.json({ ok: true, ...result });
       }
       case 'reverseDebtPayment': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result=await reverseDebtPaymentTransaction(body); return NextResponse.json({ok:true,...result});
       }
-      case 'createPurchase': { const result=await createPurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
-      case 'deletePurchase': { const result=await deletePurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
-      case 'deleteCustomerDebt': { const result=await deleteCustomerDebtTransaction(body); return NextResponse.json({ok:true,...result}); }
+      case 'createPurchase': { if (user.rol !== 'administrador') throw new Error('Se requiere administrador.'); const result=await createPurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
+      case 'deletePurchase': { if (user.rol !== 'administrador') throw new Error('Se requiere administrador.'); const result=await deletePurchaseTransaction(body); return NextResponse.json({ok:true,...result}); }
+      case 'deleteCustomerDebt': { if (user.rol !== 'administrador') throw new Error('Se requiere administrador.'); const result=await deleteCustomerDebtTransaction(body); return NextResponse.json({ok:true,...result}); }
       case 'deleteCustomerAndDebts': {
+        if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
         const result=await deleteCustomerAndDebtsTransaction(body); return NextResponse.json({ok:true,...result});
       }
       case 'returnOrCancellation': {
-        const result = await processReturnOrCancellationTransaction(body);
+        const result = await processReturnOrCancellationTransaction({ ...body, user });
         return NextResponse.json({ ok: true, ...result });
       }
       case 'repairReturnInventoryAndCxc': {
@@ -222,7 +232,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, ...result });
       }
       default:
-        throw new Error('Operación Turso no soportada todavía.');
+        throw new Error('Operación SQLite local no soportada todavía.');
     }
   } catch (error: any) {
     const message = String(error?.message || error);

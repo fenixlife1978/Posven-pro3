@@ -1,4 +1,4 @@
-import { tursoBatch, tursoExecute } from '@/lib/turso/client';
+import { sqliteBatch, sqliteExecute } from '@/lib/sqlite/client';
 
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS app_config (id TEXT PRIMARY KEY, data_json TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
@@ -29,38 +29,32 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
   `CREATE TABLE IF NOT EXISTS migration_runs (id TEXT PRIMARY KEY, source TEXT NOT NULL, backup_version INTEGER, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL, counts_json TEXT NOT NULL DEFAULT '{}', notes TEXT)`,
+  `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 ];
 
 let initialized = false;
 let initializing: Promise<void> | null = null;
 
 async function initialize() {
-  // Repetir los CREATE IF NOT EXISTS corrige instalaciones interrumpidas.
-  // Son idempotentes y no borran datos existentes.
-  await tursoBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
-
+  await sqliteBatch(SCHEMA_STATEMENTS.map(sql => ({ sql, wantRows: false })));
   const requiredTables = [
     'app_config', 'users', 'catalogos', 'productos', 'movimientos', 'ventas',
     'cxc', 'cxp', 'clientes', 'proveedores', 'devoluciones', 'anulaciones',
     'terminales', 'libro_diario', 'reportes_z', 'caja', 'compras',
     'operaciones', 'auditoria_sistema', 'legacy_documents', 'sessions',
-    'migration_runs',
+    'migration_runs', 'schema_migrations',
   ];
-  const verify = await tursoExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table'" });
-  const names = new Set(verify.rows.map((row: any) => String(row.name)));
+  const verify = await sqliteExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table'" });
+  const names = new Set(verify.rows.map(row => String(row.name)));
   const missing = requiredTables.filter(required => !names.has(required));
-  if (missing.length) {
-    throw new Error('Esquema Turso incompleto. Faltan tablas: ' + missing.join(', '));
-  }
+  if (missing.length) throw new Error('Esquema SQLite incompleto. Faltan tablas: ' + missing.join(', '));
   initialized = true;
 }
 
-export async function ensureTursoSchema() {
+export async function ensureSqliteSchema() {
   if (initialized) return;
   if (!initializing) {
-    initializing = initialize().finally(() => {
-      initializing = null;
-    });
+    initializing = initialize().finally(() => { initializing = null; });
   }
   await initializing;
 }

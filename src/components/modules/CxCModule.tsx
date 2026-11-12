@@ -252,7 +252,6 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
         customerName: cliente.name,
         customerCedula: cliente.cedula
       });
-      if (resultadoEliminacion?.queuedOffline) { toast({ title: 'Eliminación guardada sin conexión', description: 'Quedó pendiente de sincronización.' }); return; }
       toast({
         title: "Cliente eliminado",
         description: `El cliente "${clientName}" y su historial fueron eliminados de forma segura.`
@@ -315,7 +314,6 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
         customerId: clienteExistente?.id,
         customerCedula: idFull
       });
-      if (resultadoDeuda?.queuedOffline) { toast({ title: 'Deuda guardada sin conexión', description: 'Quedó pendiente y se sincronizará automáticamente.' }); return; }
       setShowModal(false);
       setNuevaDeuda({
         cliente: '', tipoDoc: 'V', cedula: '', telefono: '', direccion: '',
@@ -343,7 +341,6 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
         customerCedula
       });
       if (!resultado) throw new Error('No se pudo eliminar la deuda.');
-      if (resultado.queuedOffline) { toast({ title: 'Eliminación guardada sin conexión', description: 'Quedó pendiente de sincronización.' }); return; }
       toast({
         title: "Deuda eliminada",
         description: `Se eliminó ${deuda.id} y se actualizó el saldo del cliente en la nube.`

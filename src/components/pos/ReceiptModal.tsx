@@ -12,7 +12,7 @@ declare global {
   interface Window {
     electronAPI?: {
       printTicket: (data: any) => Promise<void>;
-      getAppVersion: () => Promise<string>;
+      getAppVersion?: () => Promise<string>;
     };
   }
 }
@@ -242,21 +242,41 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
           <style>
             @page { size: ${isArqueo ? 'A4 landscape' : '80mm auto'}; margin: ${isArqueo ? '10mm' : '0'}; }
             body {
-              font-family: Arial, Helvetica, sans-serif;
-              width: ${isArqueo ? '100%' : '72mm'};
+              font-family: ${isArqueo ? 'Arial, Helvetica, sans-serif' : 'monospace'};
+              width: ${isArqueo ? '100%' : '80mm'};
+              max-width: ${isArqueo ? '100%' : '80mm'};
+              box-sizing: border-box;
               margin: 0 auto;
               padding: ${isArqueo ? '0' : '4mm'};
               font-size: ${isArqueo ? '9px' : '12px'};
               color: #000;
               background: #fff;
-              line-height: 1.2;
+              line-height: 1.25;
             }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 4px; table-layout: auto; }
             th, td { vertical-align: middle; padding: ${isArqueo ? '4px 5px' : '1px 0'}; }
             th { background: #111; color: #fff; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            .bold { font-weight: bold; }
+            .bold, .font-bold, .font-black { font-weight: 700; }
+            .text-\\[18px\\] { font-size: 18px; }
+            .text-\\[16px\\] { font-size: 16px; }
+            .text-\\[15px\\] { font-size: 15px; }
+            .text-\\[14px\\] { font-size: 14px; }
+            .text-\\[12px\\] { font-size: 12px; }
+            .text-\\[11px\\] { font-size: 11px; }
+            .text-\\[10px\\] { font-size: 10px; }
+            .text-\\[9px\\] { font-size: 9px; }
+            .text-\\[8px\\] { font-size: 8px; }
+            .text-\\[7px\\] { font-size: 7px; }
+            .uppercase { text-transform: uppercase; }
+            .font-mono { font-family: monospace; }
+            .leading-tight { line-height: 1.1; }
+            .space-y-1 > * + * { margin-top: 4px; }
+            .space-y-3 > * + * { margin-top: 10px; }
+            .mt-2 { margin-top: 8px; }
+            .mt-4 { margin-top: 16px; }
+            .pb-1 { padding-bottom: 4px; }
             .separator-dashed { border-top: 1px dashed #000; margin: 4px 0; }
             .separator-solid { border-top: 1px solid #000; margin: 4px 0; }
             .spacer { height: 6px; }
@@ -378,23 +398,44 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               @page { size: 80mm auto; margin: 0; }
               body {
                 font-family: monospace;
-                width: 72mm;
+                width: 80mm;
+                max-width: 80mm;
+                box-sizing: border-box;
                 margin: 0 auto;
                 padding: 4mm;
                 font-size: 12px;
                 color: #000;
                 background: #fff;
-                line-height: 1.2;
+                line-height: 1.25;
                 letter-spacing: normal;
               }
-              table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 2px; table-layout: auto; }
               td { vertical-align: top; padding: 1px 0; }
               .text-center { text-align: center; }
               .text-right { text-align: right; }
-              .bold { font-weight: bold; }
+              .font-bold, .font-black { font-weight: 700; }
+              .text-\\[18px\\] { font-size: 18px; }
+              .text-\\[16px\\] { font-size: 16px; }
+              .text-\\[15px\\] { font-size: 15px; }
+              .text-\\[14px\\] { font-size: 14px; }
+              .text-\\[12px\\] { font-size: 12px; }
+              .text-\\[11px\\] { font-size: 11px; }
+              .text-\\[10px\\] { font-size: 10px; }
+              .text-\\[9px\\] { font-size: 9px; }
+              .text-\\[8px\\] { font-size: 8px; }
+              .text-\\[7px\\] { font-size: 7px; }
+              .uppercase { text-transform: uppercase; }
+              .font-mono { font-family: monospace; }
+              .leading-tight { line-height: 1.1; }
+              .space-y-1 > * + * { margin-top: 4px; }
+              .space-y-3 > * + * { margin-top: 10px; }
+              .mt-2 { margin-top: 8px; }
+              .mt-4 { margin-top: 16px; }
+              .pb-1 { padding-bottom: 4px; }
               .separator-dashed { border-top: 1px dashed #000; margin: 4px 0; }
               .separator-solid { border-top: 1px solid #000; margin: 4px 0; }
               .spacer { height: 6px; }
+              .overflow-x-auto { overflow: visible !important; }
             </style>
           </head>
           <body>
@@ -419,7 +460,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200 h-[96vh] max-h-[96vh] w-full">
           <div className="bg-black p-4 flex justify-between items-center shrink-0">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : 'VISTA PREVIA (42C)'}
+              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : 'VISTA PREVIA (80 MM)'}
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
@@ -429,10 +470,10 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               ref={printRef}
               className={type === 'REPORT_X'
                 ? "bg-white w-full max-w-none p-4 sm:p-6 shadow-sm text-black select-none"
-                : "bg-white p-6 shadow-sm text-black font-mono select-none"}
+                : "bg-white shadow-sm text-black font-mono select-none"}
               style={type === 'REPORT_X'
                 ? { width: '100%', boxSizing: 'border-box', color: '#000', fontSize: '12px', lineHeight: '1.2' }
-                : { width: '72mm', boxSizing: 'border-box', color: '#000', fontSize: '12px', lineHeight: '1.2' }}
+                : { width: '80mm', boxSizing: 'border-box', padding: '4mm', color: '#000', fontSize: '12px', lineHeight: '1.25' }}
             >
               {/* ENCABEZADO */}
               <div className="text-center pb-1">
@@ -665,7 +706,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                         <div className="text-center font-bold">CIERRE DE JORNADA EXITOSO</div>
                      </>
                    )}
-                </div>
+</div>
               ))}
 
               {/* CONTENIDO VENTA (RECIBO) */}

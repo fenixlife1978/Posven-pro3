@@ -3,16 +3,32 @@ name: Build Windows EXE artifacts (no GitHub Release)
 on:
   push:
     branches:
-      - '**'
+      - feat/pos3-sqlite-local-lan
+    paths:
+      - '.github/workflows/build.yml'
+      - 'main.js'
+      - 'preload.js'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - 'tsconfig.json'
   pull_request:
     branches:
       - main
-      - master
-      - turso-migration
+    paths:
+      - '.github/workflows/build.yml'
+      - 'main.js'
+      - 'preload.js'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - 'tsconfig.json'
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: posven3-sqlite-validation-final
   cancel-in-progress: true
 
 permissions:
@@ -32,23 +48,44 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Validate Electron main process syntax
+        run: node --check main.js
 
-      - name: Build Next.js for Turso API runtime
+      - name: Test local TLS certificate and fingerprint pinning
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'posven3-tls-test'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $pfxPath = Join-Path $dir 'server.pfx'
+          $cerPath = Join-Path $dir 'server.cer'
+          $cert = New-SelfSignedCertificate -Subject 'CN=POSVEN3-CI' -DnsName @('localhost') -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -KeyExportPolicy Exportable -HashAlgorithm SHA256 -NotAfter (Get-Date).AddDays(2)
+          $passwordText = [Convert]::ToBase64String([byte[]](1..32 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
+          $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $password | Out-Null
+          Export-Certificate -Cert $cert -FilePath $cerPath -Type CERT | Out-Null
+          $env:POSVEN_TLS_TEST_PASSWORD = $passwordText
+          node scripts/test-lan-tls.cjs $pfxPath $cerPath
+          if ($LASTEXITCODE -ne 0) { throw 'La prueba TLS de POSVEN3 falló.' }
+          Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force
+
+      - name: Install dependencies from the committed lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Build Next.js desktop SQLite server
         run: npm run build
         env:
-          TURSO_MIGRATION_BUILD: '1'
+          POSVEN_DESKTOP_BUILD: '1'
+
+      - name: TypeScript validation
+        run: npx tsc --noEmit
 
       - name: Verify Next.js server build
         shell: pwsh
         run: |
           if (-not (Test-Path '.next/BUILD_ID')) {
-            throw 'No se generó .next/BUILD_ID; el build de Next.js no está listo para ejecutar las API de Turso.'
+            throw 'No se generó .next/BUILD_ID; el servidor local de POSVEN3 no está listo.'
           }
-          Write-Host 'Build de Next.js verificado para Windows/Turso.'
+          Write-Host 'Build de Next.js verificado para el servidor SQLite local.'
 
       - name: Build Windows installer without publishing a Release
         shell: pwsh

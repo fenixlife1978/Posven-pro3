@@ -1,15 +1,17 @@
 /**
- * Repositorio POSVEN sobre Turso.
+ * Repositorio POSVEN sobre SQLite local.
  *
- * Exclusivamente servidor. Turso es la única base de datos operativa.
+ * Exclusivamente servidor. SQLite local es la única base de datos operativa.
  * Las operaciones críticas usan transacciones interactivas.
  */
+import { randomBytes } from 'node:crypto';
+import { hashPassword } from '@/lib/sqlite/auth';
 import {
-  isTursoConfigured,
-  tursoExecute,
-  tursoInteractiveTransaction,
-  type TursoStatement,
-} from './client';
+  isSQLiteConfigured,
+  sqliteExecute,
+  sqliteInteractiveTransaction,
+  type SQLiteStatement,
+} from '@/lib/sqlite/client';
 
 const TABLES = {
   productos: 'productos',
@@ -28,11 +30,11 @@ const TABLES = {
   compras: 'compras',
 } as const;
 
-export type TursoStoreTable = keyof typeof TABLES;
+export type SQLiteStoreTable = keyof typeof TABLES;
 
  
 // Catálogos base de supermercado. Se agregan de forma idempotente y
-// conservan las opciones personalizadas que ya existan en Turso.
+// conservan las opciones personalizadas que ya existan en SQLite local.
 export const DEFAULT_DEPARTAMENTOS = [
   'Frutas y Verduras',
   'Carnicería y Charcutería',
@@ -226,8 +228,8 @@ export const DEFAULT_CATEGORIAS_POR_DEPARTAMENTO = [
   }
 ];
 
-export function assertTursoReady() {
-  if (!isTursoConfigured()) throw new Error('Turso no está configurado.');
+export function assertSQLiteReady() {
+  if (!isSQLiteConfigured()) throw new Error('SQLite local no está configurado.');
 }
 
 function clean(value: any): any {
@@ -249,13 +251,13 @@ function rowFromDb(row: any): any {
   return { ...data, id: String(row.id) };
 }
 
-function tableName(table: TursoStoreTable): string {
+function tableName(table: SQLiteStoreTable): string {
   const name = TABLES[table];
   if (!name) throw new Error('Tabla POSVEN no permitida.');
   return name;
 }
 
-function rowStatement(table: TursoStoreTable, record: any): TursoStatement {
+function rowStatement(table: SQLiteStoreTable, record: any): SQLiteStatement {
   const id = String(record?.id || '');
   if (!id) throw new Error('El registro no tiene id.');
   const dataJson = JSON.stringify(clean({ ...record, id }));
@@ -287,7 +289,7 @@ function rowStatement(table: TursoStoreTable, record: any): TursoStatement {
   };
 }
 
-function txSelect(table: TursoStoreTable, id: string): TursoStatement {
+function txSelect(table: SQLiteStoreTable, id: string): SQLiteStatement {
   return {
     sql: `SELECT id,data_json FROM ${tableName(table)} WHERE id=? LIMIT 1`,
     args: [String(id)],
@@ -343,17 +345,131 @@ function terminalSeries(prefix: string, label: string, number: number, width = 6
   return prefix + '-' + label + '-' + String(number).padStart(width, '0');
 }
 
-export async function getRecord(table: TursoStoreTable, id: string): Promise<any | null> {
-  assertTursoReady();
-  const result = await tursoExecute(txSelect(table, id));
+export async function getRecord(table: SQLiteStoreTable, id: string): Promise<any | null> {
+  assertSQLiteReady();
+  const result = await sqliteExecute(txSelect(table, id));
   return rowFromDb(result.rows[0]);
 }
 
+export async function exportBackupSnapshot() {
+  assertSQLiteReady();
+  return sqliteInteractiveTransaction(async tx => {
+    const data: Record<string, any> = {};
+    const sqliteTables: Record<string, number> = {};
+    const catalogs: Record<string, number> = {};
+    let totalRows = 0;
+    const entries = [
+      { key: 'productos', table: 'productos' },
+      { key: 'movimientos', table: 'movimientos' },
+      { key: 'ventas', table: 'ventas' },
+      { key: 'cxc', table: 'cxc' },
+      { key: 'cxp', table: 'cxp' },
+      { key: 'clientes', table: 'clientes' },
+      { key: 'proveedores', table: 'proveedores' },
+      { key: 'devoluciones', table: 'devoluciones' },
+      { key: 'anulaciones', table: 'anulaciones' },
+      { key: 'terminales', table: 'terminales' },
+      { key: 'libroDiario', table: 'libro_diario' },
+      { key: 'reportesZ', table: 'reportes_z' },
+      { key: 'cashHistory', table: 'caja' },
+      { key: 'compras', table: 'compras' },
+    ] as const;
+
+    for (const entry of entries) {
+      const result = await tx.execute({
+        sql: 'SELECT id,data_json FROM ' + entry.table + ' ORDER BY rowid',
+        args: [],
+      });
+      const rows = result.rows.map(row => {
+        try {
+          const parsed = JSON.parse(String(row.data_json || '{}'));
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON no es un objeto.');
+          return { ...parsed, id: String(row.id) };
+        } catch {
+          throw new Error('No se puede exportar el registro ' + String(row.id) + ' de ' + entry.key + ': contenido JSON inválido.');
+        }
+      });
+      data[entry.key] = rows;
+      totalRows += rows.length;
+      sqliteTables[entry.key === 'cashHistory' ? 'caja' : entry.key] = rows.length;
+      if (rows.length > 200000) throw new Error('El respaldo supera el límite de 200.000 registros en ' + entry.key + '.');
+    }
+
+    const catalogResult = await tx.execute({
+      sql: 'SELECT nombre,lista_json FROM catalogos ORDER BY nombre',
+      args: [],
+    });
+    for (const row of catalogResult.rows) {
+      let list: any[];
+      try {
+        const parsed = JSON.parse(String(row.lista_json || '[]'));
+        if (!Array.isArray(parsed)) throw new Error('Catálogo no es una lista.');
+        list = parsed;
+      } catch {
+        throw new Error('No se puede exportar el catálogo ' + String(row.nombre || '') + ': contenido JSON inválido.');
+      }
+      const name = String(row.nombre || '');
+      if (!name) continue;
+      data[name] = list;
+      totalRows += list.length;
+      catalogs[name] = list.length;
+    }
+
+    const requiredCatalogs = [
+      'categorias','departamentos','categoriasPorDepartamento','marcas','presentaciones',
+      'productCategories','productUnits','productColors','productSizes',
+      'brands','groups','subgroups','lines','suppliers',
+    ];
+    for (const name of requiredCatalogs) {
+      if (!Array.isArray(data[name])) {
+        data[name] = [];
+        catalogs[name] = 0;
+      }
+    }
+
+    const configResult = await tx.execute({
+      sql: "SELECT data_json FROM app_config WHERE id='general' LIMIT 1",
+      args: [],
+    });
+    let config: Record<string, any> = {};
+    try {
+      const parsed = JSON.parse(String(configResult.rows[0]?.data_json || '{}'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Configuración no es un objeto.');
+      config = parsed;
+    } catch {
+      throw new Error('No se puede exportar la configuración: contenido JSON inválido.');
+    }
+    data.config = config;
+    for (const [key, value] of Object.entries(config)) data[key] = value;
+
+    const usersResult = await tx.execute({
+      sql: 'SELECT id,username,email,nombre,rol,password_hash,acceso_bloqueado,is_seed_admin,fecha_creacion,data_json FROM users ORDER BY lower(nombre),lower(username)',
+      args: [],
+    });
+    data.users = usersResult.rows;
+    totalRows += usersResult.rows.length;
+    sqliteTables.users = usersResult.rows.length;
+    if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
+
+    const snapshot = {
+      app: 'posven-pro',
+      version: 3,
+      createdAt: new Date().toISOString(),
+      data,
+      meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
+    };
+    if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > 60 * 1024 * 1024) {
+      throw new Error('El respaldo supera el tamaño seguro de 60 MB. Reduzca el histórico o genere una copia por período.');
+    }
+    return snapshot;
+  });
+}
+
 export async function listRecords(
-  table: TursoStoreTable,
+  table: SQLiteStoreTable,
   options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {},
 ): Promise<any[]> {
-  assertTursoReady();
+  assertSQLiteReady();
   const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 10000);
   const offset = Math.max(Number(options.offset) || 0, 0);
   const args: any[] = [];
@@ -384,16 +500,16 @@ export async function listRecords(
   const orderBy = table === 'productos'
     ? 'updated_at DESC, id DESC'
     : "COALESCE(fecha,'') DESC, id DESC";
-  const result = await tursoExecute({
+  const result = await sqliteExecute({
     sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
     args,
   });
   return result.rows.map(rowFromDb).filter(Boolean);
 }
 
-export async function countRecords(table: TursoStoreTable): Promise<number> {
-  assertTursoReady();
-  const result = await tursoExecute({
+export async function countRecords(table: SQLiteStoreTable): Promise<number> {
+  assertSQLiteReady();
+  const result = await sqliteExecute({
     sql: `SELECT COUNT(*) AS total FROM ${tableName(table)}`,
     args: [],
   });
@@ -401,9 +517,9 @@ export async function countRecords(table: TursoStoreTable): Promise<number> {
 }
 
 export async function factoryResetTransaction(params: { user: { rol: string } }) {
-  assertTursoReady();
+  assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     const tables = [
       'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
       'devoluciones','anulaciones','terminales','libro_diario','reportes_z','caja',
@@ -457,28 +573,269 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
   });
 }
 
+export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any }) {
+  assertSQLiteReady();
+  if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+
+  const backup = params.backup;
+  if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object') {
+    throw new Error('El archivo no es un respaldo POSVEN válido.');
+  }
+  const data = backup.data as Record<string, any>;
+  const requiredBackupTables = [
+    'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+    'devoluciones','anulaciones','terminales','libroDiario','reportesZ','compras',
+  ];
+  const requiredBackupCatalogs = [
+    'categorias','departamentos','marcas','presentaciones',
+    'productCategories','productUnits','productColors','productSizes',
+    'brands','groups','subgroups','lines','suppliers',
+  ];
+  const missingTables = requiredBackupTables.filter(key => !Array.isArray(data[key]));
+  if (!Array.isArray(data.cashHistory) && !Array.isArray(data.caja)) missingTables.push('cashHistory/caja');
+  const missingCatalogs = requiredBackupCatalogs.filter(key => !Array.isArray(data[key]));
+  if (missingTables.length || missingCatalogs.length) {
+    throw new Error('Respaldo incompleto. Faltan tablas: ' + missingTables.join(', ') + '; catálogos: ' + missingCatalogs.join(', ') + '. No se modificó SQLite local.');
+  }
+  if (!Array.isArray(data.users)) {
+    throw new Error('El respaldo no contiene la lista de usuarios. Genere un nuevo respaldo administrativo desde POSVEN2 antes de restaurar.');
+  }
+  if (backup.meta?.source === 'turso' && backup.meta.complete !== true) {
+    const capped = Object.entries(backup.meta.tursoTables || {})
+      .filter(([, count]) => Number(count) >= 10000)
+      .map(([name]) => name);
+    if (capped.length) {
+      throw new Error('Respaldo antiguo posiblemente truncado en: ' + capped.join(', ') + '. Genere una nueva copia paginada desde POSVEN2.');
+    }
+  }
+  if (backup.meta?.source === 'turso' && backup.meta.tursoTables) {
+    for (const [tableName, count] of Object.entries(backup.meta.tursoTables)) {
+      const key = tableName === 'caja' ? 'cashHistory' : tableName;
+      if (Array.isArray(data[key]) && Number(count) !== data[key].length) {
+        throw new Error('El conteo del respaldo no coincide en ' + tableName + '. La restauración fue cancelada.');
+      }
+    }
+  }
+  if (backup.meta?.source === 'sqlite-local' && backup.meta.complete !== true) {
+    throw new Error('El respaldo SQLite no está marcado como completo. Genere una nueva copia antes de restaurar.');
+  }
+  if (backup.meta?.sqliteTables) {
+    for (const [tableName, count] of Object.entries(backup.meta.sqliteTables)) {
+      const key = tableName === 'caja' ? 'cashHistory' : tableName;
+      if (Array.isArray(data[key]) && Number(count) !== data[key].length) {
+        throw new Error('El conteo SQLite no coincide en ' + tableName + '. La restauración fue cancelada.');
+      }
+    }
+  }
+  if (backup.meta?.catalogs) {
+    for (const [name, count] of Object.entries(backup.meta.catalogs)) {
+      if (Array.isArray(data[name]) && Number(count) !== data[name].length) {
+        throw new Error('El conteo del catálogo ' + name + ' no coincide con el manifiesto.');
+      }
+    }
+  }
+
+  const tableKeys: Array<{ key: string; table: SQLiteStoreTable }> = [
+    { key: 'productos', table: 'productos' },
+    { key: 'movimientos', table: 'movimientos' },
+    { key: 'ventas', table: 'ventas' },
+    { key: 'cxc', table: 'cxc' },
+    { key: 'cxp', table: 'cxp' },
+    { key: 'clientes', table: 'clientes' },
+    { key: 'proveedores', table: 'proveedores' },
+    { key: 'devoluciones', table: 'devoluciones' },
+    { key: 'anulaciones', table: 'anulaciones' },
+    { key: 'terminales', table: 'terminales' },
+    { key: 'libroDiario', table: 'libroDiario' },
+    { key: 'reportesZ', table: 'reportesZ' },
+    { key: 'cashHistory', table: 'caja' },
+    { key: 'caja', table: 'caja' },
+    { key: 'compras', table: 'compras' },
+  ];
+  const catalogNames = [
+    'categorias','departamentos','categoriasPorDepartamento','marcas','presentaciones',
+    'productCategories','productUnits','productColors','productSizes',
+    'brands','groups','subgroups','lines','suppliers',
+  ];
+  const configKeys = [
+    'tasa','pinDevolucion','isInitialized','empresa','proximoRecibo',
+    'proximaDevolucion','proximaAnulacion','ultimoZ','fechaUltimoZ',
+    'acumuladoHistorico','fondoCajaHoyUSD','fondoCajaHoyBS','isCashOpen',
+    'cashData','config',
+  ];
+  let totalRows = 0;
+  for (const entry of tableKeys) {
+    const rows = Array.isArray(data[entry.key]) ? data[entry.key] : [];
+    totalRows += rows.length;
+  }
+  for (const name of catalogNames) {
+    if (Array.isArray(data[name])) totalRows += data[name].length;
+  }
+  const backupUsers = Array.isArray(data.users) ? data.users : [];
+  totalRows += backupUsers.length;
+  if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
+  if (Number(backup.version || 0) < 1 || Number(backup.version || 0) > 3) {
+    throw new Error('La versión del respaldo no es compatible con POSVEN3.');
+  }
+
+  return sqliteInteractiveTransaction(async tx => {
+    const currentAdminResult = await tx.execute({
+      sql: "SELECT id,username,email FROM users WHERE id=? AND rol='administrador' AND acceso_bloqueado=0 LIMIT 1",
+      args: [params.user.id],
+    });
+    if (!currentAdminResult.rows.length) throw new Error('El administrador que inició la restauración ya no está activo.');
+    const currentAdmin = currentAdminResult.rows[0];
+    const seedResult = await tx.execute({
+      sql: "SELECT id,username,email FROM users WHERE is_seed_admin=1 LIMIT 1",
+      args: [],
+    });
+    if (!seedResult.rows.length) throw new Error('No se encontró el administrador semilla local. Inicie sesión nuevamente antes de restaurar.');
+    const seedAdminId = String(seedResult.rows[0].id);
+    const seedAdminEmail = String(seedResult.rows[0].email || '').toLowerCase();
+
+
+    const clearTables = [
+      'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+      'devoluciones','anulaciones','terminales','libro_diario','reportes_z','caja',
+      'compras','operaciones','auditoria_sistema','legacy_documents','migration_runs',
+      'catalogos','app_config','sessions',
+    ];
+    for (const name of clearTables) {
+      await tx.execute({ sql: 'DELETE FROM ' + name, args: [], wantRows: false });
+    }
+    await tx.execute({
+      sql: "DELETE FROM users WHERE is_seed_admin=0 AND id<>?",
+      args: [String(currentAdmin.id)],
+      wantRows: false,
+    });
+    await tx.execute({
+      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE is_seed_admin=1",
+      args: [],
+      wantRows: false,
+    });
+    await tx.execute({
+      sql: "UPDATE users SET acceso_bloqueado=0, rol='administrador', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      args: [String(currentAdmin.id)],
+      wantRows: false,
+    });
+
+    const counts: Record<string, number> = {};
+    for (const entry of tableKeys) {
+      if (entry.key === 'caja' && Array.isArray(data.cashHistory)) continue;
+      const rows = Array.isArray(data[entry.key]) ? data[entry.key] : [];
+      let inserted = 0;
+      for (const row of rows) {
+        if (!row || typeof row !== 'object' || !String(row.id || '').trim()) {
+          throw new Error('El respaldo contiene un registro sin identificador en ' + entry.key + '.');
+        }
+        await tx.execute(rowStatement(entry.table, row));
+        inserted++;
+      }
+      counts[entry.table] = (counts[entry.table] || 0) + inserted;
+    }
+
+    for (const name of catalogNames) {
+      const rows = Array.isArray(data[name]) ? data[name] : [];
+      await tx.execute({
+        sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP',
+        args: [name, JSON.stringify(clean(rows)), '{}'],
+        wantRows: false,
+      });
+      counts['catalogo:' + name] = rows.length;
+    }
+
+    const config: Record<string, any> = {};
+    if (data.config && typeof data.config === 'object' && !Array.isArray(data.config)) {
+      Object.assign(config, data.config);
+    }
+    for (const key of configKeys) {
+      if (key !== 'config' && data[key] !== undefined) config[key] = data[key];
+    }
+    await tx.execute({
+      sql: 'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
+      args: ['general', JSON.stringify(clean(config))],
+      wantRows: false,
+    });
+
+    // Portable scrypt hashes are preserved. POSVEN2 exports do not include
+    // password hashes, so those users receive cryptographically random temporary passwords.
+    let importedUsers = 0;
+    let skippedUsers = 0;
+    const temporaryCredentials: Array<{ username: string; password: string; rol: string }> = [];
+    for (const user of backupUsers) {
+      const username = String(user?.username || user?.email || '').trim().toLowerCase();
+      const sourceHash = String(user?.password_hash || user?.passwordHash || '');
+      const role = String(user?.rol || user?.role || '').toLowerCase();
+      const id = String(user?.id || user?.uid || ('usr_' + randomBytes(18).toString('hex'))).trim();
+      if (!username || username === 'admin' || user?.isSeedAdmin || user?.is_seed_admin) continue;
+      if (id === String(currentAdmin.id) || id === seedAdminId ||
+          username === String(currentAdmin.username || '').toLowerCase() ||
+          (seedAdminEmail && String(user?.email || '').trim().toLowerCase() === seedAdminEmail) ||
+          (currentAdmin.email && String(user?.email || '').trim().toLowerCase() === String(currentAdmin.email).toLowerCase())) continue;
+      if (!['administrador','cajero'].includes(role)) { skippedUsers++; continue; }
+
+      // POSVEN2 deliberately excludes password hashes from its export. Keep
+      // each account and issue a cryptographically random temporary password.
+      // When a trusted SQLite backup includes a valid scrypt hash, preserve it.
+      const hasPortableHash = /^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/i.test(sourceHash);
+      const temporaryPassword = hasPortableHash ? null : randomBytes(18).toString('base64url');
+      const passwordHash = hasPortableHash ? sourceHash : hashPassword(String(temporaryPassword));
+      const email = String(user?.email || '').trim().toLowerCase() || null;
+      const nombre = String(user?.nombre || username).trim();
+      const blocked = user?.accesoBloqueado === true || Number(user?.acceso_bloqueado || 0) === 1;
+      const inserted = await tx.execute({
+        sql: 'INSERT INTO users(id,username,email,nombre,rol,password_hash,acceso_bloqueado,is_seed_admin,fecha_creacion,data_json) VALUES(?,?,?,?,?,?,?,0,?,?)',
+        args: [id, username, email, nombre, role, passwordHash, blocked ? 1 : 0, String(user?.fechaCreacion || user?.fecha_creacion || new Date().toISOString()), JSON.stringify(clean(user))],
+        wantRows: false,
+      });
+      importedUsers += inserted.affected_row_count;
+      if (inserted.affected_row_count && temporaryPassword) {
+        temporaryCredentials.push({ username, password: temporaryPassword, rol: role });
+      }
+    }
+
+    const integrity = await tx.execute({ sql: 'PRAGMA integrity_check' });
+    if (integrity.rows.some((row: any) => String(row.integrity_check || '').toLowerCase() !== 'ok')) {
+      throw new Error('La validación de integridad SQLite falló; la restauración fue cancelada.');
+    }
+    const foreignKeys = await tx.execute({ sql: 'PRAGMA foreign_key_check' });
+    if (foreignKeys.rows.length) throw new Error('La validación de claves foráneas falló; la restauración fue cancelada.');
+
+    return {
+      ok: true,
+      counts,
+      importedUsers,
+      skippedUsers,
+      temporaryCredentials,
+      preservedAdmin: String(currentAdmin.username || 'admin'),
+      preservedAdminId: String(currentAdmin.id),
+      totalRows,
+    };
+  });
+}
+
 export async function getAppConfig(): Promise<any> {
-  assertTursoReady();
-  const result = await tursoExecute({ sql: 'SELECT data_json FROM app_config WHERE id=? LIMIT 1', args: ['general'] });
+  assertSQLiteReady();
+  const result = await sqliteExecute({ sql: 'SELECT data_json FROM app_config WHERE id=? LIMIT 1', args: ['general'] });
   if (!result.rows.length) return {};
   try { return JSON.parse(String(result.rows[0].data_json || '{}')); } catch { return {}; }
 }
 
 export async function patchAppConfig(patch: Record<string, any>): Promise<any> {
-  assertTursoReady();
+  assertSQLiteReady();
   const current = await getAppConfig();
   const next = { ...current, ...clean(patch) };
-  await tursoExecute({ sql: 'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, updated_at=CURRENT_TIMESTAMP', args: ['general', JSON.stringify(next)], wantRows: false });
+  await sqliteExecute({ sql: 'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, updated_at=CURRENT_TIMESTAMP', args: ['general', JSON.stringify(next)], wantRows: false });
   return next;
 }
 
 export async function getCatalog(name: string): Promise<any[]> {
-  assertTursoReady();
+  assertSQLiteReady();
   const catalogName = String(name);
   const defaults: any[] | null = catalogName === 'departamentos' ? DEFAULT_DEPARTAMENTOS
     : catalogName === 'categorias' ? DEFAULT_CATEGORIAS
     : catalogName === 'categoriasPorDepartamento' ? DEFAULT_CATEGORIAS_POR_DEPARTAMENTO : null;
-  const result = await tursoExecute({ sql: 'SELECT lista_json FROM catalogos WHERE nombre=? LIMIT 1', args: [catalogName] });
+  const result = await sqliteExecute({ sql: 'SELECT lista_json FROM catalogos WHERE nombre=? LIMIT 1', args: [catalogName] });
   let current: any[] = [];
   if (result.rows.length) {
     try { const parsed = JSON.parse(String(result.rows[0].lista_json || '[]')); current = Array.isArray(parsed) ? parsed : []; } catch {}
@@ -490,7 +847,7 @@ export async function getCatalog(name: string): Promise<any[]> {
   const seen = new Set(current.map(keyOf));
   const merged = [...current, ...defaults.filter(item => !seen.has(keyOf(item)))];
   if (!result.rows.length || merged.length !== current.length) {
-    await tursoExecute({
+    await sqliteExecute({
       sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP',
       args: [catalogName, JSON.stringify(merged), '{}'], wantRows: false,
     });
@@ -499,22 +856,22 @@ export async function getCatalog(name: string): Promise<any[]> {
 }
 
 export async function patchCatalog(name: string, lista: any[]): Promise<any[]> {
-  assertTursoReady();
+  assertSQLiteReady();
   const cleanList = clean(lista);
   const value = Array.isArray(cleanList) ? cleanList : [];
-  await tursoExecute({ sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP', args: [String(name), JSON.stringify(value), '{}'], wantRows: false });
+  await sqliteExecute({ sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP', args: [String(name), JSON.stringify(value), '{}'], wantRows: false });
   return value;
 }
 export async function syncProductChanges(params: {
   changes: Array<{ before?: any | null; after?: any | null }>;
   deletedIds?: string[];
 }): Promise<{ products: any[]; deletedIds: string[] }> {
-  assertTursoReady();
+  assertSQLiteReady();
   const changes = Array.isArray(params.changes) ? params.changes : [];
   const deletedIds = Array.isArray(params.deletedIds) ? params.deletedIds.map(String) : [];
   if (changes.length + deletedIds.length > 450) throw new Error('El lote de productos supera el límite seguro de 450 registros.');
 
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     const products: any[] = [];
     const deleted = new Set<string>();
 
@@ -527,14 +884,14 @@ export async function syncProductChanges(params: {
       const current = rowFromDb((await tx.execute(txSelect('productos', id))).rows[0]);
 
       if (!before) {
-        if (current) throw new Error('El producto ' + id + ' ya existe en Turso.');
+        if (current) throw new Error('El producto ' + id + ' ya existe en SQLite local.');
         if (!after) continue;
         await tx.execute(rowStatement('productos', after));
         products.push(after);
         continue;
       }
 
-      if (!current) throw new Error('El producto ' + id + ' ya no existe en Turso.');
+      if (!current) throw new Error('El producto ' + id + ' ya no existe en SQLite local.');
 
       // El stock se modifica por delta para no pisar una venta/ajuste concurrente.
       const beforeStock = Number(before.stock) || 0;
@@ -555,17 +912,17 @@ export async function syncProductChanges(params: {
 }
 
 export async function syncRecords(params: {
-  table: TursoStoreTable;
+  table: SQLiteStoreTable;
   records: any[];
   deletedIds?: string[];
 }): Promise<{ records: any[]; deletedIds: string[] }> {
-  assertTursoReady();
+  assertSQLiteReady();
   const table = params.table;
   const records = Array.isArray(params.records) ? params.records : [];
   const deletedIds = Array.isArray(params.deletedIds) ? params.deletedIds.map(String) : [];
   if (records.length + deletedIds.length > 450) throw new Error('El lote supera el límite seguro de 450 registros.');
 
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     for (const id of deletedIds) {
       await tx.execute({ sql: `DELETE FROM ${tableName(table)} WHERE id=?`, args: [id], wantRows: false });
     }
@@ -573,11 +930,11 @@ export async function syncRecords(params: {
     return { records, deletedIds };
   });}
 
-export async function upsertRecords(table: TursoStoreTable, records: any[]): Promise<{ count: number }> {
-  assertTursoReady();
+export async function upsertRecords(table: SQLiteStoreTable, records: any[]): Promise<{ count: number }> {
+  assertSQLiteReady();
   if (!records.length) return { count: 0 };
   if (records.length > 450) throw new Error('El lote supera el límite seguro de 450 registros.');
-  await tursoInteractiveTransaction(async tx => {
+  await sqliteInteractiveTransaction(async tx => {
     for (const record of records) await tx.execute(rowStatement(table, record));
   });
   return { count: records.length };
@@ -599,25 +956,70 @@ export async function createSaleTransaction(params: {
   saleType?: string;
   credit?: { customer: any; debtId: string };
   cajeroId?: string;
+  user: { id: string; rol: string; nombre?: string; username?: string };
 }) {
-  assertTursoReady();
+  assertSQLiteReady();
   const { operationId, cart, payments, clientName, terminalId, fallbackReceiptNumber, now,
     tasa, saleType = 'VENTA', credit, cajeroId } = params;
+  const effectiveCajeroId = params.user?.rol === 'cajero' ? params.user.id : cajeroId;
+  if (params.user?.rol === 'cajero' && !terminalId) throw new Error('El cajero debe operar desde su terminal asignada.');
 
   if (!cart?.length) throw new Error('La venta no contiene productos.');
   if (!(Number(tasa) > 0)) throw new Error('La tasa de la venta no es válida.');
 
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     const opCheck = await tx.execute({
-      sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      sql: 'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args: ['VENTA', operationId],
     });
-    if (opCheck.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    if (opCheck.rows.length) {
+      // El cliente pudo perder la respuesta después del COMMIT. Devolver el
+      // resultado ya persistido permite repetir la misma solicitud sin vender
+      // otra vez ni descontar inventario por segunda ocasión.
+      let saved: any = {};
+      try { saved = JSON.parse(String(opCheck.rows[0].data_json || '{}')); } catch {}
+      const savedSale = saved.referencia
+        ? rowFromDb((await tx.execute(txSelect('ventas', String(saved.referencia)))).rows[0])
+        : null;
+      if (!savedSale) throw new Error('La venta ya fue procesada, pero no se pudo recuperar su comprobante. No repita el cobro; consulte el historial.');
+      const savedDebt = rowFromDb((await tx.execute(txSelect('cxc', 'CRD-' + String(saved.referencia)))).rows[0]);
+      const savedTerminal = terminalId
+        ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
+        : null;
+      const savedMovements = (await tx.execute({
+        sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",
+        args: ['%' + String(saved.referencia) + '%'],
+      })).rows.map(rowFromDb).filter(Boolean);
+      // Incluir también los componentes descontados por kits, que no aparecen
+      // como líneas independientes en el detalle comercial de la factura.
+      const savedProductIds = [...new Set([
+        ...(savedSale.items || []).map((item: any) => String(item.productoId || '')),
+        ...savedMovements.map((movement: any) => String(movement.productoId || '')),
+      ].filter(Boolean))];
+      const savedProducts: any[] = [];
+      for (const pid of savedProductIds) {
+        const product = rowFromDb((await tx.execute(txSelect('productos', pid))).rows[0]);
+        if (product) savedProducts.push(product);
+      }
+      const savedJournals = (await tx.execute({
+        sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia') LIKE ?",
+        args: ['%' + String(saved.referencia) + '%'],
+      })).rows.map(rowFromDb).filter(Boolean);
+      return {
+        sale: savedSale, debt: savedDebt, journals: savedJournals, journal: savedJournals,
+        products: savedProducts, movements: savedMovements, terminal: savedTerminal,
+        recovered: true,
+      };
+    }
 
     const terminal = terminalId
       ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
       : null;
-    if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
+    if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
+    if (terminalId && terminal) {
+      assertTerminalAccess(params.user, terminal);
+      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. Abra la jornada antes de registrar ventas.');
+    }
 
     let nextNumber = Math.max(1, Number(terminal?.proximoRecibo ?? fallbackReceiptNumber ?? 1));
     const salePrefix = await terminalUniquePrefix(tx, terminal, terminalId);
@@ -640,7 +1042,7 @@ export async function createSaleTransaction(params: {
     const productIds = [...new Set(cart.filter((i: any) => !i.ventaLibreBS).map(i => String(i.productoId || '')).filter(Boolean))];
     for (const pid of productIds) {
       const product = rowFromDb((await tx.execute(txSelect('productos', pid))).rows[0]);
-      if (!product) throw new Error('Un producto de la venta ya no existe en Turso.');
+      if (!product) throw new Error('Un producto de la venta ya no existe en SQLite local.');
       products.set(pid, product);
     }
 
@@ -654,7 +1056,7 @@ export async function createSaleTransaction(params: {
     for (const pid of componentIds) {
       if (!products.has(pid)) {
         const product = rowFromDb((await tx.execute(txSelect('productos', pid))).rows[0]);
-        if (!product) throw new Error('Un componente del kit ya no existe en Turso.');
+        if (!product) throw new Error('Un componente del kit ya no existe en SQLite local.');
         products.set(pid, product);
       }
     }
@@ -672,7 +1074,7 @@ export async function createSaleTransaction(params: {
         customer = rowFromDb(found.rows[0]);
       }
       // Un cliente recién creado puede existir todavía solo en el navegador.
-      // Turso debe crearlo dentro de la MISMA transacción de venta + CxC.
+      // SQLite local debe crearlo dentro de la MISMA transacción de venta + CxC.
       if (!customer && credit.customer) {
         const incoming = clean(credit.customer);
         customer = {
@@ -787,7 +1189,8 @@ export async function createSaleTransaction(params: {
       metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
       estado: 'completada', type: saleType, received: totalPaid,
       change: Math.max(0, totalPaid - totals.total), payments: payments.map(x => ({ ...x })),
-      terminalId, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId,
+      terminalId, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', cajeroId: effectiveCajeroId,
+      cajeroNombre: params.user.nombre || params.user.username || '',
       baseImponibleUSD: Math.round(totals.base * 100) / 100,
       ivaUSD: Math.round(totals.iva * 100) / 100, exentoUSD: Math.round(totals.exento * 100) / 100,
       igtfUSD: Math.round(igtf * 100) / 100, tasa,
@@ -813,7 +1216,7 @@ export async function createSaleTransaction(params: {
       // cantidades y precios aun cuando cambie el catálogo posteriormente.
       items: cart.map((x: any) => ({ ...x })),
     } : null;
-    const writes: TursoStatement[] = [{
+    const writes: SQLiteStatement[] = [{
       sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
       args: [
         'VENTA-' + operationId, 'VENTA', operationId,
@@ -849,8 +1252,8 @@ export async function createSaleTransaction(params: {
  * con el stockDespues del último movimiento cronológico.
  */
 export async function syncProductsStockFromKardex() {
-  assertTursoReady();
-  return tursoInteractiveTransaction(async tx => {
+  assertSQLiteReady();
+  return sqliteInteractiveTransaction(async tx => {
     await tx.execute({
       sql: `
         UPDATE productos
@@ -900,10 +1303,10 @@ export async function applyInventoryMovementsTransaction(params: {
   movements: any[];
   productPatches?: Record<string, any>;
 }) {
-  assertTursoReady();
+  assertSQLiteReady();
   if (!params.movements?.length) throw new Error('No hay movimientos de inventario para registrar.');
 
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     const check = await tx.execute({
       sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args: ['INVENTARIO', params.operationId],
@@ -918,7 +1321,7 @@ export async function applyInventoryMovementsTransaction(params: {
     const products = new Map<string, any>();
     for (const pid of productIds) {
       const product = rowFromDb((await tx.execute(txSelect('productos', pid))).rows[0]);
-      if (!product) throw new Error('El producto ' + pid + ' ya no existe en Turso.');
+      if (!product) throw new Error('El producto ' + pid + ' ya no existe en SQLite local.');
       products.set(pid, product);
     }
 
@@ -935,7 +1338,7 @@ export async function applyInventoryMovementsTransaction(params: {
       configuredRate = Number(config?.tasa) || 0;
     } catch {}
 
-    const statements: TursoStatement[] = [{
+    const statements: SQLiteStatement[] = [{
       sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
       args: ['INVENTARIO-' + params.operationId, 'INVENTARIO', params.operationId, JSON.stringify({
         tipo: params.operationType, operationId: params.operationId,
@@ -1005,12 +1408,35 @@ export async function patchTerminalTransaction(params: {
   terminalId: string;
   patch: Record<string, any>;
 }) {
-  assertTursoReady();
-  return tursoInteractiveTransaction(async tx => {
+  assertSQLiteReady();
+  return sqliteInteractiveTransaction(async tx => {
     const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
-    if (!current) throw new Error('La terminal ya no existe en Turso.');
+    if (!current) throw new Error('La terminal ya no existe en SQLite local.');
     assertTerminalAccess(params.user, current);
-    const updated = { ...current, ...clean(params.patch), id: params.terminalId };
+    const patch = clean(params.patch);
+    if (params.user.rol === 'cajero') {
+      const allowedOpeningFields = new Set(['fondoCajaHoyBS','fondoCajaHoyUSD','isCashOpen','cashData']);
+      if (Object.keys(patch).some(key => !allowedOpeningFields.has(key))) {
+        throw new Error('El cajero solo puede registrar la apertura de su propia caja.');
+      }
+      if (current.isCashOpen === true || patch.isCashOpen !== true) {
+        throw new Error('El cajero no puede modificar una caja abierta ni cerrarla manualmente. Use el proceso de Corte Z.');
+      }
+    }
+    if (patch.isCashOpen === true) {
+      const requestedOpenId = String(patch.cashData?.openOperationId || patch.cashData?.openDate || '');
+      const currentOpenId = String(current.cashData?.openOperationId || current.cashData?.openDate || '');
+      if (current.isCashOpen === true && requestedOpenId && requestedOpenId !== currentOpenId) {
+        throw new Error('Esta caja ya fue abierta desde otra sesión. Actualice la pantalla; no se creó una segunda apertura.');
+      }
+      if (current.isCashOpen !== true && !patch.cashData?.openDate) {
+        throw new Error('La apertura debe incluir los datos de la nueva jornada.');
+      }
+    }
+    if (patch.isCashOpen === false && current.isCashOpen === true) {
+      throw new Error('Una caja abierta solo puede cerrarse mediante un Corte Z confirmado.');
+    }
+    const updated = { ...current, ...patch, id: params.terminalId };
     await tx.execute(rowStatement('terminales', updated));
     return { terminal: updated };
   });
@@ -1020,10 +1446,10 @@ export async function upsertTerminalTransaction(params: {
   user: { rol: string };
   terminal: any;
 }) {
-  assertTursoReady();
+  assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
   if (!params.terminal?.id) throw new Error('La terminal no tiene id.');
-  await tursoInteractiveTransaction(async tx => {
+  await sqliteInteractiveTransaction(async tx => {
     await tx.execute(rowStatement('terminales', params.terminal));
   });
   return { terminal: params.terminal };
@@ -1033,115 +1459,353 @@ export async function deleteTerminalTransaction(params: {
   user: { rol: string };
   terminalId: string;
 }) {
-  assertTursoReady();
+  assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     await tx.execute({ sql: 'DELETE FROM terminales WHERE id=?', args: [params.terminalId], wantRows: false });
     return { terminalId: params.terminalId };
   });
 }
 
 export async function createZClosureTransaction(params: {
-  user: { rol: string; id: string };
+  user: { rol: string; id: string; nombre?: string; username?: string };
   terminalId: string;
   report: any;
   terminalPatch: Record<string, any>;
 }) {
-  assertTursoReady();
-  return tursoInteractiveTransaction(async tx => {
+  assertSQLiteReady();
+  return sqliteInteractiveTransaction(async tx => {
     const current = rowFromDb((await tx.execute(txSelect('terminales', params.terminalId))).rows[0]);
-    if (!current) throw new Error('La terminal ya no existe en Turso.');
+    if (!current) throw new Error('La terminal ya no existe en SQLite local.');
     assertTerminalAccess(params.user, current);
-
-    // El navegador puede tener un correlativo desactualizado por caché o por
-    // una sesión previa. Turso es la autoridad: asignamos siempre el siguiente
-    // número dentro de la transacción, en lugar de bloquear el cierre por el
-    // número provisional que envió el cliente.
-    const expectedNumber = Number(current.ultimoZ || 0) + 1;
-
+    const openingOperationId = String(current.cashData?.openDate || current.cashData?.openedAt || current.cashData?.fechaApertura || '');
+    if (current.isCashOpen !== true) {
+      const closureRows = await tx.execute({ sql: 'SELECT data_json FROM operaciones WHERE prefijo=? ORDER BY rowid DESC', args: ['CIERRE-Z'] });
+      for (const row of closureRows.rows) {
+        let saved: any = {};
+        try { saved = JSON.parse(String(row.data_json || '{}')); } catch {}
+        if (String(saved.terminalId || '') !== String(params.terminalId)) continue;
+        const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia)))).rows[0]) : null;
+        if (previousReport && Number(previousReport.numeroZ) === Number(current.ultimoZ)) return { report: previousReport, terminal: current };
+        break;
+      }
+      throw new Error('La caja ya está cerrada o no tiene una jornada abierta. Debe realizar una nueva apertura antes de emitir otro Z.');
+    }
+    if (!openingOperationId) throw new Error('La jornada no tiene un identificador de apertura. No se puede cerrar de forma idempotente.');
+    const closureOperationId = params.terminalId + '|' + openingOperationId;
+    const previousClosure = await tx.execute({
+      sql: 'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      args: ['CIERRE-Z', closureOperationId],
+    });
+    if (previousClosure.rows.length) {
+      let saved: any = {};
+      try { saved = JSON.parse(String(previousClosure.rows[0].data_json || '{}')); } catch {}
+      const previousReport = saved.referencia ? rowFromDb((await tx.execute(txSelect('reportesZ', String(saved.referencia)))).rows[0]) : null;
+      if (!previousReport) throw new Error('Se encontró un cierre Z previo sin su reporte asociado. Requiere revisión; no se emitirá otro Z.');
+      return { report: previousReport, terminal: current };
+    }
+    // SQLite local calcula el correlativo real dentro de la transacción.
+    // Nunca se confía en el número provisional del navegador, que puede
+    // estar desactualizado por caché o por otra sesión de la misma caja.
+    let nextNumber = Math.max(0, Number(current.ultimoZ) || 0) + 1;
     const prefix = await terminalUniquePrefix(tx, current, params.terminalId);
-    // El servidor es la autoridad final del correlativo Z. Ignoramos cualquier
-    // ID provisional enviado por el navegador y construimos uno exclusivo de
-    // esta terminal para evitar que dos cajas puedan sobrescribirse.
-    let report = { ...clean(params.report), id: terminalSeries(prefix, 'Z', expectedNumber, 6), terminalId: params.terminalId, numeroZ: expectedNumber };
-    let canonicalResult = await tx.execute(txSelect('reportesZ', report.id));
-    let existingReport = rowFromDb(canonicalResult.rows[0]);
-    let reportAlreadySaved = false;
+    const rawTerminalId = String(params.terminalId);
+    const exactSuffix = Array.from({ length: rawTerminalId.length }, (_, i) =>
+      rawTerminalId.charCodeAt(i).toString(16).padStart(4, '0')
+    ).join('').toUpperCase();
 
-    // Resolver cualquier colisión heredada, no solo un único intento.
-    // El ID alternativo incluye el ID completo de la caja y un nonce estable
-    // de búsqueda; nunca se reutiliza un registro perteneciente a otra caja.
-    if (existingReport && String(existingReport.terminalId || '') !== String(params.terminalId)) {
-      const rawId = String(params.terminalId);
-      const exactSuffix = Array.from({ length: rawId.length }, (_, i) =>
-        rawId.charCodeAt(i).toString(16).padStart(4, '0')
-      ).join('').toUpperCase();
-      let resolved = false;
-      for (let attempt = 0; attempt < 1000; attempt++) {
-        const candidateId = terminalSeries(prefix + '-T' + exactSuffix + (attempt ? '-R' + attempt : ''), 'Z', expectedNumber, 6);
-        const candidateResult = await tx.execute(txSelect('reportesZ', candidateId));
-        const candidate = rowFromDb(candidateResult.rows[0]);
+    let report: any = null;
+    let resolved = false;
+
+    // Si un cierre antiguo dejó un reporte guardado pero no avanzó el
+    // correlativo de la terminal, jamás reutilizamos ese comprobante.
+    // Reservamos el siguiente número libre y conservamos intacto el anterior.
+    for (let numberAttempt = 0; numberAttempt < 1000 && !resolved; numberAttempt++) {
+      const canonicalId = terminalSeries(prefix, 'Z', nextNumber, 6);
+      const canonical = rowFromDb((await tx.execute(txSelect('reportesZ', canonicalId))).rows[0]);
+
+      if (!canonical) {
+        report = {
+          ...clean(params.report),
+          id: canonicalId,
+          terminalId: params.terminalId,
+          numeroZ: nextNumber,
+        };
+        resolved = true;
+        break;
+      }
+
+      if (String(canonical.terminalId || '') === rawTerminalId) {
+        // ID ya utilizado por esta misma terminal: saltar al siguiente Z.
+        nextNumber = Math.max(nextNumber + 1, (Number(canonical.numeroZ) || 0) + 1);
+        continue;
+      }
+
+      // Colisión heredada con otra caja: usar un prefijo exclusivo para esta
+      // terminal, sin sobrescribir ni reutilizar el reporte ajeno.
+      let sameTerminalCollision = false;
+      for (let suffixAttempt = 0; suffixAttempt < 1000; suffixAttempt++) {
+        const uniquePrefix = prefix + '-T' + exactSuffix + (suffixAttempt ? '-R' + suffixAttempt : '');
+        const candidateId = terminalSeries(uniquePrefix, 'Z', nextNumber, 6);
+        const candidate = rowFromDb((await tx.execute(txSelect('reportesZ', candidateId))).rows[0]);
+
         if (!candidate) {
-          report = { ...report, id: candidateId };
-          existingReport = null;
+          report = {
+            ...clean(params.report),
+            id: candidateId,
+            terminalId: params.terminalId,
+            numeroZ: nextNumber,
+          };
           resolved = true;
           break;
         }
-        if (String(candidate.terminalId || '') === String(params.terminalId)) {
-          report = candidate;
-          existingReport = candidate;
-          resolved = true;
+
+        if (String(candidate.terminalId || '') === rawTerminalId) {
+          nextNumber = Math.max(nextNumber + 1, (Number(candidate.numeroZ) || 0) + 1);
+          sameTerminalCollision = true;
           break;
         }
       }
-      if (!resolved) {
-        throw new Error('No se pudo reservar un identificador Z exclusivo para esta caja tras 1000 intentos. No se modificó ninguna caja.');
+
+      if (!resolved && !sameTerminalCollision) {
+        throw new Error('No se pudo reservar un identificador Z exclusivo para esta caja. No se modificó ninguna caja.');
       }
     }
 
-    if (existingReport) {
-      if (String(existingReport.terminalId || '') !== String(params.terminalId)) {
-        throw new Error('Conflicto de integridad Z: el reporte existente pertenece a otra caja. No se modificó ninguna caja.');
-      }
-      report = existingReport;
-      reportAlreadySaved = true;
+    if (!resolved || !report) {
+      throw new Error('No se pudo reservar el siguiente número Z. No se modificó ninguna caja.');
     }
 
-    // Guardar reporte y cerrar terminal de forma atómica. Si el reporte ya
-    // existía, la operación solo repara el estado de caja/correlativo.
-    const closedAt = String(report.closedAt || report.fecha || report.generatedAt || new Date().toISOString());
+    // Totales contables calculados exclusivamente con los registros persistidos en SQLite.
+    // Del navegador solo se acepta el conteo físico final, nunca ventas, impuestos o movimientos.
+    const submitted = clean(params.report || {});
+    const loadRows = async (table: string) => {
+      const result = await tx.execute({ sql: 'SELECT id,data_json FROM ' + table, args: [] });
+      return result.rows.map((row: any) => rowFromDb(row)).filter(Boolean);
+    };
+    const allSales = await loadRows('ventas');
+    const allReturns = await loadRows('devoluciones');
+    const allVoids = await loadRows('anulaciones');
+    const allJournal = await loadRows('libro_diario');
+    const cutoff = String(current.fechaUltimoZ || current.cashData?.openDate || '');
+    const inWindow = (value: any) => String(value || '') > cutoff;
+    const isDebtCollection = (sale: any) => ['COBRO DEUDA','ABONO DEUDA','COBRO_DEUDA'].includes(String(sale?.type || '').trim().toUpperCase());
+    const sales = allSales.filter((sale: any) => inWindow(sale.fecha) && sale.estado !== 'anulada' && String(sale.terminalId || '') === params.terminalId && !isDebtCollection(sale));
+    const voidedSales = allSales.filter((sale: any) => inWindow(sale.fecha) && sale.estado === 'anulada' && String(sale.terminalId || '') === params.terminalId && !isDebtCollection(sale));
+    const saleById = new Map(allSales.map((sale: any) => [String(sale.id), sale]));
+    const returns = allReturns.filter((item: any) => inWindow(item.fecha) && String(saleById.get(String(item.ventaId))?.terminalId || '') === params.terminalId);
+    const voidDocs = allVoids.filter((item: any) => inWindow(item.fecha) && String(saleById.get(String(item.ventaId))?.terminalId || '') === params.terminalId);
+    const debtCollections = allSales.filter((sale: any) => inWindow(sale.fecha) && String(sale.terminalId || '') === params.terminalId && isDebtCollection(sale));
+    const brUSD = sales.reduce((sum: number, sale: any) => sum + (Number(sale.totalUSD) || 0), 0);
+    const devUSD = returns.reduce((sum: number, item: any) => sum + (Number(item.totalUSD) || 0), 0) + voidDocs.reduce((sum: number, item: any) => sum + (Number(item.totalUSD) || 0), 0);
+    const discountUSD = sales.reduce((sum: number, sale: any) => sum + (Number(sale.descuentoUSD) || 0), 0);
+    const netUSD = brUSD - devUSD - discountUSD;
+    const baseUSD = sales.reduce((sum: number, sale: any) => sum + (Number(sale.baseImponibleUSD) || 0), 0);
+    const ivaUSD = sales.reduce((sum: number, sale: any) => sum + (Number(sale.ivaUSD) || 0), 0);
+    const exemptUSD = sales.reduce((sum: number, sale: any) => sum + (Number(sale.exentoUSD) || 0), 0);
+    const igtfUSD = sales.reduce((sum: number, sale: any) => sum + (Number(sale.igtfUSD) || 0), 0);
+    const normalizeMethod = (value: any) => {
+      const method = String(value || 'otros').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
+      if (['punto_venta','punto_de_venta','punto_pago','punto_de_pago','tarjeta_debito','tarjeta_credito'].includes(method)) return 'tarjeta';
+      return method === 'pago_movil' ? 'pagomovil' : method;
+    };
+    const isUsdMethod = (method: string) => ['efectivo_usd','zelle','usd','dolar','dolares','transferencia_usd'].includes(normalizeMethod(method));
+    const isBsMethod = (method: string) => ['efectivo_bs','efectivo','bs','bolivares','tarjeta','pagomovil','biopago','transferencia','transferencia_bs'].includes(normalizeMethod(method));
+    const paymentParts = (record: any) => Array.isArray(record?.payments) && record.payments.length ? record.payments : [{ metodo: record?.metodoPago || 'otros', montoUSD: record?.totalUSD, montoBS: record?.totalBS, tasaAplicada: record?.tasaAplicada }];
+    const paymentValue = (part: any) => {
+      const method = normalizeMethod(part?.metodo || part?.method || 'otros');
+      const usd = Number(part?.montoUSD ?? part?.usdAmount ?? 0) || 0;
+      const bs = Number(part?.montoBS ?? part?.amountBS ?? part?.totalBS ?? 0) || (isBsMethod(method) ? Number(part?.amount) || 0 : 0);
+      return { method, usd, bs };
+    };
+    const paymentMethods: Record<string, number> = {};
+    const arqueo: Record<string, any> = {};
+    const ensureMethod = (method: string) => arqueo[method] || (arqueo[method] = { ventasBS:0, ventasUSD:0, cobrosBS:0, cobrosUSD:0, devBS:0, devUSD:0, movPlusBS:0, movPlusUSD:0, movMinusBS:0, movMinusUSD:0 });
+    sales.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
+      const p = paymentValue(part); paymentMethods[p.method] = (paymentMethods[p.method] || 0) + p.usd;
+      if (p.method === 'credito') return; const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.ventasUSD += p.usd; else row.ventasBS += p.bs;
+    }));
+    debtCollections.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
+      const p = paymentValue(part); const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
+    }));
+    const applyRefund = (doc: any, isPartial: boolean) => {
+      const sale = saleById.get(String(doc.ventaId));
+      const parts = Array.isArray(doc.refundPayments) && doc.refundPayments.length ? doc.refundPayments : paymentParts(sale || { metodoPago:'otros' });
+      const factor = isPartial && !(Array.isArray(doc.refundPayments) && doc.refundPayments.length) ? (Number(doc.totalUSD) || 0) / Math.max(Number(sale?.totalUSD) || 0.000001, 0.000001) : 1;
+      parts.forEach((part: any) => { const p = paymentValue(part); const row = ensureMethod(p.method);
+        if (isUsdMethod(p.method)) row.devUSD += p.usd * factor; else row.devBS += p.bs * factor;
+      });
+    };
+    voidDocs.forEach((doc: any) => applyRefund(doc, false));
+    const voidedIds = new Set(voidDocs.map((doc: any) => String(doc.ventaId || '')));
+    voidedSales.filter((sale: any) => !voidedIds.has(String(sale.id))).forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
+      const p = paymentValue(part); const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.devUSD += p.usd; else row.devBS += p.bs;
+    }));
+    returns.forEach((doc: any) => applyRefund(doc, true));
+    const journal = allJournal.filter((entry: any) => inWindow(entry.fecha) && String(entry.terminalId || '') === params.terminalId);
+    const cashMovements = journal.filter((entry: any) => {
+      const category = String(entry?.categoria || '').trim().toUpperCase().replace(/Á/g, 'A');
+      return ['MOVIMIENTO_CAJA','MOVIMIENTO DE CAJA'].includes(category) || String(entry?.type || '').toUpperCase() === 'MOVIMIENTO CAJA';
+    }).filter((entry: any) => entry.tipo === 'ingreso' || entry.tipo === 'egreso');
+    cashMovements.forEach((entry: any) => {
+      const method = normalizeMethod(entry.metodo || 'otros'); const row = ensureMethod(method);
+      if (entry.tipo === 'ingreso') { if (isUsdMethod(method)) row.movPlusUSD += Number(entry.montoUSD) || 0; else if (isBsMethod(method)) row.movPlusBS += Number(entry.montoBS) || 0; }
+      else { if (isUsdMethod(method)) row.movMinusUSD += Number(entry.montoUSD) || 0; else if (isBsMethod(method)) row.movMinusBS += Number(entry.montoBS) || 0; }
+    });
+    const cashBs = ensureMethod('efectivo_bs'); const cashUsd = ensureMethod('efectivo_usd');
+    const openingBs = Number(current.fondoCajaHoyBS) || 0; const openingUsd = Number(current.fondoCajaHoyUSD) || 0;
+    const estimatedBs = openingBs + cashBs.ventasBS + cashBs.cobrosBS + cashBs.movPlusBS - cashBs.devBS - cashBs.movMinusBS;
+    const estimatedUsd = openingUsd + cashUsd.ventasUSD + cashUsd.cobrosUSD + cashUsd.movPlusUSD - cashUsd.devUSD - cashUsd.movMinusUSD;
+    const sortedSales = [...sales].sort((a: any,b: any) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+    const sortedReturns = [...returns].sort((a: any,b: any) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+    const debtByMethod: Record<string, any> = {}; let debtUsd = 0; let debtBs = 0;
+    debtCollections.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
+      const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
+      row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
+    }));
+    const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'credito']);
+    const rawActuals = submitted.arqueoReal && typeof submitted.arqueoReal === 'object' ? submitted.arqueoReal : {};
+    const actualByMethod: Record<string, number> = {};
+    for (const [rawMethod, rawAmount] of Object.entries(rawActuals)) {
+      const method = normalizeMethod(rawMethod);
+      const rawValue = String(rawAmount ?? '').trim();
+      if (!methodKeys.has(method)) throw new Error('El arqueo contiene un medio de pago no reconocido: ' + method + '.');
+      if (!rawValue) throw new Error('El arqueo contiene un conteo vacío para: ' + method + '.');
+      const amount = Number(rawValue.replace(',', '.'));
+      if (!Number.isFinite(amount) || amount < 0) throw new Error('El arqueo contiene un monto inválido o negativo.');
+      actualByMethod[method] = amount;
+    }
+    let differenceBs = 0; let differenceUsd = 0;
+    for (const method of methodKeys) {
+      const values = ensureMethod(method);
+      const opening = method === 'efectivo_bs' ? openingBs : method === 'efectivo_usd' ? openingUsd : 0;
+      const usd = isUsdMethod(method);
+      const systemAmount = opening + (usd ? values.ventasUSD + values.cobrosUSD + values.movPlusUSD - values.devUSD - values.movMinusUSD : values.ventasBS + values.cobrosBS + values.movPlusBS - values.devBS - values.movMinusBS);
+      if (Math.abs(systemAmount) >= 0.01 && !Object.prototype.hasOwnProperty.call(actualByMethod, method)) {
+        throw new Error('Falta registrar el conteo real del medio de pago: ' + method + '. El Corte Z no se ejecutó.');
+      }
+      if (Object.prototype.hasOwnProperty.call(actualByMethod, method)) {
+        const delta = actualByMethod[method] - systemAmount;
+        if (usd) differenceUsd += delta; else differenceBs += delta;
+      }
+    }
+    const closedAt = new Date().toISOString();
+    const reportData = {
+      id: report.id, fecha: closedAt, generatedAt: closedAt,
+      terminalId: params.terminalId, terminalName: String(current.nombre || current.name || params.terminalId),
+      numeroZ: nextNumber, desdeFactura: sortedSales[0]?.id || 'N/A', hastaFactura: sortedSales[sortedSales.length-1]?.id || 'N/A',
+      desdeNotaCredito: sortedReturns[0]?.id || 'N/A', hastaNotaCredito: sortedReturns[sortedReturns.length-1]?.id || 'N/A',
+      cantidadAnuladas: voidDocs.length + voidedSales.filter((sale: any) => !voidedIds.has(String(sale.id))).length,
+      ventaBrutaUSD: brUSD, totalVentasUSD: brUSD, brUSD, descuentoUSD: discountUSD, devolucionesUSD: devUSD, ventaNetaUSD: netUSD,
+      baseImponibleUSD: baseUSD, ivaUSD, exentoUSD: exemptUSD, igtfUSD,
+      metodosPago: paymentMethods, metodosArqueo: Object.entries(arqueo).map(([metodo, values]: any) => ({ metodo, ...values, moneda: isUsdMethod(metodo) ? 'USD' : 'BS' })),
+      cobrosDeudaUSD: debtUsd, cobrosDeudaBS: debtBs, cobrosDeudaPorMetodo: Object.values(debtByMethod),
+      manualSalidas: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualEntradas: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      salidasCajaUSD: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      entradasCajaUSD: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualSalidasBS: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
+      manualSalidasUSD: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualEntradasBS: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
+      manualEntradasUSD: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      devEfectivoBS: cashBs.devBS, devEfectivoUSD: cashUsd.devUSD,
+      totalNetoEfectivoBS: actualByMethod.efectivo_bs || 0, totalNetoEfectivoUSD: actualByMethod.efectivo_usd || 0,
+      arqueoReal: actualByMethod,
+      estimadoEfectivoBS: { entradas:0, egresos:0, total:estimatedBs }, estimadoEfectivoUSD: { entradas:0, egresos:0, total:estimatedUsd },
+      fondoAperturaBS: openingBs, fondoAperturaUSD: openingUsd,
+      acumuladoHistoricoUSD: (Number(current.acumuladoHistorico) || 0) + netUSD,
+      stats: { facturas:sales.length, devoluciones:returns.length, anulaciones:voidDocs.length, ticketPromedio:sales.length ? netUSD / sales.length : 0 },
+      cajeroId: params.user.id, cajeroNombre: String(params.user.nombre || params.user.username || params.user.id),
+      openedAt: current.cashData?.openDate || null, openedBy: String(current.cashData?.openedBy || current.cashData?.usuarioApertura || params.user.nombre || params.user.username || params.user.id), closedAt, closedBy: String(params.user.nombre || params.user.username || params.user.id), closedById: params.user.id,
+      differenceBs: Number(differenceBs.toFixed(2)), differenceUSD: Number(differenceUsd.toFixed(2)),
+    };
+    report = reportData;
+
+    // La identidad de cierre ya fue fijada por el servidor en reportData.
+    const committedAt = String(report.closedAt);
+    const closedSession = current.cashData ? {
+      ...current.cashData, closeDate: committedAt,
+      closeAmount: Number(report.totalNetoEfectivoBS) || 0,
+      closeAmountBs: Number(report.totalNetoEfectivoBS) || 0,
+      closeAmountUsd: Number(report.totalNetoEfectivoUSD) || 0,
+      closeNotes: 'Cierre por Corte Z ' + report.id,
+    } : null;
     const updatedTerminal = {
       ...current,
-      ...clean(params.terminalPatch),
       id: params.terminalId,
-      ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ || expectedNumber)),
-      fechaUltimoZ: closedAt,
-      isCashOpen: false,
-      cashData: null,
-      fondoCajaHoyBS: 0,
-      fondoCajaHoyUSD: 0,
+      ultimoZ: Math.max(Number(current.ultimoZ || 0), Number(report.numeroZ) || 0),
+      fechaUltimoZ: committedAt,
+      acumuladoHistorico: Number(report.acumuladoHistoricoUSD) || 0,
+      cashHistory: closedSession ? [closedSession, ...(Array.isArray(current.cashHistory) ? current.cashHistory : [])] : (current.cashHistory || []),
+      isCashOpen: false, cashData: null, fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0,
     };
-    if (!reportAlreadySaved) await tx.execute(rowStatement('reportesZ', report));
+    await tx.execute(rowStatement('reportesZ', report));
     await tx.execute(rowStatement('terminales', updatedTerminal));
+    await tx.execute({
+      sql: 'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',
+      args: [
+        'CIERRE-Z-' + String(params.terminalId) + '-' + String(report.numeroZ),
+        'CIERRE-Z', closureOperationId,
+        JSON.stringify({ tipo:'CIERRE-Z', operationId:closureOperationId, referencia:report.id, terminalId:params.terminalId }),
+      ],
+      wantRows: false,
+    });
     return { report, terminal: updatedTerminal };
   });
 }
 
-
 export async function applyDebtPaymentTransaction(params: {
   operationId?: string; collection: 'cxc' | 'cxp'; debtId: string; amountUSD: number;
   amountBS?: number; payment: any; journal?: any | any[]; sale?: any; customerCedula?: string; terminalId?: string;
+  user: { id: string; rol: string; nombre?: string; username?: string };
 }) {
-  assertTursoReady();
+  assertSQLiteReady();
   const { operationId, collection, debtId, amountUSD, amountBS, payment, journal, sale, customerCedula, terminalId } = params;
   // CxP se procesa desde Administración y no depende de ninguna Caja/Terminal.
   // Solo CxC conserva la relación con la caja del cajero.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
+  if (collection === 'cxp' && params.user?.rol !== 'administrador') throw new Error('El pago a proveedores requiere administrador.');
+  if (collection === 'cxc' && params.user?.rol === 'cajero' && !terminalForOperation) throw new Error('El cobro de CxC del cajero requiere su terminal asignada.');
   if (!(Number(amountUSD) > 0)) return null;
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
-    const check = await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
-    if (check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const check = await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
+    if (check.rows.length) {
+      // Recuperación idempotente: el COMMIT pudo ocurrir aunque la respuesta
+      // HTTP se perdiera. Se devuelve el mismo abono, nunca se aplica otra vez.
+      let saved: any = {};
+      try { saved = JSON.parse(String(check.rows[0].data_json || '{}')); } catch {}
+      const savedDebt = rowFromDb((await tx.execute(txSelect(collection, String(saved.referencia || debtId)))).rows[0]);
+      const receiptId = String(saved.reciboId || '');
+      const savedPayment = (savedDebt?.historialPagos || []).find((item: any) =>
+        (receiptId && String(item?.reciboId || item?.id || '') === receiptId) ||
+        String(item?.operationId || '') === opId
+      );
+      if (!savedDebt || !savedPayment) {
+        throw new Error('El pago ya figura procesado, pero no se pudo recuperar su comprobante. No repita el pago; consulte el historial.');
+      }
+      const savedJournals = (await tx.execute({
+        sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
+        args: [String(receiptId || savedPayment.reciboId || savedPayment.id)],
+      })).rows.map(rowFromDb).filter(Boolean);
+      const savedSaleResult = sale?.id
+        ? await tx.execute(txSelect('ventas', String(receiptId || savedPayment.reciboId || savedPayment.id)))
+        : null;
+      const savedSale = savedSaleResult ? rowFromDb(savedSaleResult.rows[0]) : null;
+      const savedTerminal = terminalForOperation
+        ? rowFromDb((await tx.execute(txSelect('terminales', terminalForOperation))).rows[0])
+        : null;
+      return {
+        ...savedDebt, appliedUSD: Number(savedPayment.montoUSD) || 0,
+        appliedBS: Number(savedPayment.montoBS) || 0,
+        receiptId: receiptId || savedPayment.reciboId || savedPayment.id,
+        payment: savedPayment, journal: savedJournals, sale: savedSale,
+        terminal: savedTerminal, recovered: true,
+      };
+    }
     const debt = rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
     if (!debt) throw new Error('La deuda ya no existe.');
 
@@ -1167,7 +1831,15 @@ export async function applyDebtPaymentTransaction(params: {
     if (amountCents > saldoCents) throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
 
     const terminal = terminalForOperation ? rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]) : null;
-    if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
+    if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
+    if (terminalForOperation && terminal) {
+      assertTerminalAccess(params.user, terminal);
+      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el cobro.');
+    }
+    if (terminalForOperation && terminal) {
+      assertTerminalAccess(params.user, terminal);
+      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el cobro.');
+    }
     const field = collection==='cxc'?'proximoCobroDeuda':'proximoPagoProveedor';
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
@@ -1176,12 +1848,12 @@ export async function applyDebtPaymentTransaction(params: {
     const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
 
     const paymentWithTerminal = collection === 'cxc'
-      ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName}
-      : {...payment, terminalId: undefined, terminalName: undefined};
-    const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
+      ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''}
+      : {...payment, terminalId: undefined, terminalName: undefined, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''};
+    const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,operationId:opId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
 
     const updated={...debt,abonadoUSD:abonadoRegistrado+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...historialPrevio,pago]};
-    const statements:TursoStatement[]=[rowStatement(collection,updated)];
+    const statements:SQLiteStatement[]=[rowStatement(collection,updated)];
 
     if(collection==='cxc'){
       // Primero usamos la cédula enviada por el POS. Si la deuda inicial no
@@ -1213,26 +1885,26 @@ export async function applyDebtPaymentTransaction(params: {
     const persistedSale=sale?.id?{...sale,id:receiptId,terminalForOperation:terminalForOperation||sale.terminalForOperation,terminalName:terminal?.nombre||sale.terminalName}:null;
     if(persistedSale) statements.push(rowStatement('ventas',persistedSale));
     if(terminal) statements.push(rowStatement('terminales',{...terminal,[field]:counter+1}));
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['PAGO-DEUDA-'+opId,'PAGO-DEUDA',opId,JSON.stringify({tipo:'PAGO-DEUDA',operationId:opId,referencia:debtId})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['PAGO-DEUDA-'+opId,'PAGO-DEUDA',opId,JSON.stringify({tipo:'PAGO-DEUDA',operationId:opId,referencia:debtId,reciboId:receiptId,terminalId:terminalForOperation||'ADMIN'})],wantRows:false});
     for(const s of statements) await tx.execute(s);
     return {...updated,appliedUSD:applied,appliedBS,receiptId,payment:pago,journal:journals,sale:persistedSale,terminal:terminal?{...terminal,id:terminalForOperation,[field]:counter+1}:null};
   });
 }
 
 async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
-  assertTursoReady();
+  assertSQLiteReady();
   const {operationId,provider,customerName,customerCedula,amountUSD,amountBS,payment,paymentParts,journal,terminalId}=params;
   if(!(Number(amountUSD)>0)) return {appliedUSD:0,appliedBS:0,debts:[]};
   // Los pagos globales a proveedores se originan en Administración → CxP
   // y son administrativos: no dependen de ninguna Caja/Terminal.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
-  return tursoInteractiveTransaction(async tx=>{
+  return sqliteInteractiveTransaction(async tx=>{
     const opId=String(operationId||payment?.id||((collection==='cxp'?'CXP-GLOBAL':'CXC-GLOBAL')+'|'+(provider||customerName)+'|'+amountUSD+'|'+payment?.fecha+'|'+payment?.metodo));
     const prefix=collection==='cxp'?'PAGO-CXP-GLOBAL':'PAGO-CXC-GLOBAL';
     const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:[prefix,opId]});
     if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
     const terminal=terminalForOperation?rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]):null;
-    if(terminalForOperation&&!terminal) throw new Error('La caja/terminal ya no existe en Turso.');
+    if(terminalForOperation&&!terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
     const field=collection==='cxp'?'proximoPagoProveedor':'proximoCobroDeuda';
     const label=collection==='cxp'?'CXP':'CXC';
     const counter=Number(terminal?.[field])||1;
@@ -1263,7 +1935,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>0.001&&d?.estado!=='pagada');
     let remCents=Math.max(0,Math.round(Number(amountUSD)*100));
     let remBS=Number(amountBS)>0?Number(amountBS):Number(amountUSD)*(Number(payment?.tasaAplicada)||0);
-    let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:TursoStatement[]=[];
+    let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:SQLiteStatement[]=[];
     for(const d of docs){
       if(remCents<=0) break;
       const debtCents=Math.max(0,Math.round((Number(d.saldoUSD)||0)*100));
@@ -1343,14 +2015,14 @@ export async function applyGlobalProviderPaymentTransaction(params:any){ return 
 export async function applyGlobalCustomerPaymentTransaction(params:any){ return applyGlobalPayment(params,'cxc'); }
 
 export async function createCustomerDebtTransaction(params:any){
-  assertTursoReady();
-  return tursoInteractiveTransaction(async tx=>{
+  assertSQLiteReady();
+  return sqliteInteractiveTransaction(async tx=>{
     const opId=String(params.operationId||params.debt?.id);
     const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['DEUDA-CXC',opId]});
     if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
     const debt=params.debt; if(!debt?.id) throw new Error('La deuda no tiene id.');
-    if((await tx.execute(txSelect('cxc',debt.id))).rows.length) throw new Error('La deuda ya existe en Turso.');
-    const statements:TursoStatement[]=[rowStatement('cxc',debt)];
+    if((await tx.execute(txSelect('cxc',debt.id))).rows.length) throw new Error('La deuda ya existe en SQLite local.');
+    const statements:SQLiteStatement[]=[rowStatement('cxc',debt)];
     let customer=null;
     if(params.customerId) customer=rowFromDb((await tx.execute(txSelect('clientes',params.customerId))).rows[0]);
     if(!customer&&params.customerCedula) customer=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(params.customerCedula)]})).rows[0]);
@@ -1375,21 +2047,21 @@ export async function createCustomerDebtTransaction(params:any){
   });
 }
 export async function createSupplierDebtTransaction(params:any){
-  assertTursoReady();
-  return tursoInteractiveTransaction(async tx=>{
+  assertSQLiteReady();
+  return sqliteInteractiveTransaction(async tx=>{
     const opId=String(params.operationId||params.debt?.id);
     const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['DEUDA-CXP',opId]});
     if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
     const debt=params.debt; if(!debt?.id) throw new Error('La deuda no tiene id.');
-    if((await tx.execute(txSelect('cxp',debt.id))).rows.length) throw new Error('La deuda ya existe en Turso.');
-    const statements:TursoStatement[]=[rowStatement('cxp',debt)]; if(params.journal?.id) statements.push(rowStatement('libroDiario',params.journal));
+    if((await tx.execute(txSelect('cxp',debt.id))).rows.length) throw new Error('La deuda ya existe en SQLite local.');
+    const statements:SQLiteStatement[]=[rowStatement('cxp',debt)]; if(params.journal?.id) statements.push(rowStatement('libroDiario',params.journal));
     statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['DEUDA-CXP-'+opId,'DEUDA-CXP',opId,JSON.stringify({tipo:'DEUDA-CXP',operationId:opId,referencia:debt.id})],wantRows:false});
     for(const s of statements) await tx.execute(s); return debt;
   });
 }
 
 export async function processReturnOrCancellationTransaction(params:any){
-  assertTursoReady();
+  assertSQLiteReady();
   const {
     operationId,
     operationType,
@@ -1400,9 +2072,11 @@ export async function processReturnOrCancellationTransaction(params:any){
     terminalId,
     refundItems = [],
     fullCancellation = false,
+    user,
   } = params;
+  if (user?.rol === 'cajero' && !terminalId) throw new Error('El cajero debe procesar la devolución desde su terminal asignada.');
 
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     const opCheck = await tx.execute({
       sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args:[operationType,operationId],
@@ -1410,7 +2084,10 @@ export async function processReturnOrCancellationTransaction(params:any){
     if(opCheck.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
 
     const sale = rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]);
-    if(!sale) throw new Error('La venta ya no existe en Turso.');
+    if(!sale) throw new Error('La venta ya no existe en SQLite local.');
+    if (user?.rol === 'cajero' && String(sale.terminalId || '') !== String(terminalId || '')) {
+      throw new Error('El cajero solo puede devolver o anular ventas de su propia terminal.');
+    }
     if(operationType==='ANULACION' && String(sale.estado||'')==='anulada')
       throw new Error('La factura ya fue anulada.');
 
@@ -1418,11 +2095,15 @@ export async function processReturnOrCancellationTransaction(params:any){
       ? rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0])
       : null;
     if(terminalId && !terminal) throw new Error('La terminal de la operación ya no existe.');
+    if(terminalId && terminal) {
+      assertTerminalAccess(user, terminal);
+      if(terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar una devolución o anulación.');
+    }
 
     // ============================================================
     // REGLA MAESTRA DE DEVOLUCIONES/ANULACIONES
     // Una unidad vendida solo puede reingresar al inventario UNA vez.
-    // El servidor Turso recalcula aquí lo que todavía queda por revertir;
+    // El servidor SQLite local recalcula aquí lo que todavía queda por revertir;
     // nunca confía en que el navegador le envíe las cantidades originales.
     // ============================================================
     const originalItems = Array.isArray(sale.items) ? sale.items : [];
@@ -1542,7 +2223,7 @@ export async function processReturnOrCancellationTransaction(params:any){
       const pid=String(m.productoId||'');
       if(!pid || products.has(pid)) continue;
       const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);
-      if(!p) throw new Error('Un producto de la operación ya no existe en Turso.');
+      if(!p) throw new Error('Un producto de la operación ya no existe en SQLite local.');
       products.set(pid,p);
     }
 
@@ -1587,6 +2268,8 @@ export async function processReturnOrCancellationTransaction(params:any){
       ventaId:String(saleId),
       terminalId:terminalId||operationDoc?.terminalId||'GLOBAL',
       terminalName:terminal?.nombre||operationDoc?.terminalName||'SISTEMA GLOBAL',
+      usuarioId:user?.id || operationDoc?.usuarioId,
+      usuarioNombre:user?.nombre || user?.username || operationDoc?.usuarioNombre,
       items:effectiveItems,
       totalUSD:effectiveTotal,
       ...(operationType==='ANULACION' ? { totalRevertidoUSD:effectiveTotal } : {}),
@@ -1602,14 +2285,14 @@ export async function processReturnOrCancellationTransaction(params:any){
       canonicalOperationDoc.metodoReembolso='nota_credito';
     }
 
-    const statements:TursoStatement[]=[];
+    const statements:SQLiteStatement[]=[];
 
     for(const m of effectiveMovements){
       const pid=String(m.productoId);
       const p=products.get(pid);
       const before=Number(p.stock)||0;
       const after=before+(Number(m.cantidad)||0);
-      const persisted={...m,productoId:pid,stockAntes:before,stockDespues:after,id:String(m.id||('MOV-'+crypto.randomUUID()))};
+      const persisted={...m,productoId:pid,stockAntes:before,stockDespues:after,usuarioId:user?.id||m.usuarioId,usuarioNombre:user?.nombre||user?.username||m.usuarioNombre,id:String(m.id||('MOV-'+crypto.randomUUID()))};
       products.set(pid,{...p,stock:after});
       statements.push(rowStatement('movimientos',persisted));
     }
@@ -1623,7 +2306,7 @@ export async function processReturnOrCancellationTransaction(params:any){
       : 0;
 
     const canonicalJournal=journal && refundTotal>0.001
-      ? {...journal,montoUSD:refundTotal,referencia:canonicalId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName}
+      ? {...journal,montoUSD:refundTotal,referencia:canonicalId,terminalId:terminalId||journal.terminalId,terminalName:terminal?.nombre||journal.terminalName,usuarioId:user?.id||journal.usuarioId,usuarioNombre:user?.nombre||user?.username||journal.usuarioNombre}
       : null;
 
     statements.push(rowStatement(table,canonicalOperationDoc));
@@ -1641,7 +2324,7 @@ export async function processReturnOrCancellationTransaction(params:any){
         operationType+'-'+operationId,
         operationType,
         operationId,
-        JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalId||'GLOBAL'})
+        JSON.stringify({tipo:operationType,operationId,referencia:canonicalId,terminalId:terminalId||'GLOBAL',usuarioId:user?.id,usuarioNombre:user?.nombre||user?.username})
       ],
       wantRows:false
     });
@@ -1672,13 +2355,13 @@ export async function processReturnOrCancellationTransaction(params:any){
 // operación y elimina únicamente el efecto de inventario duplicado.
 // ============================================================
 export async function repairReturnInventoryAndCxcTransaction(params:{saleId:string;operationId?:string}){
-  assertTursoReady();
+  assertSQLiteReady();
   const saleId=String(params.saleId||'').trim();
   if(!saleId) throw new Error('Debe indicar la factura a reparar.');
 
-  return tursoInteractiveTransaction(async tx=>{
+  return sqliteInteractiveTransaction(async tx=>{
     const sale=rowFromDb((await tx.execute(txSelect('ventas',saleId))).rows[0]);
-    if(!sale) throw new Error('La factura indicada no existe en Turso.');
+    if(!sale) throw new Error('La factura indicada no existe en SQLite local.');
 
     const returnRows=(await tx.execute({
       sql:"SELECT id,data_json FROM devoluciones WHERE json_extract(data_json,'$.ventaId')=? ORDER BY COALESCE(fecha,''),id",
@@ -1956,11 +2639,13 @@ export async function createCashMovementTransaction(params: {
   operationId: string;
   movement: any;
   terminalId?: string;
+  user: { id: string; rol: string; nombre?: string; username?: string };
 }) {
-  assertTursoReady();
+  assertSQLiteReady();
   const { operationId, movement, terminalId } = params;
+  if (params.user?.rol === 'cajero' && !terminalId) throw new Error('El cajero debe registrar movimientos desde su caja asignada.');
   if (!movement?.id) throw new Error('El movimiento de caja no tiene id.');
-  return tursoInteractiveTransaction(async tx => {
+  return sqliteInteractiveTransaction(async tx => {
     const opId = String(operationId || movement.id);
     const check = await tx.execute({
       sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
@@ -1970,11 +2655,17 @@ export async function createCashMovementTransaction(params: {
     const terminal = terminalId
       ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
       : null;
-    if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en Turso.');
+    if (terminalId && !terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
+    if (terminalId && terminal) {
+      assertTerminalAccess(params.user, terminal);
+      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el movimiento.');
+    }
     const canonicalMovement = {
       ...movement,
       terminalId: terminalId || movement.terminalId || 'GLOBAL',
       terminalName: terminal?.nombre || movement.terminalName || 'SISTEMA GLOBAL',
+      usuarioId: params.user.id,
+      usuarioNombre: params.user.nombre || params.user.username || '',
     };
     await tx.execute(rowStatement('libroDiario', canonicalMovement));
     await tx.execute({
@@ -1992,9 +2683,9 @@ export async function createCashMovementTransaction(params: {
 }
 
 export async function reverseDebtPaymentTransaction(params:any){
-  assertTursoReady();
+  assertSQLiteReady();
   const {operationId,collection,debtId,paymentId,journalId}=params;
-  return tursoInteractiveTransaction(async tx=>{
+  return sqliteInteractiveTransaction(async tx=>{
     const opId=String(operationId||collection+'|'+debtId+'|'+paymentId+'|REVERSE');
     const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['REVERSAR-PAGO',opId]});
     if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
@@ -2005,7 +2696,7 @@ export async function reverseDebtPaymentTransaction(params:any){
     const abonado=Math.max(0,Math.round((restantes.reduce((s:number,p:any)=>s+(Number(p?.montoUSD)||0),0)+Number.EPSILON)*100)/100);
     const saldo=Math.max(0,Math.round(((Number(debt.montoUSD)||0)-abonado+Number.EPSILON)*100)/100);
     const updated={...debt,abonadoUSD:abonado,saldoUSD:saldo,estado:saldo<=.001?'pagada':abonado>0?'parcial':'pendiente',historialPagos:restantes};
-    const statements:TursoStatement[]=[rowStatement(collection,updated)];
+    const statements:SQLiteStatement[]=[rowStatement(collection,updated)];
     if(journalId){
       const jr=await tx.execute(txSelect('libroDiario',journalId)); const journal=rowFromDb(jr.rows[0]);
       if(journal){
@@ -2021,8 +2712,8 @@ export async function reverseDebtPaymentTransaction(params:any){
   });
 }
 export async function deleteCustomerAndDebtsTransaction(params:any){
-  assertTursoReady();
-  return tursoInteractiveTransaction(async tx=>{
+  assertSQLiteReady();
+  return sqliteInteractiveTransaction(async tx=>{
     const {operationId,customerId,customerName,customerCedula}=params; const opId=String(operationId||customerId);
     const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CLIENTE',opId]});
     if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
@@ -2039,31 +2730,31 @@ export async function deleteCustomerAndDebtsTransaction(params:any){
 }
 
 export async function createPurchaseTransaction(params:any){
-  assertTursoReady(); const {operationId,purchase,items,purchaseDate,purchaseDateTime,supplier,invoiceNumber,exchangeRate,journal,debt}=params;
+  assertSQLiteReady(); const {operationId,purchase,items,purchaseDate,purchaseDateTime,supplier,invoiceNumber,exchangeRate,journal,debt}=params;
   if(!items?.length) throw new Error('La compra no contiene productos.'); if(!invoiceNumber||!supplier) throw new Error('La compra no tiene factura/proveedor.'); if(!(Number(exchangeRate)>0)) throw new Error('La tasa de la compra no es válida.'); if(!purchase?.id) throw new Error('La compra no tiene id.');
   const opId=String(operationId||purchase.id||(invoiceNumber+'|'+supplier+'|'+purchaseDate));
-  return tursoInteractiveTransaction(async tx=>{
+  return sqliteInteractiveTransaction(async tx=>{
     if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['COMPRA',opId]})).rows.length) throw new Error('Esta compra ya fue procesada. Evite duplicarla.');
-    if((await tx.execute(txSelect('compras',String(purchase.id)))).rows.length) throw new Error('Esta compra ya existe en Turso.');
+    if((await tx.execute(txSelect('compras',String(purchase.id)))).rows.length) throw new Error('Esta compra ya existe en SQLite local.');
     const existing=await tx.execute({sql:"SELECT id,data_json FROM compras WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]});
     if(existing.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una compra con la misma factura, proveedor y fecha.');
     const debtRows=await tx.execute({sql:"SELECT id,data_json FROM cxp WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]});
     if(debtRows.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una cuenta por pagar para esta factura y proveedor.');
     const ids: string[] = Array.from(new Set<string>(items.map((i:any)=>String(i.productoId||'')).filter((id:string)=>Boolean(id)))), itemBy=new Map<string,any>(); for(const i of items){const pid=String(i.productoId),p=itemBy.get(pid);itemBy.set(pid,p?{...p,cantidad:(Number(p.cantidad)||0)+(Number(i.cantidad)||0),subtotalUSD:(Number(p.subtotalUSD)||0)+(Number(i.subtotalUSD)||0)}:{...i});}
-    const statements:TursoStatement[]=[rowStatement('compras',purchase)];
+    const statements:SQLiteStatement[]=[rowStatement('compras',purchase)];
     const updatedProducts:any[]=[];
-    for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en Turso.');const i=itemBy.get(pid),qty=Number(i.cantidad)||0,cost=Number(i.costoUnitarioUSD)||0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
+    for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en SQLite local.');const i=itemBy.get(pid),qty=Number(i.cantidad)||0,cost=Number(i.costoUnitarioUSD)||0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
       const latestRow=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha DESC,id DESC LIMIT 1",args:[pid]})).rows[0]; const latest=latestRow?rowFromDb(latestRow):null; const mv={id:String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID())),productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')}; const latestFecha=String(latest?.fecha||''); const compraEsCronologicamenteUltima=!latestFecha||String(purchaseDateTime||'')>=latestFecha; if(compraEsCronologicamenteUltima){mv.stockAntes=oldStock;mv.stockDespues=newStock;statements.push(rowStatement('movimientos',mv));}else{const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb); const combined=[...rows.map((d:any)=>({id:d.id,data:d})),{id:mv.id,data:mv}].sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))); let running=rows.length?Number(rows[0].stockAntes)||0:0; for(const e of combined){const before=running;running=before+(Number(e.data.cantidad)||0);statements.push(rowStatement('movimientos',{...e.data,id:e.id,stockAntes:before,stockDespues:running}));}} statements.push(rowStatement('productos',{...p,id:pid,stock:newStock,costoUSD:newCost}));}
     if(debt?.id) statements.push(rowStatement('cxp',debt)); if(journal?.id) statements.push(rowStatement('libroDiario',journal)); statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['COMPRA-'+opId,'COMPRA',opId,JSON.stringify({tipo:'COMPRA',operationId:opId,referencia:purchase.id})],wantRows:false}); if(statements.length>450)throw new Error('La compra tiene demasiados movimientos históricos para una sola transacción.'); for(const s of statements)await tx.execute(s); return {purchase,journal:journal||null,debt:debt||null,products:updatedProducts};
   });
 }
 export async function deletePurchaseTransaction(params:any){
-  assertTursoReady();
+  assertSQLiteReady();
   const {operationId,purchaseId,invoiceNumber,supplier,purchaseDate}=params;
   if(!invoiceNumber||!supplier) throw new Error('La compra no tiene factura/proveedor identificables.');
   const opId=String(operationId||invoiceNumber+'|'+supplier+'|'+String(purchaseDate||'').slice(0,10)+'|DELETE');
 
-  return tursoInteractiveTransaction(async tx=>{
+  return sqliteInteractiveTransaction(async tx=>{
     const previousDelete = await tx.execute({
       sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args:['ELIMINAR-COMPRA',opId]
@@ -2114,10 +2805,10 @@ export async function deletePurchaseTransaction(params:any){
     })).rows.map(rowFromDb).filter((d:any)=>String(d.tipo||'')==='compra');
 
     if(!purchase&&!purchases.length&&!debts.length&&!deleted.length)
-      throw new Error('La compra ya no existe en Turso.');
+      throw new Error('La compra ya no existe en SQLite local.');
 
     const affected: string[] = Array.from(new Set<string>(deleted.map((d:any)=>String(d.productoId||'')).filter((id:string)=>Boolean(id))));
-    const statements:TursoStatement[]=[];
+    const statements:SQLiteStatement[]=[];
     const updatedProducts:any[]=[];
     const updatedMovements:any[]=[];
 
@@ -2249,6 +2940,6 @@ export async function deletePurchaseTransaction(params:any){
   });
 }
 export async function deleteCustomerDebtTransaction(params:any){
-  assertTursoReady(); const {operationId,debtId,customerCedula,customerId}=params; const opId=String(operationId||debtId);
-  return tursoInteractiveTransaction(async tx=>{ if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CXC',opId]})).rows.length)throw new Error('Esta operación ya fue procesada.'); const debt=rowFromDb((await tx.execute(txSelect('cxc',debtId))).rows[0]);if(!debt)throw new Error('La deuda ya no existe.');const saldo=Number(debt.saldoUSD)||0;let customer:any=null,customerRefId:any=null;if(customerId){customerRefId=customerId;customer=rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]);}else if(customerCedula){customer=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]})).rows[0]);if(customer)customerRefId=customer.id;}const statements:TursoStatement[]=[{sql:'DELETE FROM cxc WHERE id=?',args:[debtId],wantRows:false}];if(customer&&customerRefId)statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo),id:customerRefId}));statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CXC-'+opId,'ELIMINAR-CXC',opId,JSON.stringify({tipo:'ELIMINAR-CXC',operationId:opId,referencia:debtId})],wantRows:false});for(const s of statements)await tx.execute(s);return {debt,customer:customer?{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo)}:null};});
+  assertSQLiteReady(); const {operationId,debtId,customerCedula,customerId}=params; const opId=String(operationId||debtId);
+  return sqliteInteractiveTransaction(async tx=>{ if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['ELIMINAR-CXC',opId]})).rows.length)throw new Error('Esta operación ya fue procesada.'); const debt=rowFromDb((await tx.execute(txSelect('cxc',debtId))).rows[0]);if(!debt)throw new Error('La deuda ya no existe.');const saldo=Number(debt.saldoUSD)||0;let customer:any=null,customerRefId:any=null;if(customerId){customerRefId=customerId;customer=rowFromDb((await tx.execute(txSelect('clientes',customerId))).rows[0]);}else if(customerCedula){customer=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]})).rows[0]);if(customer)customerRefId=customer.id;}const statements:SQLiteStatement[]=[{sql:'DELETE FROM cxc WHERE id=?',args:[debtId],wantRows:false}];if(customer&&customerRefId)statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo),id:customerRefId}));statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CXC-'+opId,'ELIMINAR-CXC',opId,JSON.stringify({tipo:'ELIMINAR-CXC',operationId:opId,referencia:debtId})],wantRows:false});for(const s of statements)await tx.execute(s);return {debt,customer:customer?{...customer,debt:Math.max(0,(Number(customer.debt)||0)-saldo)}:null};});
 }

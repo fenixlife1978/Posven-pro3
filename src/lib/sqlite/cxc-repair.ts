@@ -1,11 +1,11 @@
-import { tursoExecute } from '@/lib/turso/client';
+import { sqliteExecute } from '@/lib/sqlite/client';
 
 function safeJson(value: any) {
   return JSON.stringify(value ?? {});
 }
 
 export async function repararDeudasMigradas() {
-  const debts = await tursoExecute({ sql: 'SELECT id,data_json FROM cxc' });
+  const debts = await sqliteExecute({ sql: 'SELECT id,data_json FROM cxc' });
   const result = {
     revisadas: debts.rows.length,
     corregidas: 0,
@@ -31,7 +31,7 @@ export async function repararDeudasMigradas() {
       continue;
     }
 
-    const saleResult = await tursoExecute({
+    const saleResult = await sqliteExecute({
       sql: 'SELECT data_json FROM ventas WHERE id=? LIMIT 1',
       args: [ventaId],
     });
@@ -68,7 +68,7 @@ export async function repararDeudasMigradas() {
       continue;
     }
 
-    await tursoExecute({
+    await sqliteExecute({
       sql: 'UPDATE cxc SET data_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
       args: [after, id],
       wantRows: false,

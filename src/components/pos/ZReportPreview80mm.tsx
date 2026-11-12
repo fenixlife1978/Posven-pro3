@@ -8,7 +8,7 @@ declare global {
   interface Window {
     electronAPI?: {
       printTicket: (data: any) => Promise<void>;
-      getAppVersion: () => Promise<string>;
+      getAppVersion?: () => Promise<string>;
     };
   }
 }
@@ -33,7 +33,7 @@ const money = (currency: 'Bs' | 'USD', value: number) =>
   currency === 'Bs' ? formatBs(value) : '$' + formatUsd(value).replace('$', '');
 
 const methodCurrency = (method: string): 'Bs' | 'USD' =>
-  ['efectivo_usd', 'zelle', 'transferencia_usd'].includes(String(method).toLowerCase()) ? 'USD' : 'Bs';
+  ['efectivo_usd', 'zelle', 'transferencia_usd', 'usd', 'dolar', 'dolares'].includes(String(method).toLowerCase()) ? 'USD' : 'Bs';
 
 export default function ZReportPreview80mm({ data, onClose }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
@@ -102,16 +102,60 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
   const printHtml = async () => {
     const html = printRef.current?.innerHTML;
     if (!html) return;
-    const css = '@page{size:80mm auto;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff}body{width:80mm;min-height:80mm;color:#000;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:10px;line-height:1.25}.thermal-report{width:80mm;min-height:80mm;box-sizing:border-box}.flex{display:flex}.justify-between{justify-content:space-between}.gap-2{gap:8px}.text-center{text-align:center}.font-black{font-weight:900}.font-bold{font-weight:700}.border-t{border-top-width:1px}.border-dashed{border-top-style:dashed}.border-double{border-top-style:double}.border-black{border-color:#000}.my-2{margin-top:8px;margin-bottom:8px}.mt-0\\.5{margin-top:2px}.mt-1{margin-top:4px}.text-\\[8px\\]{font-size:8px}.text-\\[10px\\]{font-size:10px}.text-\\[13px\\]{font-size:13px}.tracking-tight{letter-spacing:-.025em}.leading-\\[1\\.25\\]{line-height:1.25}.p-\\[7mm\\]{padding:7mm}.mx-auto{margin-left:auto;margin-right:auto}.bg-white{background:#fff}.text-black{color:#000}.font-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}';
-    let appStyles = '';
-    try {
-      appStyles = Array.from(document.styleSheets).flatMap((sheet) => {
-        try { return Array.from(sheet.cssRules).map((rule) => rule.cssText); } catch { return []; }
-      }).join('\\n');
-    } catch {
-      appStyles = '';
-    }
-    const fullHtml = '<!doctype html><html><head><meta charset="UTF-8"><title>Reporte Z</title><style>' + appStyles + '\\n' + css + '</style></head><body>' + html + '</body></html>';
+    const css = `
+      @page { size: 80mm auto; margin: 0; }
+      * { box-sizing: border-box; }
+      html, body { width: 80mm; margin: 0; padding: 0; background: #fff; }
+      body {
+        color: #000;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 10px;
+        line-height: 1.25;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .thermal-report {
+        display: block;
+        width: 80mm;
+        min-height: 80mm;
+        padding: 4mm;
+        margin: 0;
+        background: #fff;
+        color: #000;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 10px;
+        line-height: 1.25;
+      }
+      .flex { display: flex !important; width: 100%; align-items: baseline; }
+      .justify-between { justify-content: space-between !important; }
+      .gap-2 { gap: 8px; }
+      .flex > span:first-child { flex: 1 1 auto; min-width: 0; }
+      .flex > span:last-child, .flex > b { flex: 0 0 auto; margin-left: 4px; text-align: right; white-space: nowrap; }
+      .text-center { text-align: center; }
+      .font-black { font-weight: 900; }
+      .font-bold { font-weight: 700; }
+      .border-t { border-top-width: 1px; }
+      .border-dashed { border-top-style: dashed; }
+      .border-double { border-top-style: double; }
+      .border-black { border-color: #000; }
+      .my-2 { margin-top: 8px; margin-bottom: 8px; }
+      .mt-0\\.5 { margin-top: 2px; }
+      .mt-1 { margin-top: 4px; }
+      .text-\\[8px\\] { font-size: 8px; }
+      .text-\\[10px\\] { font-size: 10px; }
+      .text-\\[13px\\] { font-size: 13px; }
+      .tracking-tight { letter-spacing: -.025em; }
+      .leading-\\[1\\.25\\] { line-height: 1.25; }
+      .mx-auto { margin-left: auto; margin-right: auto; }
+      .bg-white { background: #fff; }
+      .text-black { color: #000; }
+      .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      @media print {
+        html, body { width: 80mm; margin: 0; padding: 0; }
+        .thermal-report { width: 80mm; padding: 4mm; margin: 0; box-shadow: none; }
+      }
+    `;
+    const fullHtml = '<!doctype html><html><head><meta charset="UTF-8"><title>Reporte Z</title><style>' + css + '</style></head><body>' + html + '</body></html>';
 
     if (window.electronAPI?.printTicket) {
       try {
@@ -148,7 +192,7 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
         </div>
 
         <div className="flex-1 overflow-auto p-5">
-          <div ref={printRef} className="thermal-report mx-auto bg-white text-black font-mono text-[10px] leading-[1.25] p-[7mm] shadow-xl" style={{ width: '80mm', minHeight: '80mm', boxSizing: 'border-box' }}>
+          <div ref={printRef} className="thermal-report mx-auto bg-white text-black font-mono text-[10px] leading-[1.25] p-[4mm] shadow-xl" style={{ width: '80mm', minHeight: '80mm', padding: '4mm', boxSizing: 'border-box', fontSize: '10px', lineHeight: 1.25 }}>
             <div className="text-center font-black text-[13px] tracking-tight">REPORTE Z</div>
             <div className="text-center font-bold mt-0.5">CONTROL DE CAJA</div>
             <div className="border-t border-dashed border-black my-2" />
