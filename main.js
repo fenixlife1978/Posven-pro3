@@ -520,6 +520,10 @@ app.whenReady().then(async () => {
 // activas y después libera el servidor Next.js. SQLite se cierra al finalizar
 // el proceso, una vez que ya no quedan manejadores HTTP ejecutándose.
 async function shutdownLocalServer() {
+  if (lanDiscoveryServer) {
+    try { lanDiscoveryServer.close(); } catch (error) { console.warn('[SHUTDOWN] UDP discovery:', error); }
+    lanDiscoveryServer = null;
+  }
   const server = nextServer;
   nextServer = null;
 
