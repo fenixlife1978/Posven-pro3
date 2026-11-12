@@ -1901,8 +1901,22 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
   return sqliteInteractiveTransaction(async tx=>{
     const opId=String(operationId||payment?.id||((collection==='cxp'?'CXP-GLOBAL':'CXC-GLOBAL')+'|'+(provider||customerName)+'|'+amountUSD+'|'+payment?.fecha+'|'+payment?.metodo));
     const prefix=collection==='cxp'?'PAGO-CXP-GLOBAL':'PAGO-CXC-GLOBAL';
-    const check=await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:[prefix,opId]});
-    if(check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:[prefix,opId]});
+    if(check.rows.length){
+      let saved:any={}; try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
+      const receiptId=String(saved.referencia||'');
+      const allDebts=(await tx.execute({sql:'SELECT id,data_json FROM '+tableName(collection)})).rows.map(rowFromDb).filter(Boolean);
+      const debts=allDebts.map((d:any)=>{
+        const h=Array.isArray(d.historialPagos)?d.historialPagos:[];
+        const p=h.find((item:any)=>String(item?.reciboId||item?.id||'')===receiptId);
+        return p?{...d,appliedUSD:Number(p.montoUSD)||0,appliedBS:Number(p.montoBS)||0}:null;
+      }).filter(Boolean);
+      if(!receiptId||!debts.length) throw new Error('El pago global ya fue procesado, pero no se pudo recuperar su comprobante. Consulte el historial antes de volver a intentarlo.');
+      const savedSale=collection==='cxc'?rowFromDb((await tx.execute(txSelect('ventas',receiptId))).rows[0]):null;
+      const savedJournal=rowFromDb((await tx.execute({sql:'SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,\'$.referencia\')=? LIMIT 1',args:[receiptId]})).rows[0]);
+      const savedTerminal=terminalForOperation?rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]):null;
+      return {appliedUSD:debts.reduce((n:number,d:any)=>n+(Number(d.appliedUSD)||0),0),appliedBS:debts.reduce((n:number,d:any)=>n+(Number(d.appliedBS)||0),0),debts,receiptId,sale:savedSale,journal:savedJournal,terminal:savedTerminal,recovered:true};
+    }
     const terminal=terminalForOperation?rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]):null;
     if(terminalForOperation&&!terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
     const field=collection==='cxp'?'proximoPagoProveedor':'proximoCobroDeuda';
@@ -2078,10 +2092,26 @@ export async function processReturnOrCancellationTransaction(params:any){
 
   return sqliteInteractiveTransaction(async tx => {
     const opCheck = await tx.execute({
-      sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args:[operationType,operationId],
     });
-    if(opCheck.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    if(opCheck.rows.length){
+      let saved:any={};try{saved=JSON.parse(String(opCheck.rows[0].data_json||'{}'));}catch{}
+      const receiptId=String(saved.referencia||'');
+      const table=operationType==='DEVOLUCION'?'devoluciones':'anulaciones';
+      const operationDoc=receiptId?rowFromDb((await tx.execute(txSelect(table,receiptId))).rows[0]):null;
+      if(!operationDoc)throw new Error('La devolución/anulación ya fue procesada, pero no se pudo recuperar su comprobante. Consulte el historial antes de repetirla.');
+      const savedSale=rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]);
+      const movementRows=await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",args:['%'+receiptId+'%']});
+      const movements=movementRows.rows.map(rowFromDb).filter(Boolean);
+      const productIds=[...new Set([...movements.map((m:any)=>String(m.productoId||'')),...(operationDoc.items||[]).map((it:any)=>String(it.productoId||''))].filter(Boolean))];
+      const products:any[]=[];for(const pid of productIds){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(p)products.push(p);}
+      const debtRows=await tx.execute({sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.ventaId')=? OR json_extract(data_json,'$.facturaId')=? LIMIT 1",args:[String(saleId),String(saleId)]});
+      const debt=debtRows.rows.length?rowFromDb(debtRows.rows[0]):null;
+      const journal=rowFromDb((await tx.execute({sql:"SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=? LIMIT 1",args:[receiptId]})).rows[0]);
+      const terminal=terminalId?rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0]):null;
+      return {operationId,operationType,receiptId,operationDoc,products,movements,debt,journal,terminal,recovered:true,remainingAfter:operationType==='ANULACION'?0:(operationDoc.items||[]).reduce((n:number,it:any)=>n+(Number(it.cantidad)||0),0)};
+    }
 
     const sale = rowFromDb((await tx.execute(txSelect('ventas',String(saleId)))).rows[0]);
     if(!sale) throw new Error('La venta ya no existe en SQLite local.');
@@ -2648,10 +2678,16 @@ export async function createCashMovementTransaction(params: {
   return sqliteInteractiveTransaction(async tx => {
     const opId = String(operationId || movement.id);
     const check = await tx.execute({
-      sql: 'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
+      sql: 'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',
       args: ['MOVIMIENTO-CAJA', opId],
     });
-    if (check.rows.length) throw new Error('Esta operación ya fue procesada. No se registrará nuevamente.');
+    if (check.rows.length) {
+      let saved:any={};try{saved=JSON.parse(String(check.rows[0].data_json||'{}'));}catch{}
+      const movement=saved.referencia?rowFromDb((await tx.execute(txSelect('libroDiario',String(saved.referencia)))).rows[0]):null;
+      if(!movement)throw new Error('El movimiento ya fue procesado, pero no se pudo recuperar. Consulte el libro diario antes de repetirlo.');
+      const terminal=terminalId?rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0]):null;
+      return {movement,terminal,recovered:true};
+    }
     const terminal = terminalId
       ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
       : null;
@@ -2734,7 +2770,19 @@ export async function createPurchaseTransaction(params:any){
   if(!items?.length) throw new Error('La compra no contiene productos.'); if(!invoiceNumber||!supplier) throw new Error('La compra no tiene factura/proveedor.'); if(!(Number(exchangeRate)>0)) throw new Error('La tasa de la compra no es válida.'); if(!purchase?.id) throw new Error('La compra no tiene id.');
   const opId=String(operationId||purchase.id||(invoiceNumber+'|'+supplier+'|'+purchaseDate));
   return sqliteInteractiveTransaction(async tx=>{
-    if((await tx.execute({sql:'SELECT id FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['COMPRA',opId]})).rows.length) throw new Error('Esta compra ya fue procesada. Evite duplicarla.');
+    const prior=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['COMPRA',opId]});
+    if(prior.rows.length){
+      let saved:any={};try{saved=JSON.parse(String(prior.rows[0].data_json||'{}'));}catch{}
+      const savedPurchase=saved.referencia?rowFromDb((await tx.execute(txSelect('compras',String(saved.referencia))).rows[0]):null;
+      if(!savedPurchase)throw new Error('La compra ya fue procesada, pero no se pudo recuperar el comprobante. Consulte Compras antes de repetirla.');
+      const movementRows=await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia')=?",args:[`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`]});
+      const movements=movementRows.rows.map(rowFromDb).filter(Boolean);
+      const ids=[...new Set([...(savedPurchase.items||[]).map((it:any)=>String(it.productoId||'')),...movements.map((m:any)=>String(m.productoId||''))].filter(Boolean))];
+      const products:any[]=[];for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(p)products.push(p);}
+      const savedDebt=debt?.id?rowFromDb((await tx.execute(txSelect('cxp',String(debt.id))).rows[0]):null;
+      const savedJournal=journal?.id?rowFromDb((await tx.execute(txSelect('libroDiario',String(journal.id))).rows[0]):null;
+      return {purchase:savedPurchase,journal:savedJournal,debt:savedDebt,products,movements,recovered:true};
+    }
     if((await tx.execute(txSelect('compras',String(purchase.id)))).rows.length) throw new Error('Esta compra ya existe en SQLite local.');
     const existing=await tx.execute({sql:"SELECT id,data_json FROM compras WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]});
     if(existing.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una compra con la misma factura, proveedor y fecha.');
