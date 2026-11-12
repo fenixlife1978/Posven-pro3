@@ -90,6 +90,10 @@ async function tryLocalServerOperation(operation: string, payload: any): Promise
     (operation === 'deleteCustomerDebt' && !!(payload?.operationId || payload?.debtId)) ||
     (operation === 'deleteCustomerAndDebts' && !!(payload?.operationId || payload?.customerId)) ||
     (operation === 'deletePurchase' && !!(payload?.operationId || (payload?.invoiceNumber && payload?.supplier))) ||
+    // Una apertura es una asignación de estado, no un incremento. Se puede
+    // recuperar con el mismo cuerpo únicamente si incluye la fecha estable
+    // de jornada; el servidor rechaza una segunda apertura distinta.
+    (operation === 'terminalPatch' && !!payload?.terminalId && payload?.patch?.isCashOpen === true && !!payload?.patch?.cashData?.openDate) ||
     // El servidor identifica el Z por terminal + apertura y recupera el
     // reporte ya persistido si el primer COMMIT perdió su respuesta.
     (operation === 'zClosure' && !!payload?.terminalId && !!payload?.report);
@@ -2352,8 +2356,13 @@ export const Store = {
     const prev = Store.get();
     const full = { ...initialState, ...prev, ...patch } as AppState;
 
-    // Echo local inmediato (la UI ya muestra el cambio al instante)
-    applyPatch(patch);
+    // Las terminales y los reportes Z solo se reflejan después de la
+    // confirmación de SQLite. Evita mostrar una apertura/cierre como exitoso
+    // si la respuesta del servidor falla o la conexión se pierde.
+    const optimisticPatch = { ...patch } as Partial<AppState>;
+    delete optimisticPatch.terminales;
+    delete optimisticPatch.reportesZ;
+    applyPatch(optimisticPatch);
 
     // Cuando SQLite local está activo, las operaciones críticas de terminal/caja no
     // deben pasar por servidor SQLite local. La comparación se hace contra el cache anterior
