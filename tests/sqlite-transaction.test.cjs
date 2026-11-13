@@ -282,7 +282,14 @@ test('un Corte Z inválido revierte todo y permite reintentar sin dejar la caja 
     sql: 'SELECT data_json FROM terminales WHERE id=?',
     args: ['CAJA3'],
   });
-  assert.equal(JSON.parse(savedTerminal.rows[0].data_json).isCashOpen, true);
+  const terminalAfterNegative = JSON.parse(savedTerminal.rows[0].data_json);
+  assert.equal(terminalAfterNegative.isCashOpen, true);
+  assert.equal(terminalAfterNegative.ultimoZ, 0);
+  assert.equal(terminalAfterNegative.cashHistory.length, 0);
+  assert.equal(Number((await sqliteExecute({ sql: 'SELECT COUNT(*) AS total FROM reportes_z' })).rows[0].total), Number(reportsBefore.rows[0].total));
+  assert.equal(Number((await sqliteExecute({
+    sql: "SELECT COUNT(*) AS total FROM operaciones WHERE prefijo='CIERRE-Z'",
+  })).rows[0].total), Number(operationsBefore.rows[0].total));
 
   const successful = await close({ efectivo_usd: 50 });
   assert.equal(successful.report.numeroZ, 1);
