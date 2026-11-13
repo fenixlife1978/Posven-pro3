@@ -224,3 +224,74 @@ after(() => {
   try { database.closeSqliteDatabase(); } catch {}
   try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
 });
+
+
+test('un Corte Z inválido revierte todo y permite reintentar sin dejar la caja cerrada', async () => {
+  await schema.ensureSqliteSchema();
+
+  const openedAt = '2026-11-12T12:00:00.000Z';
+  const saleAt = '2026-11-12T12:30:00.000Z';
+  const terminal = {
+    id: 'CAJA3', nombre: 'Caja 3', prefijoCaja: 'CAJA03',
+    isCashOpen: true, cashData: { openDate: openedAt, openedBy: 'Prueba' },
+    ultimoZ: 0, fechaUltimoZ: '', acumuladoHistorico: 0,
+    fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0, cashHistory: [],
+  };
+  await sqliteExecute({
+    sql: 'INSERT INTO terminales(id,data_json,fecha) VALUES(?,?,?)',
+    args: [terminal.id, JSON.stringify(terminal), openedAt],
+    wantRows: false,
+  });
+  const sale = {
+    id: 'V-CAJA3-000000001', fecha: saleAt, estado: 'completada', terminalId: 'CAJA3',
+    totalUSD: 50, totalBS: 0, descuentoUSD: 0, baseImponibleUSD: 50,
+    ivaUSD: 0, exentoUSD: 0, igtfUSD: 0, metodoPago: 'efectivo_usd',
+    payments: [{ metodo: 'efectivo_usd', montoUSD: 50, montoBS: 0 }], type: 'VENTA',
+  };
+  await sqliteExecute({
+    sql: 'INSERT INTO ventas(id,data_json,fecha) VALUES(?,?,?)',
+    args: [sale.id, JSON.stringify(sale), sale.fecha],
+    wantRows: false,
+  });
+
+  const user = { id: 'admin-regression', rol: 'administrador', nombre: 'Prueba' };
+  const close = (arqueoReal) => posStore.createZClosureTransaction({
+    user,
+    terminalId: 'CAJA3',
+    report: { arqueoReal },
+    terminalPatch: {},
+  });
+  const reportsBefore = await sqliteExecute({ sql: 'SELECT COUNT(*) AS total FROM reportes_z' });
+  const operationsBefore = await sqliteExecute({
+    sql: "SELECT COUNT(*) AS total FROM operaciones WHERE prefijo='CIERRE-Z'",
+  });
+
+  await assert.rejects(close({}), /Falta registrar el conteo real del medio de pago: efectivo_usd/);
+  let savedTerminal = await sqliteExecute({
+    sql: 'SELECT data_json FROM terminales WHERE id=?',
+    args: ['CAJA3'],
+  });
+  assert.equal(JSON.parse(savedTerminal.rows[0].data_json).isCashOpen, true);
+  assert.equal(Number((await sqliteExecute({ sql: 'SELECT COUNT(*) AS total FROM reportes_z' })).rows[0].total), Number(reportsBefore.rows[0].total));
+  assert.equal(Number((await sqliteExecute({
+    sql: "SELECT COUNT(*) AS total FROM operaciones WHERE prefijo='CIERRE-Z'",
+  })).rows[0].total), Number(operationsBefore.rows[0].total));
+
+  await assert.rejects(close({ efectivo_usd: -1 }), /monto inválido o negativo/);
+  savedTerminal = await sqliteExecute({
+    sql: 'SELECT data_json FROM terminales WHERE id=?',
+    args: ['CAJA3'],
+  });
+  assert.equal(JSON.parse(savedTerminal.rows[0].data_json).isCashOpen, true);
+
+  const successful = await close({ efectivo_usd: 50 });
+  assert.equal(successful.report.numeroZ, 1);
+  assert.equal(successful.report.ventaBrutaUSD, 50);
+  assert.equal(successful.terminal.isCashOpen, false);
+  const reportsAfter = await sqliteExecute({ sql: 'SELECT COUNT(*) AS total FROM reportes_z' });
+  const operationsAfter = await sqliteExecute({
+    sql: "SELECT COUNT(*) AS total FROM operaciones WHERE prefijo='CIERRE-Z'",
+  });
+  assert.equal(Number(reportsAfter.rows[0].total), Number(reportsBefore.rows[0].total) + 1);
+  assert.equal(Number(operationsAfter.rows[0].total), Number(operationsBefore.rows[0].total) + 1);
+});
