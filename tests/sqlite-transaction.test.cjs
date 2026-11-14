@@ -409,3 +409,62 @@ test('un Corte Z inválido revierte todo y permite reintentar sin dejar la caja 
   assert.equal(Number(reportsAfter.rows[0].total), Number(reportsBefore.rows[0].total) + 1);
   assert.equal(Number(operationsAfter.rows[0].total), Number(operationsBefore.rows[0].total) + 1);
 });
+
+
+test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-14T12:00:00.000Z';
+  const terminals = [
+    { id: 'READ-CAJA-A', usuarioId: 'read-cashier-a', nombre: 'Caja A' },
+    { id: 'READ-CAJA-B', usuarioId: 'read-cashier-b', nombre: 'Caja B' },
+  ];
+  for (const terminal of terminals) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO terminales(id,data_json,fecha) VALUES(?,?,?)',
+      args: [terminal.id, JSON.stringify(terminal), at],
+      wantRows: false,
+    });
+  }
+  const sales = [
+    { id: 'READ-SALE-A', fecha: at, terminalId: 'READ-CAJA-A', estado: 'completada', totalUSD: 12 },
+    { id: 'READ-SALE-B', fecha: at, terminalId: 'READ-CAJA-B', estado: 'completada', totalUSD: 99 },
+  ];
+  for (const sale of sales) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO ventas(id,data_json,fecha) VALUES(?,?,?)',
+      args: [sale.id, JSON.stringify(sale), at],
+      wantRows: false,
+    });
+  }
+  const refunds = [
+    { id: 'READ-RETURN-A', fecha: at, ventaId: 'READ-SALE-A', totalUSD: 2 },
+    { id: 'READ-RETURN-B', fecha: at, ventaId: 'READ-SALE-B', totalUSD: 8 },
+  ];
+  for (const refund of refunds) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO devoluciones(id,data_json,fecha) VALUES(?,?,?)',
+      args: [refund.id, JSON.stringify(refund), at],
+      wantRows: false,
+    });
+  }
+
+  const cashier = { id: 'read-cashier-a', rol: 'cajero' };
+  assert.deepEqual(
+    (await posStore.listRecords('ventas', { limit: 100 }, cashier)).map(row => row.id),
+    ['READ-SALE-A'],
+  );
+  assert.equal(await posStore.getRecord('ventas', 'READ-SALE-B', cashier), null);
+  assert.equal(await posStore.countRecords('ventas', cashier), 1);
+  assert.deepEqual(
+    (await posStore.listRecords('devoluciones', { limit: 100 }, cashier)).map(row => row.id),
+    ['READ-RETURN-A'],
+  );
+  assert.equal(await posStore.countRecords('devoluciones', cashier), 1);
+  assert.deepEqual(
+    (await posStore.listRecords('terminales', { limit: 100 }, cashier)).map(row => row.id),
+    ['READ-CAJA-A'],
+  );
+  assert.equal(await posStore.countRecords('cxp', cashier), 0);
+  assert.equal(await posStore.getRecord('cxp', 'NO-EXISTE', cashier), null);
+  assert.equal(await posStore.countRecords('ventas', { id: 'read-admin', rol: 'administrador' }), 2);
+});
