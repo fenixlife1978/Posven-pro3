@@ -75,9 +75,9 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
   }, [data.cliente, data.customer, data.customerName]);
 
   const getReportTitle = () => {
-    if (type === 'REPORT_Z') return '*** REPORTE Z ***';
+    if (type === 'REPORT_Z') return '*** CONSOLIDADO DE VENTAS ***';
     if (type === 'REPORT_X') return '*** ARQUEO DE CAJA ***';
-    return data.type || 'RECIBO DE VENTA';
+    return '*** TICKET DE VENTA ***';
   };
 
   const getReportSubtitle = () => {
@@ -455,7 +455,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className={type === 'REPORT_X' ? "w-[98vw] max-w-[1500px] p-0 bg-transparent border-none overflow-hidden shadow-none" : "sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none"}>
-        <DialogHeader className="sr-only"><DialogTitle>{type === 'REPORT_X' ? 'Arqueo de Caja' : 'Impresión Térmica'}</DialogTitle></DialogHeader>
+        <DialogHeader className="sr-only"><DialogTitle>{type === 'REPORT_X' ? 'Arqueo de Caja' : type === 'REPORT_Z' ? 'Consolidado de Ventas' : 'Ticket de Venta'}</DialogTitle></DialogHeader>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200 h-[96vh] max-h-[96vh] w-full">
           <div className="bg-black p-4 flex justify-between items-center shrink-0">
@@ -493,7 +493,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               <table className="text-[11px] font-bold">
                 <tbody>
                   <tr><td>FECHA: {transactionDate.split(',')[0]}</td><td className="text-right">HORA: {transactionDate.split(',')[1]?.trim()}</td></tr>
-                  <tr><td>Nº {isReport ? (type === 'REPORT_Z' ? 'Z' : 'X') : 'RECIBO'}: {receiptNumber}</td><td className="text-right">CAJA: {terminalId}</td></tr>
+                  <tr><td>Nº {isReport ? (type === 'REPORT_Z' ? 'CONSOLIDADO' : 'X') : 'TICKET'}: {receiptNumber}</td><td className="text-right">CAJA: {terminalId}</td></tr>
                   <tr><td colSpan={2}>CAJERO: {cajeroNombre?.toUpperCase()}</td></tr>
                   {!isReport && <tr><td colSpan={2}>CLIENTE: {customerName}</td></tr>}
                 </tbody>
@@ -758,6 +758,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                      );
                    })()}
                    <div className="text-center mt-4 bold">¡GRACIAS POR SU COMPRA!</div>
+                    <div className="text-center font-bold text-[10px] mt-2">-No es factura Fiscal-</div>
                 </div>
               )}
 
