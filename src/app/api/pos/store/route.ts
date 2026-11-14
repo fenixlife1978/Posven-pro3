@@ -58,15 +58,23 @@ async function requireUser(request: Request) {
 export async function GET(request: Request) {
   try {
     assertSQLiteReady();
-    await requireUser(request);
+    const user = await requireUser(request);
     const url = new URL(request.url);
     const special = url.searchParams.get('special');
-    if (special === 'config') return NextResponse.json({ ok: true, config: await getAppConfig() });
+    if (special === 'config') {
+      const config = await getAppConfig();
+      // Los cajeros solo necesitan datos operativos públicos; nunca se envía
+      // el PIN de devoluciones ni parámetros administrativos del negocio.
+      const safeConfig = user.rol === 'administrador'
+        ? config
+        : { tasa: config?.tasa, empresa: config?.empresa };
+      return NextResponse.json({ ok: true, config: safeConfig });
+    }
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     const t = table(url.searchParams.get('table'));
-    if (special === 'count') return NextResponse.json({ ok: true, total: await countRecords(t) });
+    if (special === 'count') return NextResponse.json({ ok: true, total: await countRecords(t, user) });
     const id = url.searchParams.get('id');
-    if (id) return NextResponse.json({ ok: true, record: await getRecord(t, id) });
+    if (id) return NextResponse.json({ ok: true, record: await getRecord(t, id, user) });
     const records = await listRecords(t, {
       limit: Number(url.searchParams.get('limit') || 500),
       offset: Number(url.searchParams.get('offset') || 0),
@@ -75,7 +83,7 @@ export async function GET(request: Request) {
       fechaDesde: url.searchParams.get('fechaDesde') || undefined,
       fechaHasta: url.searchParams.get('fechaHasta') || undefined,
       productoId: url.searchParams.get('productoId') || undefined,
-    });
+    }, user);
     return NextResponse.json({ ok: true, records });
   } catch (error: any) {
     const message = String(error?.message || error);
