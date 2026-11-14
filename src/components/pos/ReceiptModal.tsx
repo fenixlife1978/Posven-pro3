@@ -75,9 +75,9 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
   }, [data.cliente, data.customer, data.customerName]);
 
   const getReportTitle = () => {
-    if (type === 'REPORT_Z') return '*** REPORTE Z ***';
+    if (type === 'REPORT_Z') return '*** CONSOLIDADO DE VENTAS ***';
     if (type === 'REPORT_X') return '*** ARQUEO DE CAJA ***';
-    return data.type || 'RECIBO DE VENTA';
+    return '*** TICKET DE VENTA ***';
   };
 
   const getReportSubtitle = () => {
@@ -455,12 +455,12 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className={type === 'REPORT_X' ? "w-[98vw] max-w-[1500px] p-0 bg-transparent border-none overflow-hidden shadow-none" : "sm:max-w-[440px] p-0 bg-transparent border-none overflow-hidden shadow-none"}>
-        <DialogHeader className="sr-only"><DialogTitle>{type === 'REPORT_X' ? 'Arqueo de Caja' : 'Impresión Térmica'}</DialogTitle></DialogHeader>
+        <DialogHeader className="sr-only"><DialogTitle>{type === 'REPORT_X' ? 'Arqueo de Caja' : type === 'REPORT_Z' ? 'Consolidado de Ventas' : 'Ticket de Venta'}</DialogTitle></DialogHeader>
 
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200 h-[96vh] max-h-[96vh] w-full">
           <div className="bg-black p-4 flex justify-between items-center shrink-0">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : 'VISTA PREVIA (80 MM)'}
+              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : type === 'REPORT_Z' ? 'VISTA PREVIA · CONSOLIDADO DE VENTAS' : 'VISTA PREVIA · TICKET DE VENTA'}
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
@@ -493,7 +493,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
               <table className="text-[11px] font-bold">
                 <tbody>
                   <tr><td>FECHA: {transactionDate.split(',')[0]}</td><td className="text-right">HORA: {transactionDate.split(',')[1]?.trim()}</td></tr>
-                  <tr><td>Nº {isReport ? (type === 'REPORT_Z' ? 'Z' : 'X') : 'RECIBO'}: {receiptNumber}</td><td className="text-right">CAJA: {terminalId}</td></tr>
+                  <tr><td>Nº {isReport ? (type === 'REPORT_Z' ? 'CONSOLIDADO' : 'X') : 'TICKET'}: {receiptNumber}</td><td className="text-right">CAJA: {terminalId}</td></tr>
                   <tr><td colSpan={2}>CAJERO: {cajeroNombre?.toUpperCase()}</td></tr>
                   {!isReport && <tr><td colSpan={2}>CLIENTE: {customerName}</td></tr>}
                 </tbody>
@@ -542,9 +542,9 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                        <div className="text-center font-bold">CONTROL DE DOCUMENTOS</div>
                        <div className="separator-dashed"></div>
                        <table><tbody>
-                         <tr><td>DESDE FACTURA:</td><td className="text-right">{data.desdeFactura}</td></tr>
-                         <tr><td>HASTA FACTURA:</td><td className="text-right">{data.hastaFactura}</td></tr>
-                         <tr><td>TOTAL FACTURAS:</td><td className="text-right">{data.stats?.facturas}</td></tr>
+                         <tr><td>DESDE TICKET:</td><td className="text-right">{data.desdeFactura}</td></tr>
+                         <tr><td>HASTA TICKET:</td><td className="text-right">{data.hastaFactura}</td></tr>
+                         <tr><td>TOTAL TICKETS:</td><td className="text-right">{data.stats?.facturas}</td></tr>
                          <tr><td colSpan={2} className="spacer"></td></tr>
                          <tr><td>DESDE N. CRÉDITO:</td><td className="text-right">{data.desdeNC}</td></tr>
                          <tr><td>HASTA N. CRÉDITO:</td><td className="text-right">{data.hastaNC}</td></tr>
@@ -758,6 +758,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                      );
                    })()}
                    <div className="text-center mt-4 bold">¡GRACIAS POR SU COMPRA!</div>
+                    <div className="text-center font-bold text-[10px] mt-2">-No es factura Fiscal-</div>
                 </div>
               )}
 

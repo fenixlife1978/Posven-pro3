@@ -155,14 +155,14 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
         .thermal-report { width: 80mm; padding: 4mm; margin: 0; box-shadow: none; }
       }
     `;
-    const fullHtml = '<!doctype html><html><head><meta charset="UTF-8"><title>Reporte Z</title><style>' + css + '</style></head><body>' + html + '</body></html>';
+    const fullHtml = '<!doctype html><html><head><meta charset="UTF-8"><title>Consolidado de Ventas</title><style>' + css + '</style></head><body>' + html + '</body></html>';
 
     if (window.electronAPI?.printTicket) {
       try {
         await window.electronAPI.printTicket([{ type: 'html', value: fullHtml }]);
         return;
       } catch (error) {
-        console.error('Error en impresión térmica nativa del Reporte Z:', error);
+        console.error('Error en impresión térmica nativa del Consolidado de Ventas:', error);
       }
     }
 
@@ -182,7 +182,7 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
       <div className="w-full max-w-5xl max-h-[95vh] bg-slate-100 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         <div className="px-5 py-3 bg-white border-b flex items-center justify-between gap-3 shrink-0">
           <div>
-            <h3 className="font-black text-slate-900">Vista previa — Reporte Z</h3>
+            <h3 className="font-black text-slate-900">Vista previa — Consolidado de Ventas</h3>
             <p className="text-xs text-slate-500">Formato real de impresión térmica 80 mm</p>
           </div>
           <div className="flex gap-2">
@@ -193,7 +193,7 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
 
         <div className="flex-1 overflow-auto p-5">
           <div ref={printRef} className="thermal-report mx-auto bg-white text-black font-mono text-[10px] leading-[1.25] p-[4mm] shadow-xl" style={{ width: '80mm', minHeight: '80mm', padding: '4mm', boxSizing: 'border-box', fontSize: '10px', lineHeight: 1.25 }}>
-            <div className="text-center font-black text-[13px] tracking-tight">REPORTE Z</div>
+            <div className="text-center font-black text-[13px] tracking-tight">CONSOLIDADO DE VENTAS</div>
             <div className="text-center font-bold mt-0.5">CONTROL DE CAJA</div>
             <div className="border-t border-dashed border-black my-2" />
 
@@ -259,7 +259,7 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
             <div className="flex justify-between"><span>Diferencia USD</span><b>{money('USD', Number(data?.differenceUSD || 0))}</b></div>
 
             <div className="border-t border-dashed border-black my-2" />
-            <div className="text-center font-black">FIN DEL REPORTE Z</div>
+            <div className="text-center font-black">FIN DEL CONSOLIDADO DE VENTAS</div>
             <div className="text-center text-[8px] mt-1">Documento operativo de control de caja</div>
           </div>
         </div>

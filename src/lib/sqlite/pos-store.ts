@@ -2338,20 +2338,47 @@ export async function processReturnOrCancellationTransaction(params:any){
       requestedMovementsByProduct.set(pid,arr);
     }
 
+    // La venta de kits tipo stock_componentes descuenta sus componentes,
+    // no el artículo padre. La devolución/anulación debe invertir exactamente
+    // ese mismo efecto físico para que el Kardex no reponga un stock ficticio.
+    const reintegrationsByProduct=new Map<string,{cantidad:number;movement:any}>();
     for(const item of effectiveItems){
-      const pid=String(item.productoId);
-      const requestedMovement=requestedMovementsByProduct.get(pid)?.[0];
-      const shouldReintegrate = operationType==='ANULACION'
-        ? true
-        : String(item.estadoProducto||requestedMovement?.estadoProducto||'REINTEGRADO_STOCK')==='REINTEGRADO_STOCK';
+      const parentId=String(item.productoId||'');
+      if(!parentId) throw new Error('Un producto de la devolución no tiene identificador.');
+      const parentProduct=rowFromDb((await tx.execute(txSelect('productos',parentId))).rows[0]);
+      if(!parentProduct) throw new Error('Un producto de la operación ya no existe en SQLite local.');
 
+      const targets=parentProduct.isKit&&parentProduct.kitType==='stock_componentes'&&Array.isArray(parentProduct.kitItems)
+        ? parentProduct.kitItems.map((kitItem:any)=>({
+            productoId:String(kitItem?.productoId||''),
+            cantidad:(Number(item.cantidad)||0)*(Number(kitItem?.cantidad)||0),
+          }))
+        : [{productoId:parentId,cantidad:Number(item.cantidad)||0}];
+
+      const requestedParentMovement=requestedMovementsByProduct.get(parentId)?.[0];
+      const shouldReintegrate=operationType==='ANULACION'
+        ? true
+        : String(item.estadoProducto||requestedParentMovement?.estadoProducto||'REINTEGRADO_STOCK')==='REINTEGRADO_STOCK';
       if(!shouldReintegrate) continue;
+
+      for(const target of targets){
+        if(!target.productoId||!(target.cantidad>0)) continue;
+        const requestedMovement=requestedMovementsByProduct.get(target.productoId)?.[0];
+        const current=reintegrationsByProduct.get(target.productoId)||{cantidad:0,movement:requestedMovement||null};
+        current.cantidad+=target.cantidad;
+        if(!current.movement&&requestedMovement) current.movement=requestedMovement;
+        reintegrationsByProduct.set(target.productoId,current);
+      }
+    }
+
+    for(const [pid,reintegration] of reintegrationsByProduct){
+      const requestedMovement=reintegration.movement;
       effectiveMovements.push({
         ...(requestedMovement||{}),
         id:String(requestedMovement?.id||('MOV-'+crypto.randomUUID())),
         productoId:pid,
         tipo:operationType==='ANULACION'?'anulacion':'devolucion',
-        cantidad:Number(item.cantidad)||0,
+        cantidad:reintegration.cantidad,
         fecha:String(operationDoc?.fecha||new Date().toISOString()),
         referencia:operationType==='ANULACION'
           ? 'ANULACIÓN TOTAL FACTURA #'+String(saleId)
