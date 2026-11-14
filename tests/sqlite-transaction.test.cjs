@@ -466,6 +466,17 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
     wantRows: false,
   });
 
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: ['READ-PRODUCT-SHARED', JSON.stringify({ id: 'READ-PRODUCT-SHARED', nombre: 'Producto compartido' }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['READ-CLIENT-SHARED', JSON.stringify({ id: 'READ-CLIENT-SHARED', nombre: 'Cliente compartido' }), at],
+    wantRows: false,
+  });
+
   const cashier = { id: 'read-cashier-a', rol: 'cajero' };
   assert.deepEqual(
     (await posStore.listRecords('ventas', { limit: 100 }, cashier)).map(row => row.id),
@@ -473,6 +484,12 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
   );
   assert.equal(await posStore.getRecord('ventas', 'READ-SALE-B', cashier), null);
   assert.equal(await posStore.countRecords('ventas', cashier), 1);
+  assert.deepEqual(
+    (await posStore.listRecords('ventas', { limit: 100, terminalId: 'READ-CAJA-B' }, cashier)).map(row => row.id),
+    ['READ-SALE-A'],
+  );
+  assert.ok(await posStore.getRecord('productos', 'READ-PRODUCT-SHARED', cashier));
+  assert.ok(await posStore.getRecord('clientes', 'READ-CLIENT-SHARED', cashier));
   assert.deepEqual(
     (await posStore.listRecords('devoluciones', { limit: 100 }, cashier)).map(row => row.id),
     ['READ-RETURN-A'],
