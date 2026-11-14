@@ -191,7 +191,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
           <div className="card bg-white border-line shadow-md overflow-hidden rounded-xl">
             <div className="card-head px-6 py-4 bg-ink border-b border-white/10 flex justify-between items-center">
               <h3 className="text-white font-black text-xs uppercase italic tracking-tighter flex items-center gap-2">
-                <FileText className="w-5 h-5 text-brand-gold" /> LISTADO DETALLADO DE FACTURACIÓN
+                <FileText className="w-5 h-5 text-brand-gold" /> LISTADO DETALLADO DE VENTAS
               </h3>
             </div>
             <div className="table-wrap">
@@ -274,7 +274,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
                   <th className="text-ink font-black text-[10px] uppercase py-4">Caja</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4">Fecha</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4 text-right">Ventas netas</th>
-                  <th className="text-ink font-black text-[10px] uppercase py-4 text-right">Facturas</th>
+                  <th className="text-ink font-black text-[10px] uppercase py-4 text-right">Tickets</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4 px-6 text-right">Anulaciones</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4 text-center">Acción</th>
                 </tr></thead>
