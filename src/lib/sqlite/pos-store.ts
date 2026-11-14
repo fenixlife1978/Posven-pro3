@@ -356,7 +356,8 @@ async function readScope(table: SQLiteStoreTable, user?: ReadScopeUser) {
     args: [String(user.id)],
   });
   const terminalIds = assigned.rows.map((row: any) => String(row.id)).filter(Boolean);
-  if (table === 'productos' || table === 'clientes') return { clause: '', args: [] as any[] };
+  // El Kardex es un historial compartido de inventario; no contiene el libro de caja.
+  if (table === 'productos' || table === 'clientes' || table === 'movimientos') return { clause: '', args: [] as any[] };
   if (table === 'terminales') {
     return {
       clause: "json_extract(r.data_json,'$.usuarioId')=?",
