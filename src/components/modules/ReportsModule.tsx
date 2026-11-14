@@ -107,7 +107,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
         </button>
         {isAdmin && (
           <button onClick={() => setTab('z')} className={`px-6 py-3 text-sm font-black uppercase tracking-widest border-b-2 transition-all ${tab === 'z' ? 'border-brand-gold text-brand-gold' : 'border-transparent text-ink hover:text-brand-gold'}`}>
-            <div className="flex items-center gap-2"><Monitor className="w-4 h-4"/> Historial de Cortes Z</div>
+            <div className="flex items-center gap-2"><Monitor className="w-4 h-4"/> Consolidado de Ventas</div>
           </button>
         )}
       </div>
@@ -260,17 +260,17 @@ export default function ReportsModule({ state }: { state: AppState }) {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-            <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-brand-gold"><div className="text-ink text-[10px] font-black uppercase mb-2">Cortes Z encontrados</div><div className="text-4xl font-black text-brand-gold-deep">{reportesZFiltrados.length}</div></div>
+            <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-brand-gold"><div className="text-ink text-[10px] font-black uppercase mb-2">Consolidados de Ventas</div><div className="text-4xl font-black text-brand-gold-deep">{reportesZFiltrados.length}</div></div>
             <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-status-info"><div className="text-ink text-[10px] font-black uppercase mb-2">Ventas netas acumuladas</div><div className="text-3xl font-black text-ink">{Utils.fmtUSD(reportesZFiltrados.reduce((s,z) => s + (z.ventaNetaUSD || 0), 0))}</div></div>
             <div className="kpi bg-white border-line p-7 rounded-2xl shadow-sm border-l-[6px] border-l-status-success"><div className="text-ink text-[10px] font-black uppercase mb-2">Cajas representadas</div><div className="text-4xl font-black text-ink">{new Set(reportesZFiltrados.map(z => z.terminalId).filter(Boolean)).size}</div></div>
           </div>
 
           <div className="card bg-white border-line shadow-md overflow-hidden rounded-xl">
-            <div className="card-head px-6 py-4 bg-ink border-b border-white/10"><h3 className="text-white font-black text-xs uppercase italic tracking-tighter">HISTORIAL SEPARADO DE CORTES Z</h3></div>
+            <div className="card-head px-6 py-4 bg-ink border-b border-white/10"><h3 className="text-white font-black text-xs uppercase italic tracking-tighter">HISTORIAL DE CONSOLIDADOS DE VENTAS</h3></div>
             <div className="table-wrap">
               <table className="w-full">
                 <thead><tr className="bg-surface-soft">
-                  <th className="text-ink font-black text-[10px] uppercase py-4 px-6">Corte Z</th>
+                  <th className="text-ink font-black text-[10px] uppercase py-4 px-6">Consolidado de Ventas</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4">Caja</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4">Fecha</th>
                   <th className="text-ink font-black text-[10px] uppercase py-4 text-right">Ventas netas</th>
@@ -292,14 +292,14 @@ export default function ReportsModule({ state }: { state: AppState }) {
                           type="button"
                           onClick={() => setReprintZ({ ...z, empresa: state.empresa })}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wide text-ink hover:bg-surface-soft transition-colors"
-                          title="Reimprimir Corte Z en 80 mm"
+                          title="Reimprimir Consolidado de Ventas en 80 mm"
                         >
-                          <Printer className="w-3.5 h-3.5" /> Reimprimir Corte Z
+                          <Printer className="w-3.5 h-3.5" /> Reimprimir Consolidado
                         </button>
                       </td>
                     </tr>
                   ))}
-                  {reportesZFiltrados.length === 0 && <tr><td colSpan={7} className="text-center py-24 text-ink/20 font-black uppercase italic tracking-widest">No hay cortes Z para los filtros seleccionados</td></tr>}
+                  {reportesZFiltrados.length === 0 && <tr><td colSpan={7} className="text-center py-24 text-ink/20 font-black uppercase italic tracking-widest">No hay consolidados de ventas para los filtros seleccionados</td></tr>}
                 </tbody>
               </table>
             </div>
