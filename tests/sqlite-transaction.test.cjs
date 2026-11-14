@@ -220,6 +220,113 @@ test('dos cajas mantienen ventas y Corte Z independientes; reintentar el mismo c
   assert.equal(new Set(operations.rows.map(row => row.operation_id)).size, 2);
 });
 
+test('devolver y anular un kit repone sus componentes, no el artículo padre', async () => {
+  await schema.ensureSqliteSchema();
+
+  const openedAt = '2026-11-14T09:00:00.000Z';
+  const saleAt = '2026-11-14T10:00:00.000Z';
+  const returnAt = '2026-11-14T10:30:00.000Z';
+  const cancelAt = '2026-11-14T11:00:00.000Z';
+  const terminal = {
+    id: 'KITBOX', nombre: 'Caja Kits', prefijoCaja: 'KITBOX',
+    usuarioId: 'admin-kit-regression', isCashOpen: true,
+    cashData: { openDate: openedAt, openedBy: 'Prueba' },
+    proximoRecibo: 1, proximaDevolucion: 1, proximaAnulacion: 1,
+    ultimoZ: 0, fechaUltimoZ: '', acumuladoHistorico: 0,
+    fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0, cashHistory: [],
+  };
+  await sqliteExecute({
+    sql: 'INSERT INTO terminales(id,data_json,fecha) VALUES(?,?,?)',
+    args: [terminal.id, JSON.stringify(terminal), openedAt],
+    wantRows: false,
+  });
+
+  const products = [
+    {
+      id: 'KIT-PACK', nombre: 'Kit de prueba', stock: 5,
+      isKit: true, kitType: 'stock_componentes',
+      kitItems: [{ productoId: 'KIT-COMP', cantidad: 2 }],
+      costoUSD: 3,
+    },
+    { id: 'KIT-COMP', nombre: 'Componente', stock: 10, costoUSD: 1 },
+  ];
+  for (const product of products) {
+    await sqliteExecute({
+      sql: 'INSERT INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
+      args: [product.id, JSON.stringify(product)],
+      wantRows: false,
+    });
+  }
+
+  const user = { id: 'admin-kit-regression', rol: 'administrador', nombre: 'Prueba' };
+  const saleResult = await posStore.createSaleTransaction({
+    operationId: 'KIT-SALE-REGRESSION',
+    cart: [{
+      productoId: 'KIT-PACK', nombre: 'Kit de prueba', cantidad: 2,
+      precioUnitUSD: 10, subtotalUSD: 20,
+    }],
+    payments: [{ metodo: 'efectivo_usd', montoUSD: 20, montoBS: 0 }],
+    clientName: 'CONTADO',
+    terminalId: 'KITBOX',
+    now: saleAt,
+    tasa: 1,
+    user,
+  });
+
+  assert.equal(saleResult.sale.id, 'KITBOX-V-000000001');
+  let parent = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-PACK'] });
+  let component = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-COMP'] });
+  assert.equal(JSON.parse(parent.rows[0].data_json).stock, 5);
+  assert.equal(JSON.parse(component.rows[0].data_json).stock, 6);
+
+  const returnedItem = {
+    productoId: 'KIT-PACK', nombre: 'Kit de prueba', cantidad: 1,
+    precioUnitUSD: 10, subtotalUSD: 10, estadoProducto: 'REINTEGRADO_STOCK',
+  };
+  await posStore.processReturnOrCancellationTransaction({
+    operationId: 'KIT-RETURN-REGRESSION',
+    operationType: 'DEVOLUCION',
+    saleId: saleResult.sale.id,
+    operationDoc: { id: 'DEV-TEMP', fecha: returnAt, items: [returnedItem] },
+    movements: [],
+    refundItems: [returnedItem],
+    terminalId: 'KITBOX',
+    user,
+  });
+
+  parent = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-PACK'] });
+  component = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-COMP'] });
+  assert.equal(JSON.parse(parent.rows[0].data_json).stock, 5);
+  assert.equal(JSON.parse(component.rows[0].data_json).stock, 8);
+
+  await posStore.processReturnOrCancellationTransaction({
+    operationId: 'KIT-CANCEL-REGRESSION',
+    operationType: 'ANULACION',
+    saleId: saleResult.sale.id,
+    operationDoc: { id: 'ANU-TEMP', fecha: cancelAt, items: [] },
+    movements: [],
+    refundItems: [],
+    terminalId: 'KITBOX',
+    user,
+  });
+
+  parent = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-PACK'] });
+  component = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-COMP'] });
+  assert.equal(JSON.parse(parent.rows[0].data_json).stock, 5);
+  assert.equal(JSON.parse(component.rows[0].data_json).stock, 10);
+
+  const saleMovements = await sqliteExecute({
+    sql: "SELECT data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha,id",
+    args: ['KIT-COMP'],
+  });
+  const deltas = saleMovements.rows.map(row => {
+    const movement = JSON.parse(row.data_json);
+    return Number(movement.stockDespues) - Number(movement.stockAntes);
+  });
+  assert.equal(deltas.reduce((sum, delta) => sum + delta, 0), 0);
+  assert.equal(deltas.length, 3);
+});
+
 after(() => {
   try { database.closeSqliteDatabase(); } catch {}
   try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
