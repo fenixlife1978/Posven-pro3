@@ -259,7 +259,7 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
             <div className="flex justify-between"><span>Diferencia USD</span><b>{money('USD', Number(data?.differenceUSD || 0))}</b></div>
 
             <div className="border-t border-dashed border-black my-2" />
-            <div className="text-center font-black">FIN DEL REPORTE Z</div>
+            <div className="text-center font-black">FIN DEL CONSOLIDADO DE VENTAS</div>
             <div className="text-center text-[8px] mt-1">Documento operativo de control de caja</div>
           </div>
         </div>
