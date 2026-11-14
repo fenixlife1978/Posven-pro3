@@ -156,7 +156,7 @@ export function ReportsModule() {
             <TableHeader>
               <TableRow>
                 <TableHead>Fecha</TableHead>
-                <TableHead>N° Factura</TableHead>
+                <TableHead>N° Ticket</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Total BS</TableHead>
                 <TableHead>Cliente</TableHead>
