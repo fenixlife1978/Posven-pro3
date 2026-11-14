@@ -235,7 +235,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
         </div>
       )}
 
-      {/* Historial de Cortes Z por caja */}
+      {/* Historial de Consolidados de Ventas por caja */}
       {isAdmin && tab === 'z' && (
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="card p-5 bg-white border-line flex flex-wrap gap-6 items-end shadow-sm">
