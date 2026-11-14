@@ -138,7 +138,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
       <div className="bg-white w-full max-w-[98vw] max-h-[94vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         <div className="px-5 py-4 bg-ink text-white flex items-center justify-between">
           <div>
-            <h3 className="text-base font-black uppercase italic">Arqueo previo al Corte Z</h3>
+            <h3 className="text-base font-black uppercase italic">Arqueo previo al Consolidado de Ventas</h3>
             <p className="text-[9px] text-white/60 font-bold uppercase mt-1">
               {report.terminalName || "Caja"} · Z-{String(report.numeroZ || 0).padStart(6, "0")}
             </p>
