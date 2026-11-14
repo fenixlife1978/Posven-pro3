@@ -386,8 +386,11 @@ async function readScope(table: SQLiteStoreTable, user?: ReadScopeUser) {
     };
   }
   if (table === 'cxc') {
+    // Las CxC iniciales creadas desde Administración no tienen venta asociada
+    // y pueden cobrarse desde cualquier caja; las originadas por ventas quedan
+    // limitadas a la terminal que emitió la venta.
     return {
-      clause: "EXISTS (SELECT 1 FROM ventas v WHERE v.id=COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) AND json_extract(v.data_json,'$.terminalId') IN (" + placeholders + "))",
+      clause: "(COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) IS NULL OR EXISTS (SELECT 1 FROM ventas v WHERE v.id=COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) AND json_extract(v.data_json,'$.terminalId') IN (" + placeholders + ")))",
       args: ids,
     };
   }
