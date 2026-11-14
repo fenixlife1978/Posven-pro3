@@ -542,9 +542,9 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
                        <div className="text-center font-bold">CONTROL DE DOCUMENTOS</div>
                        <div className="separator-dashed"></div>
                        <table><tbody>
-                         <tr><td>DESDE FACTURA:</td><td className="text-right">{data.desdeFactura}</td></tr>
-                         <tr><td>HASTA FACTURA:</td><td className="text-right">{data.hastaFactura}</td></tr>
-                         <tr><td>TOTAL FACTURAS:</td><td className="text-right">{data.stats?.facturas}</td></tr>
+                         <tr><td>DESDE TICKET:</td><td className="text-right">{data.desdeFactura}</td></tr>
+                         <tr><td>HASTA TICKET:</td><td className="text-right">{data.hastaFactura}</td></tr>
+                         <tr><td>TOTAL TICKETS:</td><td className="text-right">{data.stats?.facturas}</td></tr>
                          <tr><td colSpan={2} className="spacer"></td></tr>
                          <tr><td>DESDE N. CRÉDITO:</td><td className="text-right">{data.desdeNC}</td></tr>
                          <tr><td>HASTA N. CRÉDITO:</td><td className="text-right">{data.hastaNC}</td></tr>
