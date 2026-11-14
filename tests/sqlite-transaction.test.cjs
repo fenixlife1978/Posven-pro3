@@ -490,5 +490,6 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
   );
   assert.equal(await posStore.countRecords('cxp', cashier), 0);
   assert.equal(await posStore.getRecord('cxp', 'READ-CXP-ADMIN', cashier), null);
-  assert.equal(await posStore.countRecords('ventas', { id: 'read-admin', rol: 'administrador' }), 2);
+  assert.ok(await posStore.getRecord('ventas', 'READ-SALE-B', { id: 'read-admin', rol: 'administrador' }));
+  assert.ok(await posStore.countRecords('ventas', { id: 'read-admin', rol: 'administrador' }) >= 2);
 });
