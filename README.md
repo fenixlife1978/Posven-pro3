@@ -39,9 +39,9 @@ Las contraseñas se almacenan con hash scrypt y las sesiones residen en SQLite. 
 En una instalación nueva se crea el usuario semilla:
 - Usuario: `admin`
 - Correo: `admin@posven.local`
-- Contraseña inicial: `admin123`
+- Contraseña: **aleatoria y única para cada instalación**.
 
-Cambia esa contraseña antes de utilizar el sistema con operaciones reales.
+En el primer inicio, POSVEN3 genera la contraseña temporal y la guarda una sola vez en `data/POSVEN3-CLAVE-INICIAL.txt` dentro del directorio de datos de la PC servidor (salvo que el administrador haya configurado explícitamente `POSVEN_SEED_ADMIN_PASSWORD`). Abre ese archivo directamente en el servidor para obtener la clave; no existe una contraseña predeterminada compartida. Inicia sesión, cambia la contraseña inmediatamente y elimina el archivo temporal. No compartas ese archivo ni lo envíes por correo o mensajería.
 
 ## Respaldos y restauración desde POSVEN2
 
