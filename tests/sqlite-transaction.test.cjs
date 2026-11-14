@@ -448,6 +448,24 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
     });
   }
 
+  const debts = [
+    { id: 'READ-CXC-A', ventaId: 'READ-SALE-A', montoUSD: 12, saldoUSD: 12 },
+    { id: 'READ-CXC-B', ventaId: 'READ-SALE-B', montoUSD: 99, saldoUSD: 99 },
+    { id: 'READ-CXC-GLOBAL', cliente: 'Deuda inicial', montoUSD: 5, saldoUSD: 5 },
+  ];
+  for (const debt of debts) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+      args: [debt.id, JSON.stringify(debt), at],
+      wantRows: false,
+    });
+  }
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxp(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['READ-CXP-ADMIN', JSON.stringify({ id: 'READ-CXP-ADMIN', proveedor: 'Proveedor privado', montoUSD: 100 }), at],
+    wantRows: false,
+  });
+
   const cashier = { id: 'read-cashier-a', rol: 'cajero' };
   assert.deepEqual(
     (await posStore.listRecords('ventas', { limit: 100 }, cashier)).map(row => row.id),
@@ -461,10 +479,16 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
   );
   assert.equal(await posStore.countRecords('devoluciones', cashier), 1);
   assert.deepEqual(
+    (await posStore.listRecords('cxc', { limit: 100 }, cashier)).map(row => row.id).sort(),
+    ['READ-CXC-A', 'READ-CXC-GLOBAL'],
+  );
+  assert.equal(await posStore.getRecord('cxc', 'READ-CXC-B', cashier), null);
+  assert.equal(await posStore.countRecords('cxc', cashier), 2);
+  assert.deepEqual(
     (await posStore.listRecords('terminales', { limit: 100 }, cashier)).map(row => row.id),
     ['READ-CAJA-A'],
   );
   assert.equal(await posStore.countRecords('cxp', cashier), 0);
-  assert.equal(await posStore.getRecord('cxp', 'NO-EXISTE', cashier), null);
+  assert.equal(await posStore.getRecord('cxp', 'READ-CXP-ADMIN', cashier), null);
   assert.equal(await posStore.countRecords('ventas', { id: 'read-admin', rol: 'administrador' }), 2);
 });
