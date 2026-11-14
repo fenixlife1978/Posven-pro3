@@ -460,7 +460,7 @@ export function ReceiptModal({ isOpen, onClose, saleData, reportData, type = 'SA
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200 h-[96vh] max-h-[96vh] w-full">
           <div className="bg-black p-4 flex justify-between items-center shrink-0">
             <h3 className="text-white font-black text-xs flex items-center gap-2 tracking-widest uppercase">
-              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : 'VISTA PREVIA (80 MM)'}
+              <Printer size={16} className="text-brand-gold" /> {type === 'REPORT_X' ? 'VISTA PREVIA · ARQUEO DE CAJA' : type === 'REPORT_Z' ? 'VISTA PREVIA · CONSOLIDADO DE VENTAS' : 'VISTA PREVIA · TICKET DE VENTA'}
             </h3>
             <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20} /></button>
           </div>
