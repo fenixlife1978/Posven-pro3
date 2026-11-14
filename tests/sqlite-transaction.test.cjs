@@ -436,6 +436,12 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
       wantRows: false,
     });
   }
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['READ-STOCK-MOVEMENT-B', JSON.stringify({ id: 'READ-STOCK-MOVEMENT-B', productoId: 'READ-PRODUCT-SHARED', tipo: 'venta', terminalId: 'READ-CAJA-B', cantidad: 1 }), at],
+    wantRows: false,
+  });
+
   const refunds = [
     { id: 'READ-RETURN-A', fecha: at, ventaId: 'READ-SALE-A', totalUSD: 2 },
     { id: 'READ-RETURN-B', fecha: at, ventaId: 'READ-SALE-B', totalUSD: 8 },
@@ -490,6 +496,7 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
   );
   assert.ok(await posStore.getRecord('productos', 'READ-PRODUCT-SHARED', cashier));
   assert.ok(await posStore.getRecord('clientes', 'READ-CLIENT-SHARED', cashier));
+  assert.ok(await posStore.getRecord('movimientos', 'READ-STOCK-MOVEMENT-B', cashier));
   assert.deepEqual(
     (await posStore.listRecords('devoluciones', { limit: 100 }, cashier)).map(row => row.id),
     ['READ-RETURN-A'],
