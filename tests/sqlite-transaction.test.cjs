@@ -560,7 +560,7 @@ test('cualquier cajero puede consultar y cobrar CxC originadas por otra terminal
       metodo: 'efectivo_bs', terminalId: terminal.id,
     },
     sale: {
-      id: 'SCOPE-RECEIPT-FOREIGN', fecha: at, cliente: 'Cliente Caja B',
+      id: 'SCOPE-RECEIPT-FOREIGN', fecha: at, cliente: 'Cliente Caja B', terminalId: terminal.id,
       items: [{ productoId: 'ABONO', nombre: 'COBRO DE DEUDA', cantidad: 1, subtotalUSD: 1 }],
       totalUSD: 1, totalBS: 874.5, metodoPago: 'efectivo_bs',
       payments: [{ metodo: 'efectivo_bs', montoUSD: 1, montoBS: 874.5 }],
