@@ -387,13 +387,9 @@ async function readScope(table: SQLiteStoreTable, user?: ReadScopeUser) {
     };
   }
   if (table === 'cxc') {
-    // Las CxC iniciales creadas desde Administración no tienen venta asociada
-    // y pueden cobrarse desde cualquier caja; las originadas por ventas quedan
-    // limitadas a la terminal que emitió la venta.
-    return {
-      clause: "(COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) IS NULL OR EXISTS (SELECT 1 FROM ventas v WHERE v.id=COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) AND json_extract(v.data_json,'$.terminalId') IN (" + placeholders + ")))",
-      args: ids,
-    };
+    // La cartera CxC es compartida por todas las cajas: cualquier cajero
+    // puede consultar créditos de cualquier cliente, sin importar su origen.
+    return { clause: '', args: [] as any[] };
   }
   return { clause: '1=0', args: [] as any[] };
 }
@@ -894,6 +890,11 @@ export async function patchAppConfig(patch: Record<string, any>): Promise<any> {
   const next = { ...current, ...clean(patch) };
   await sqliteExecute({ sql: 'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, updated_at=CURRENT_TIMESTAMP', args: ['general', JSON.stringify(next)], wantRows: false });
   return next;
+}
+
+export function configVisibleToRole(config: any, role: string) {
+  if (role === 'administrador') return config;
+  return { tasa: config?.tasa, empresa: config?.empresa };
 }
 
 export async function getCatalog(name: string): Promise<any[]> {
@@ -1967,6 +1968,10 @@ export async function applyDebtPaymentTransaction(params: {
     }
     const debt = rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
     if (!debt) throw new Error('La deuda ya no existe.');
+
+    // La cartera CxC es compartida: cualquier caja puede registrar pagos
+    // de cualquier cliente. La caja que recibe el pago sigue siendo la que
+    // registra el movimiento y conserva su propio correlativo/caja.
 
     // Las deudas iniciales creadas desde Administración no tienen venta/factura
     // asociada. El cobro individual del POS debe tratarlas como una CxC válida

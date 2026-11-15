@@ -504,10 +504,10 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
   assert.equal(await posStore.countRecords('devoluciones', cashier), 1);
   assert.deepEqual(
     (await posStore.listRecords('cxc', { limit: 100 }, cashier)).map(row => row.id).sort(),
-    ['READ-CXC-A', 'READ-CXC-GLOBAL'],
+    ['READ-CXC-A', 'READ-CXC-B', 'READ-CXC-GLOBAL'],
   );
-  assert.equal(await posStore.getRecord('cxc', 'READ-CXC-B', cashier), null);
-  assert.equal(await posStore.countRecords('cxc', cashier), 2);
+  assert.ok(await posStore.getRecord('cxc', 'READ-CXC-B', cashier));
+  assert.equal(await posStore.countRecords('cxc', cashier), 3);
   assert.deepEqual(
     (await posStore.listRecords('terminales', { limit: 100 }, cashier)).map(row => row.id),
     ['READ-CAJA-A'],
@@ -516,4 +516,72 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
   assert.equal(await posStore.getRecord('cxp', 'READ-CXP-ADMIN', cashier), null);
   assert.ok(await posStore.getRecord('ventas', 'READ-SALE-B', { id: 'read-admin', rol: 'administrador' }));
   assert.ok(await posStore.countRecords('ventas', { id: 'read-admin', rol: 'administrador' }) >= 2);
+});
+
+
+test('cualquier cajero puede consultar y cobrar CxC originadas por otra terminal', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-15T01:00:00.000Z';
+  const cashier = { id: 'scope-cashier-a', rol: 'cajero', nombre: 'Cajero A' };
+  const terminal = {
+    id: 'SCOPE-CAJA-A', usuarioId: cashier.id, nombre: 'Caja A', prefijoCaja: 'SCOPEA',
+    isCashOpen: true, cashData: { openDate: at }, proximoCobroDeuda: 1,
+  };
+  const foreignSale = {
+    id: 'SCOPE-SALE-B', fecha: at, terminalId: 'SCOPE-CAJA-B', estado: 'completada',
+    items: [], totalUSD: 20,
+  };
+  const foreignDebt = {
+    id: 'SCOPE-CXC-B', fecha: at, ventaId: foreignSale.id,
+    cliente: 'Cliente Caja B', montoUSD: 20, abonadoUSD: 0, saldoUSD: 20,
+    historialPagos: [],
+  };
+  const globalDebt = {
+    id: 'SCOPE-CXC-GLOBAL', fecha: at, cliente: 'Deuda inicial',
+    montoUSD: 10, abonadoUSD: 0, saldoUSD: 10, historialPagos: [],
+  };
+  for (const [table, row] of [
+    ['terminales', terminal], ['ventas', foreignSale], ['cxc', foreignDebt], ['cxc', globalDebt],
+  ]) {
+    await sqliteExecute({
+      sql: `INSERT OR REPLACE INTO ${table}(id,data_json,fecha) VALUES(?,?,?)`,
+      args: [row.id, JSON.stringify(row), at], wantRows: false,
+    });
+  }
+
+  assert.ok(await posStore.getRecord('cxc', foreignDebt.id, cashier));
+  const foreignResult = await posStore.applyDebtPaymentTransaction({
+    operationId: 'SCOPE-COLLECT-FOREIGN-CXC', collection: 'cxc', debtId: foreignDebt.id,
+    amountUSD: 1, amountBS: 1, payment: { id: 'SCOPE-PAY-FOREIGN', montoUSD: 1, montoBS: 1, fecha: at, metodo: 'efectivo' },
+    terminalId: terminal.id, user: cashier,
+  });
+  assert.equal(foreignResult.saldoUSD, 19);
+  assert.equal(foreignResult.historialPagos.length, 1);
+
+  const globalResult = await posStore.applyDebtPaymentTransaction({
+    operationId: 'SCOPE-COLLECT-GLOBAL-CXC', collection: 'cxc', debtId: globalDebt.id,
+    amountUSD: 1, amountBS: 1, payment: { id: 'SCOPE-PAY-GLOBAL', montoUSD: 1, montoBS: 1, fecha: at, metodo: 'efectivo' },
+    terminalId: terminal.id, user: cashier,
+  });
+  assert.equal(globalResult.saldoUSD, 9);
+  assert.equal(globalResult.historialPagos.length, 1);
+});
+
+
+test('las respuestas de configuración ocultan secretos administrativos a cajeros', () => {
+  const { configVisibleToRole } = posStore;
+  const config = {
+    tasa: 874.5,
+    empresa: { nombre: 'Negocio de prueba' },
+    pinDevolucion: '987654',
+    claveAdministrativa: 'secreto',
+    parametrosInternos: { modo: 'admin' },
+  };
+  assert.deepEqual(configVisibleToRole(config, 'cajero'), {
+    tasa: 874.5,
+    empresa: { nombre: 'Negocio de prueba' },
+  });
+  assert.equal(configVisibleToRole(config, 'cajero').pinDevolucion, undefined);
+  assert.equal(configVisibleToRole(config, 'cajero').claveAdministrativa, undefined);
+  assert.deepEqual(configVisibleToRole(config, 'administrador'), config);
 });
