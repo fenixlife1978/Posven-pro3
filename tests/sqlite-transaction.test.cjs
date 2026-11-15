@@ -44,6 +44,7 @@ const { sqliteExecute, sqliteInteractiveTransaction, assertSQLiteReady } = sqlit
 const database = require('../src/lib/sqlite/database.ts');
 const schema = require('../src/lib/sqlite/schema-init.ts');
 const posStore = require('../src/lib/sqlite/pos-store.ts');
+const auth = require('../src/lib/sqlite/auth.ts');
 
 test('transacciones interactivas serializan cajas concurrentes en una sola conexión', async () => {
   assertSQLiteReady();
@@ -325,6 +326,65 @@ test('devolver y anular un kit repone sus componentes, no el artículo padre', a
   });
   assert.equal(deltas.reduce((sum, delta) => sum + delta, 0), 0);
   assert.equal(deltas.length, 3);
+});
+
+
+test('el límite de inicio de sesión se aplica por usuario y origen, sin bloquear otras cajas de la misma red', async () => {
+  await schema.ensureSqliteSchema();
+  const origin = '192.168.10.20';
+  for (let i = 0; i < 5; i++) {
+    const result = await auth.consumeLoginAttempt('cajero-a', origin, new Date('2026-11-15T03:00:00.000Z'));
+    assert.equal(result.allowed, true);
+  }
+
+  const blocked = await auth.consumeLoginAttempt('cajero-a', origin, new Date('2026-11-15T03:00:01.000Z'));
+  assert.equal(blocked.allowed, false);
+  assert.ok(blocked.retryAfterSeconds > 0);
+
+  const otherCashier = await auth.consumeLoginAttempt('cajero-b', origin, new Date('2026-11-15T03:00:01.000Z'));
+  assert.equal(otherCashier.allowed, true);
+
+  const otherOrigin = await auth.consumeLoginAttempt('cajero-a', '192.168.10.21', new Date('2026-11-15T03:00:01.000Z'));
+  assert.equal(otherOrigin.allowed, true);
+});
+
+test('el contador de login se reinicia al vencer la ventana y se limpia después de autenticar', async () => {
+  await schema.ensureSqliteSchema();
+  const start = new Date('2026-11-15T04:00:00.000Z');
+  for (let i = 0; i < 5; i++) {
+    await auth.consumeLoginAttempt('usuario-inexistente', '10.0.0.8', start);
+  }
+
+  const afterWindow = await auth.consumeLoginAttempt(
+    'usuario-inexistente',
+    '10.0.0.8',
+    new Date(start.getTime() + 16 * 60 * 1000),
+  );
+  assert.equal(afterWindow.allowed, true);
+
+  await auth.clearLoginAttempts('usuario-inexistente', '10.0.0.8');
+  const afterSuccess = await auth.consumeLoginAttempt(
+    'usuario-inexistente',
+    '10.0.0.8',
+    new Date(start.getTime() + 16 * 60 * 1000 + 1000),
+  );
+  assert.equal(afterSuccess.allowed, true);
+
+  const stored = await sqliteExecute({ sql: 'SELECT identifier_key, origin_key FROM auth_login_attempts' });
+  assert.ok(stored.rows.every(row =>
+    !String(row.identifier_key).includes('usuario-inexistente') &&
+    !String(row.origin_key).includes('10.0.0.8')
+  ));
+});
+
+test('los intentos concurrentes no superan el límite por usuario y origen', async () => {
+  await schema.ensureSqliteSchema();
+  const now = new Date('2026-11-15T05:00:00.000Z');
+  const results = await Promise.all(
+    Array.from({ length: 9 }, () => auth.consumeLoginAttempt('concurrente', '172.16.0.5', now)),
+  );
+  assert.equal(results.filter(result => result.allowed).length, 5);
+  assert.equal(results.filter(result => !result.allowed).length, 4);
 });
 
 after(() => {
