@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/sqlite/auth';
+import { clearLoginAttempts, consumeLoginAttempt, createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/sqlite/auth';
 import { isSQLiteConfigured } from '@/lib/sqlite/client';
 
 export const runtime = 'nodejs';
@@ -19,10 +19,23 @@ export async function POST(request: Request) {
 
     await ensureSeedAdmin();
 
+    // La IP se usa solo como ámbito de rate limit; SQLite conserva únicamente su hash.
+    const forwardedOrigin = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
+    const sourceOrigin = forwardedOrigin || request.headers.get('x-real-ip')?.trim() || 'unknown';
+    const attempt = await consumeLoginAttempt(identifier, sourceOrigin);
+    if (!attempt.allowed) {
+      return NextResponse.json(
+        { error: 'Demasiados intentos de inicio de sesión. Espere antes de volver a intentar.' },
+        { status: 429, headers: { 'Retry-After': String(attempt.retryAfterSeconds) } },
+      );
+    }
+
     const row = await getUserWithSecret(identifier);
     if (!row || Number(row.acceso_bloqueado || 0) === 1 || !verifyPassword(password, String(row.password_hash))) {
       return NextResponse.json({ error: 'Usuario o contraseña incorrectos.' }, { status: 401 });
     }
+
+    await clearLoginAttempts(identifier, sourceOrigin);
 
     if (role && role !== String(row.rol)) {
       return NextResponse.json({ error: `Usted está registrado como ${String(row.rol).toUpperCase()}.` }, { status: 403 });
