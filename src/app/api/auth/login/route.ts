@@ -20,8 +20,8 @@ export async function POST(request: Request) {
     await ensureSeedAdmin();
 
     // La IP se usa solo como ámbito de rate limit; SQLite conserva únicamente su hash.
-    const forwardedOrigin = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '';
-    const sourceOrigin = forwardedOrigin || request.headers.get('x-real-ip')?.trim() || 'unknown';
+    // main.js inyecta esta cabecera desde request.socket.remoteAddress; no confiamos en X-Forwarded-For del cliente.
+    const sourceOrigin = request.headers.get('x-posven-client-ip') || 'unknown';
     const attempt = await consumeLoginAttempt(identifier, sourceOrigin);
     if (!attempt.allowed) {
       return NextResponse.json(
