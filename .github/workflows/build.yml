@@ -58,6 +58,11 @@ jobs:
         run: |
           $dir = Join-Path $env:RUNNER_TEMP 'posven3-tls-test'
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
+          if (-not (Get-PSDrive -Name Cert -ErrorAction SilentlyContinue)) { New-PSDrive -Name Cert -PSProvider Certificate -Root '\' -ErrorAction Stop | Out-Null }
+          $store = 'Cert:\CurrentUser\My'
+          if (-not (Test-Path -LiteralPath $store)) { New-Item -Path $store -Force -ErrorAction Stop | Out-Null }
+          if (-not (Test-Path -LiteralPath $store)) { throw 'No se pudo inicializar Cert:\CurrentUser\My.' }
           $pfxPath = Join-Path $dir 'server.pfx'
           $cerPath = Join-Path $dir 'server.cer'
           $cert = New-SelfSignedCertificate -Subject 'CN=POSVEN3-CI' -DnsName @('localhost') -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -KeyExportPolicy Exportable -HashAlgorithm SHA256 -NotAfter (Get-Date).AddDays(2)
