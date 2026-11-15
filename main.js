@@ -369,42 +369,6 @@ function createWindow(appUrl) {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-// Limitador de intentos de autenticación por IP en el proceso servidor.
-// No almacena credenciales y se reinicia únicamente al reiniciar el servidor.
-const loginAttemptsByIp = new Map();
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_MAX_ATTEMPTS = 10;
-
-function checkLoginRateLimit(remoteAddress) {
-  const now = Date.now();
-  const key = String(remoteAddress || 'unknown').replace(/^::ffff:/i, '');
-  let entry = loginAttemptsByIp.get(key);
-
-  if (entry && now - entry.startedAt >= LOGIN_WINDOW_MS) {
-    loginAttemptsByIp.delete(key);
-    entry = undefined;
-  }
-
-  if (!entry) {
-    // Bound memory even if an attacker connects through many source IPs.
-    // Expire old windows first; never evict active counters to make room.
-    if (loginAttemptsByIp.size >= 5000) {
-      for (const [ip, item] of loginAttemptsByIp) {
-        if (now - item.startedAt >= LOGIN_WINDOW_MS) loginAttemptsByIp.delete(ip);
-      }
-      if (loginAttemptsByIp.size >= 5000) return Math.ceil(LOGIN_WINDOW_MS / 1000);
-    }
-    entry = { startedAt: now, attempts: 0 };
-    loginAttemptsByIp.set(key, entry);
-  }
-
-  if (entry.attempts >= LOGIN_MAX_ATTEMPTS) {
-    return Math.max(1, Math.ceil((LOGIN_WINDOW_MS - (now - entry.startedAt)) / 1000));
-  }
-  entry.attempts += 1;
-  return 0;
-}
-
 async function startLocalNextServer(port) {
   const dataDir = path.join(app.getPath('userData'), 'data');
   fs.mkdirSync(dataDir, { recursive: true });
@@ -461,18 +425,8 @@ async function startLocalNextServer(port) {
       response.end(JSON.stringify({ ok: false, error: 'Acceso permitido únicamente desde la red local.' }));
       return;
     }
-    if (request.url?.split('?')[0] === '/api/auth/login' && request.method === 'POST') {
-      const retryAfter = checkLoginRateLimit(remote);
-      if (retryAfter > 0) {
-        response.writeHead(429, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Cache-Control': 'no-store',
-          'Retry-After': String(retryAfter),
-        });
-        response.end(JSON.stringify({ error: 'Demasiados intentos de inicio de sesión desde este equipo. Intenta nuevamente más tarde.' }));
-        return;
-      }
-    }
+    // El origen real se toma del socket y se sobrescribe cualquier cabecera enviada por el cliente.
+    request.headers['x-posven-client-ip'] = remote;
     trackHttpRequest(request, response, handler);
   });
   await new Promise((resolve, reject) => {
