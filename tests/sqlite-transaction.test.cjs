@@ -552,11 +552,35 @@ test('cualquier cajero puede consultar y cobrar CxC originadas por otra terminal
   assert.ok(await posStore.getRecord('cxc', foreignDebt.id, cashier));
   const foreignResult = await posStore.applyDebtPaymentTransaction({
     operationId: 'SCOPE-COLLECT-FOREIGN-CXC', collection: 'cxc', debtId: foreignDebt.id,
-    amountUSD: 1, amountBS: 1, payment: { id: 'SCOPE-PAY-FOREIGN', montoUSD: 1, montoBS: 1, fecha: at, metodo: 'efectivo' },
+    amountUSD: 1, amountBS: 874.5,
+    payment: { id: 'SCOPE-PAY-FOREIGN', montoUSD: 1, montoBS: 874.5, fecha: at, metodo: 'efectivo_bs' },
+    journal: {
+      id: 'SCOPE-JOURNAL-FOREIGN', fecha: at, tipo: 'ingreso', categoria: 'COBRO_DEUDA',
+      concepto: 'ABONO CXC DE OTRA CAJA', montoUSD: 1, montoBS: 874.5,
+      metodo: 'efectivo_bs', terminalId: terminal.id,
+    },
+    sale: {
+      id: 'SCOPE-RECEIPT-FOREIGN', fecha: at, cliente: 'Cliente Caja B',
+      items: [{ productoId: 'ABONO', nombre: 'COBRO DE DEUDA', cantidad: 1, subtotalUSD: 1 }],
+      totalUSD: 1, totalBS: 874.5, metodoPago: 'efectivo_bs',
+      payments: [{ metodo: 'efectivo_bs', montoUSD: 1, montoBS: 874.5 }],
+      estado: 'completada', type: 'COBRO DEUDA',
+    },
     terminalId: terminal.id, user: cashier,
   });
   assert.equal(foreignResult.saldoUSD, 19);
   assert.equal(foreignResult.historialPagos.length, 1);
+  assert.equal(foreignResult.payment.terminalId, terminal.id);
+  assert.equal(foreignResult.sale.terminalId, terminal.id);
+  assert.equal(foreignResult.sale.type, 'COBRO DEUDA');
+  assert.deepEqual(foreignResult.sale.payments, [{ metodo: 'efectivo_bs', montoUSD: 1, montoBS: 874.5 }]);
+  assert.equal(foreignResult.terminal.proximoCobroDeuda, 2);
+
+  const savedReceipt = await posStore.getRecord('ventas', foreignResult.receiptId, { id: 'scope-admin', rol: 'administrador' });
+  const savedJournal = await posStore.getRecord('libroDiario', 'SCOPE-JOURNAL-FOREIGN', { id: 'scope-admin', rol: 'administrador' });
+  assert.equal(savedReceipt.terminalId, terminal.id);
+  assert.equal(savedJournal.terminalId, terminal.id);
+  assert.equal(savedJournal.referencia, foreignResult.receiptId);
 
   const globalResult = await posStore.applyDebtPaymentTransaction({
     operationId: 'SCOPE-COLLECT-GLOBAL-CXC', collection: 'cxc', debtId: globalDebt.id,
