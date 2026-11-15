@@ -3,7 +3,7 @@ import { isIP } from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getSqliteDatabasePath } from '@/lib/sqlite/database';
-import { sqliteExecute, sqliteTransaction } from '@/lib/sqlite/client';
+import { sqliteExecute, sqliteTransaction, sqliteInteractiveTransaction } from '@/lib/sqlite/client';
 import { ensureSqliteSchema } from '@/lib/sqlite/schema-init';
 
 export type AppRole = 'administrador' | 'cajero';
