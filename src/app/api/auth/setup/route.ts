@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createFirstAdministrator, needsFirstAdministrator } from '@/lib/sqlite/auth';
+import { createFirstAdministrator, createSession, needsFirstAdministrator } from '@/lib/sqlite/auth';
 import { isSQLiteConfigured } from '@/lib/sqlite/client';
 
 export const runtime = 'nodejs';
@@ -30,10 +30,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Las contraseñas no coinciden.' }, { status: 400 });
     }
     const user = await createFirstAdministrator({ username, email, nombre, password });
-    return NextResponse.json({
+    const session = await createSession(user.id);
+    const response = NextResponse.json({
       created: true,
       user: { id: user.id, username: user.username, email: user.email, nombre: user.nombre, rol: user.rol },
+      sessionId: session.id,
     }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
+    response.cookies.set('posven_session', session.id, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: new URL(request.url).protocol === 'https:',
+      path: '/',
+      expires: new Date(session.expires),
+    });
+    return response;
   } catch (error: any) {
     const message = String(error?.message || 'No fue posible crear el administrador.');
     const status = /ya fue configurado|UNIQUE constraint/i.test(message) ? 409 : 400;
