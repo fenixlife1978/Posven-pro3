@@ -25,6 +25,8 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_auditoria_terminal_fecha ON auditoria_sistema(terminal_id, fecha)`,
   `CREATE INDEX IF NOT EXISTS idx_auditoria_usuario_fecha ON auditoria_sistema(usuario_id, fecha)`,
   `CREATE TABLE IF NOT EXISTS legacy_documents (path TEXT PRIMARY KEY, data_json TEXT NOT NULL DEFAULT '{}', present INTEGER NOT NULL DEFAULT 1, imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS auth_login_attempts (identifier_key TEXT NOT NULL, origin_key TEXT NOT NULL, window_started_at TEXT NOT NULL, attempt_count INTEGER NOT NULL DEFAULT 0, locked_until TEXT, updated_at TEXT NOT NULL, PRIMARY KEY(identifier_key, origin_key))`,
+  `CREATE INDEX IF NOT EXISTS idx_auth_login_attempts_updated ON auth_login_attempts(updated_at)`,
   `CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_seen_at TEXT, revoked_at TEXT)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
@@ -42,7 +44,7 @@ async function initialize() {
     'cxc', 'cxp', 'clientes', 'proveedores', 'devoluciones', 'anulaciones',
     'terminales', 'libro_diario', 'reportes_z', 'caja', 'compras',
     'operaciones', 'auditoria_sistema', 'legacy_documents', 'sessions',
-    'migration_runs', 'schema_migrations',
+    'migration_runs', 'schema_migrations', 'auth_login_attempts',
   ];
   const verify = await sqliteExecute({ sql: "SELECT name FROM sqlite_master WHERE type='table'" });
   const names = new Set(verify.rows.map(row => String(row.name)));

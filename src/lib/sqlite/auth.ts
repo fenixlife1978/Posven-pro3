@@ -1,8 +1,9 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getSqliteDatabasePath } from '@/lib/sqlite/database';
-import { sqliteExecute, sqliteTransaction } from '@/lib/sqlite/client';
+import { sqliteExecute, sqliteTransaction, sqliteInteractiveTransaction } from '@/lib/sqlite/client';
 import { ensureSqliteSchema } from '@/lib/sqlite/schema-init';
 
 export type AppRole = 'administrador' | 'cajero';
@@ -197,6 +198,97 @@ export async function ensureSeedAdmin() {
   } finally {
     seedAdminBootstrap = null;
   }
+}
+
+
+const LOGIN_ATTEMPT_LIMIT = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
+
+function loginAttemptKeys(identifier: string, origin: string) {
+  const normalizedIdentifier = String(identifier || '').trim().toLowerCase();
+  const normalizedOrigin = isIP(String(origin || '').trim())
+    ? String(origin).trim().toLowerCase()
+    : 'unknown';
+  return {
+    identifierKey: createHash('sha256').update(normalizedIdentifier).digest('hex'),
+    originKey: createHash('sha256').update(normalizedOrigin).digest('hex'),
+  };
+}
+
+/**
+ * Consume one login attempt atomically before password verification.
+ * Limits are scoped to the identifier + source address pair so several cash
+ * terminals behind the same LAN/NAT address do not block one another.
+ * Only hashes are persisted; passwords, raw identifiers and IP addresses are
+ * never stored in auth_login_attempts.
+ */
+export async function consumeLoginAttempt(identifier: string, origin: string, now = new Date()) {
+  await ensureSqliteSchema();
+  const { identifierKey, originKey } = loginAttemptKeys(identifier, origin);
+  const nowIsoValue = now.toISOString();
+  const retentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+  return sqliteInteractiveTransaction(async tx => {
+    await tx.execute({
+      sql: 'DELETE FROM auth_login_attempts WHERE updated_at < ? AND (locked_until IS NULL OR locked_until <= ?)',
+      args: [retentionCutoff, nowIsoValue],
+      wantRows: false,
+    });
+
+    const found = await tx.execute({
+      sql: 'SELECT window_started_at, attempt_count, locked_until FROM auth_login_attempts WHERE identifier_key=? AND origin_key=? LIMIT 1',
+      args: [identifierKey, originKey],
+    });
+    const row = found.rows[0];
+
+    if (row?.locked_until && Date.parse(String(row.locked_until)) > now.getTime()) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((Date.parse(String(row.locked_until)) - now.getTime()) / 1000)),
+      };
+    }
+
+    const windowStarted = row ? Date.parse(String(row.window_started_at)) : NaN;
+    const windowExpired = !Number.isFinite(windowStarted) || now.getTime() - windowStarted >= LOGIN_WINDOW_MS;
+    const previousCount = row && !windowExpired ? Number(row.attempt_count || 0) : 0;
+    if (previousCount >= LOGIN_ATTEMPT_LIMIT) {
+      const lockedUntil = new Date(now.getTime() + LOGIN_LOCKOUT_MS).toISOString();
+      await tx.execute({
+        sql: 'UPDATE auth_login_attempts SET locked_until=?, updated_at=? WHERE identifier_key=? AND origin_key=?',
+        args: [lockedUntil, nowIsoValue, identifierKey, originKey],
+        wantRows: false,
+      });
+      return { allowed: false, retryAfterSeconds: Math.ceil(LOGIN_LOCKOUT_MS / 1000) };
+    }
+
+    const nextCount = previousCount + 1;
+    const nextWindowStarted = windowExpired ? nowIsoValue : String(row.window_started_at);
+    const lockedUntil = nextCount >= LOGIN_ATTEMPT_LIMIT
+      ? new Date(now.getTime() + LOGIN_LOCKOUT_MS).toISOString()
+      : null;
+
+    await tx.execute({
+      sql: 'INSERT INTO auth_login_attempts (identifier_key, origin_key, window_started_at, attempt_count, locked_until, updated_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(identifier_key, origin_key) DO UPDATE SET ' +
+        'window_started_at=excluded.window_started_at, attempt_count=excluded.attempt_count, ' +
+        'locked_until=excluded.locked_until, updated_at=excluded.updated_at',
+      args: [identifierKey, originKey, nextWindowStarted, nextCount, lockedUntil, nowIsoValue],
+      wantRows: false,
+    });
+
+    return { allowed: true, retryAfterSeconds: 0 };
+  });
+}
+
+export async function clearLoginAttempts(identifier: string, origin: string) {
+  await ensureSqliteSchema();
+  const { identifierKey, originKey } = loginAttemptKeys(identifier, origin);
+  await sqliteExecute({
+    sql: 'DELETE FROM auth_login_attempts WHERE identifier_key=? AND origin_key=?',
+    args: [identifierKey, originKey],
+    wantRows: false,
+  });
 }
 
 export async function createSession(userId: string) {
