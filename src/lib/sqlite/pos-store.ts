@@ -387,13 +387,9 @@ async function readScope(table: SQLiteStoreTable, user?: ReadScopeUser) {
     };
   }
   if (table === 'cxc') {
-    // Las CxC iniciales creadas desde Administración no tienen venta asociada
-    // y pueden cobrarse desde cualquier caja; las originadas por ventas quedan
-    // limitadas a la terminal que emitió la venta.
-    return {
-      clause: "(COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) IS NULL OR EXISTS (SELECT 1 FROM ventas v WHERE v.id=COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) AND json_extract(v.data_json,'$.terminalId') IN (" + placeholders + ")))",
-      args: ids,
-    };
+    // La cartera CxC es compartida por todas las cajas: cualquier cajero
+    // puede consultar créditos de cualquier cliente, sin importar su origen.
+    return { clause: '', args: [] as any[] };
   }
   return { clause: '1=0', args: [] as any[] };
 }
@@ -1973,20 +1969,9 @@ export async function applyDebtPaymentTransaction(params: {
     const debt = rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
     if (!debt) throw new Error('La deuda ya no existe.');
 
-    // La visibilidad de CxC no basta para proteger el cobro: un cajero puede
-    // falsificar debtId en la petición. Revalidamos dentro de la transacción
-    // que toda deuda vinculada a una venta pertenezca a su propia terminal.
-    // Las deudas iniciales sin venta/factura asociada siguen siendo globales.
-    if (collection === 'cxc' && params.user?.rol === 'cajero') {
-      const linkedSaleId = String(debt.ventaId || debt.facturaId || '').trim();
-      if (linkedSaleId) {
-        const linkedSale = rowFromDb((await tx.execute(txSelect('ventas', linkedSaleId))).rows[0]);
-        if (!linkedSale) throw new Error('La venta asociada a esta CxC no existe; no se puede cobrar desde caja.');
-        if (String(linkedSale.terminalId || '') !== String(terminalForOperation || '')) {
-          throw new Error('El cajero solo puede cobrar CxC originadas por ventas de su propia terminal.');
-        }
-      }
-    }
+    // La cartera CxC es compartida: cualquier caja puede registrar pagos
+    // de cualquier cliente. La caja que recibe el pago sigue siendo la que
+    // registra el movimiento y conserva su propio correlativo/caja.
 
     // Las deudas iniciales creadas desde Administración no tienen venta/factura
     // asociada. El cobro individual del POS debe tratarlas como una CxC válida
