@@ -1,8 +1,5 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
-import fs from 'node:fs';
-import path from 'node:path';
-import { getSqliteDatabasePath } from '@/lib/sqlite/database';
 import { sqliteExecute, sqliteTransaction, sqliteInteractiveTransaction } from '@/lib/sqlite/client';
 import { ensureSqliteSchema } from '@/lib/sqlite/schema-init';
 
@@ -122,82 +119,62 @@ export async function createUser(input: {
   return findUser(username);
 }
 
-/**
- * Ensure the database is recoverable when it has no active administrator.
- * This is called before credential lookup on login, so first install and a
- * deliberate SQLite local data reset both bootstrap on the first login attempt.
- * Never create a backdoor seed account while another active administrator exists.
- */
-async function ensureSeedAdminInternal() {
+
+/** True only while this SQLite database has never had an administrator. */
+export async function needsFirstAdministrator() {
   await ensureSqliteSchema();
-
-  const activeAdmins = await sqliteExecute({
-    sql: `SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 LIMIT 1`,
+  const result = await sqliteExecute({
+    sql: `SELECT COUNT(*) AS total FROM users WHERE rol='administrador'`,
   });
-  if (activeAdmins.rows.length) return;
-
-  // The seed account is only reset when no active administrator exists.
-  // This repairs stale/incompatible hashes after a reset or failed first setup.
-  const configuredPassword = String(process.env.POSVEN_SEED_ADMIN_PASSWORD || '').trim();
-  const seedPassword = configuredPassword || randomBytes(24).toString('base64url');
-  if (!configuredPassword) {
-    const credentialFile = path.join(path.dirname(getSqliteDatabasePath()), 'POSVEN3-CLAVE-INICIAL.txt');
-    const temporaryFile = credentialFile + '.tmp';
-    fs.mkdirSync(path.dirname(credentialFile), { recursive: true });
-    fs.writeFileSync(temporaryFile,
-      'POSVEN3 - CREDENCIAL INICIAL DEL ADMINISTRADOR\n\n' +
-      'Usuario: admin\n' +
-      'Contraseña temporal: ' + seedPassword + '\n\n' +
-      'Inicia sesión y cambia esta contraseña inmediatamente. Después elimina este archivo.\n',
-      { encoding: 'utf8', mode: 0o600, flag: 'w' });
-    fs.renameSync(temporaryFile, credentialFile);
-  }
-  const existingSeed = await sqliteExecute({
-    sql: `SELECT id FROM users WHERE lower(username)='admin' LIMIT 1`,
-  });
-
-  if (existingSeed.rows.length) {
-    await sqliteExecute({
-      sql: `UPDATE users
-        SET rol='administrador', acceso_bloqueado=0, is_seed_admin=1,
-            email=COALESCE(email, 'admin@posven.local'),
-            nombre=COALESCE(NULLIF(nombre,''),'ADMINISTRADOR'),
-            password_hash=?
-        WHERE id=?`,
-      args: [hashPassword(seedPassword), String(existingSeed.rows[0].id)],
-      wantRows: false,
-    });
-    return;
-  }
-  try {
-    await createUser({
-      username: 'admin',
-      email: 'admin@posven.local',
-      nombre: 'ADMINISTRADOR',
-      password: seedPassword,
-      rol: 'administrador',
-      isSeedAdmin: true,
-    });
-  } catch (error) {
-    // Two first-login requests may race. If the other request created the
-    // seed account, treat that as success; otherwise preserve the real error.
-    const winner = await sqliteExecute({
-      sql: `SELECT id FROM users WHERE lower(username)='admin' AND is_seed_admin=1 LIMIT 1`,
-    });
-    if (!winner.rows.length) throw error;
-  }
+  return Number(result.rows[0]?.total || 0) === 0;
 }
 
-let seedAdminBootstrap: Promise<void> | null = null;
-
-export async function ensureSeedAdmin() {
-  if (seedAdminBootstrap) return seedAdminBootstrap;
-  seedAdminBootstrap = ensureSeedAdminInternal();
-  try {
-    await seedAdminBootstrap;
-  } finally {
-    seedAdminBootstrap = null;
+/**
+ * Create the initial administrator exactly once. BEGIN IMMEDIATE serializes
+ * simultaneous setup requests; the second request observes the first admin
+ * and is rejected. This endpoint is not a general user-creation mechanism.
+ */
+export async function createFirstAdministrator(input: {
+  username: string;
+  email: string;
+  nombre: string;
+  password: string;
+}) {
+  await ensureSqliteSchema();
+  const username = input.username.trim().toLowerCase();
+  const email = input.email.trim().toLowerCase();
+  const nombre = input.nombre.trim();
+  if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
+    throw new Error('El usuario debe tener entre 3 y 32 caracteres: letras, números, punto, guion o guion bajo.');
   }
+  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    throw new Error('Ingrese un correo electrónico válido.');
+  }
+  if (nombre.length < 2 || nombre.length > 80) throw new Error('Ingrese el nombre del administrador.');
+  if (input.password.length < 10) throw new Error('La contraseña debe tener al menos 10 caracteres.');
+  const passwordHash = hashPassword(input.password);
+  const id = newId('usr');
+  const fecha = nowIso();
+
+  return sqliteInteractiveTransaction(async tx => {
+    const admins = await tx.execute({
+      sql: `SELECT id FROM users WHERE rol='administrador' LIMIT 1`,
+    });
+    if (admins.rows.length) {
+      throw new Error('El administrador inicial ya fue configurado. Inicie sesión normalmente.');
+    }
+    await tx.execute({
+      sql: `INSERT INTO users
+        (id, username, email, nombre, rol, password_hash, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json)
+        VALUES (?, ?, ?, ?, 'administrador', ?, 0, 0, ?, '{}')`,
+      args: [id, username, email, nombre, passwordHash, fecha],
+      wantRows: false,
+    });
+    return mapUser({
+      id, username, email, nombre, rol: 'administrador',
+      acceso_bloqueado: 0, is_seed_admin: 0, fecha_creacion: fecha,
+    });
+  });
 }
 
 
