@@ -500,25 +500,12 @@ export const initialState: AppState = {
 };
 
 // ============================================================
-// CACHE EN MEMORIA + localStorage (SOLO para mostrar UI rápido).
-//
-// ⚠️ localStorage (no sessionStorage): la sesión debe sobrevivir
-// cortes de luz / reinicios del PC. Si sessionStorage se usa, el cache
-// se borra al cerrar el navegador y los Reportes X/Z se generan vacíos
-// al volver a abrir el sistema (bug reportado por usuario).
+// CACHE EN MEMORIA + localStorage.
+// localStorage conserva una copia visual entre sesiones, pero no se hidrata
+// al arrancar: no se puede demostrar que sus datos sigan vigentes. La primera
+// información operativa visible debe proceder de SQLite en el servidor LAN.
 // ============================================================
-function readSession(): Partial<AppState> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const d = localStorage.getItem(STORAGE_KEY);
-    if (!d) return {};
-    const parsed = JSON.parse(d) as Partial<AppState>;
-    delete (parsed as any).carrito;
-    return parsed;
-  } catch { return {}; }
-}
-
-let cache: AppState = { ...initialState, ...readSession() } as AppState;
+let cache: AppState = { ...initialState } as AppState;
 const listeners = new Set<(s: Partial<AppState>) => void>();
 
 // Mide cuánto ocupa el cache serializado; si pasa de ~4MB deja de escribir
