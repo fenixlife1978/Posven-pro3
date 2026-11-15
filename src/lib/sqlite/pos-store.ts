@@ -896,6 +896,11 @@ export async function patchAppConfig(patch: Record<string, any>): Promise<any> {
   return next;
 }
 
+export function configVisibleToRole(config: any, role: string) {
+  if (role === 'administrador') return config;
+  return { tasa: config?.tasa, empresa: config?.empresa };
+}
+
 export async function getCatalog(name: string): Promise<any[]> {
   assertSQLiteReady();
   const catalogName = String(name);
