@@ -517,3 +517,55 @@ test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', a
   assert.ok(await posStore.getRecord('ventas', 'READ-SALE-B', { id: 'read-admin', rol: 'administrador' }));
   assert.ok(await posStore.countRecords('ventas', { id: 'read-admin', rol: 'administrador' }) >= 2);
 });
+
+
+test('un cajero no puede cobrar una CxC originada por ventas de otra terminal', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-15T01:00:00.000Z';
+  const cashier = { id: 'scope-cashier-a', rol: 'cajero', nombre: 'Cajero A' };
+  const terminal = {
+    id: 'SCOPE-CAJA-A', usuarioId: cashier.id, nombre: 'Caja A', prefijoCaja: 'SCOPEA',
+    isCashOpen: true, cashData: { openDate: at }, proximoCobroDeuda: 1,
+  };
+  const foreignSale = {
+    id: 'SCOPE-SALE-B', fecha: at, terminalId: 'SCOPE-CAJA-B', estado: 'completada',
+    items: [], totalUSD: 20,
+  };
+  const foreignDebt = {
+    id: 'SCOPE-CXC-B', fecha: at, ventaId: foreignSale.id,
+    cliente: 'Cliente Caja B', montoUSD: 20, abonadoUSD: 0, saldoUSD: 20,
+    historialPagos: [],
+  };
+  const globalDebt = {
+    id: 'SCOPE-CXC-GLOBAL', fecha: at, cliente: 'Deuda inicial',
+    montoUSD: 10, abonadoUSD: 0, saldoUSD: 10, historialPagos: [],
+  };
+  for (const [table, row] of [
+    ['terminales', terminal], ['ventas', foreignSale], ['cxc', foreignDebt], ['cxc', globalDebt],
+  ]) {
+    await sqliteExecute({
+      sql: `INSERT OR REPLACE INTO ${table}(id,data_json,fecha) VALUES(?,?,?)`,
+      args: [row.id, JSON.stringify(row), at], wantRows: false,
+    });
+  }
+
+  await assert.rejects(
+    posStore.applyDebtPaymentTransaction({
+      operationId: 'SCOPE-ATTACK-FOREIGN-CXC', collection: 'cxc', debtId: foreignDebt.id,
+      amountUSD: 1, amountBS: 1, payment: { id: 'SCOPE-PAY-FOREIGN', montoUSD: 1, montoBS: 1, fecha: at, metodo: 'efectivo' },
+      terminalId: terminal.id, user: cashier,
+    }),
+    /propia terminal/,
+  );
+  const unchangedForeignDebt = await posStore.getRecord('cxc', foreignDebt.id);
+  assert.equal(unchangedForeignDebt.saldoUSD, 20);
+  assert.equal((unchangedForeignDebt.historialPagos || []).length, 0);
+
+  const globalResult = await posStore.applyDebtPaymentTransaction({
+    operationId: 'SCOPE-COLLECT-GLOBAL-CXC', collection: 'cxc', debtId: globalDebt.id,
+    amountUSD: 1, amountBS: 1, payment: { id: 'SCOPE-PAY-GLOBAL', montoUSD: 1, montoBS: 1, fecha: at, metodo: 'efectivo' },
+    terminalId: terminal.id, user: cashier,
+  });
+  assert.equal(globalResult.saldoUSD, 9);
+  assert.equal(globalResult.historialPagos.length, 1);
+});
