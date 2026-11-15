@@ -523,8 +523,7 @@ function applyPatch(patch: Partial<AppState>) {
         localStorage.setItem(STORAGE_KEY, serialized);
       } else {
         // Excede el límite: no escribimos para evitar QuotaExceededError.
-        // La próxima vez que se llame a readSession() se seguirá usando lo
-        // último que cupo, pero el cache en memoria sigue 100% funcional.
+        // Se conserva la última copia guardada, pero nunca se hidrata al arrancar.
         console.warn(
           '[db-store] Cache excede ' + (LOCALSTORAGE_SOFT_LIMIT / 1024 / 1024) +
           'MB, se omite escritura a localStorage (cuota llena).'
