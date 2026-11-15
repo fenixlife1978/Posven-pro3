@@ -10,6 +10,7 @@ import {
   syncRecords,
   getAppConfig,
   patchAppConfig,
+  configVisibleToRole,
   getCatalog,
   patchCatalog,
   factoryResetTransaction,
@@ -63,12 +64,7 @@ export async function GET(request: Request) {
     const special = url.searchParams.get('special');
     if (special === 'config') {
       const config = await getAppConfig();
-      // Los cajeros solo necesitan datos operativos públicos; nunca se envía
-      // el PIN de devoluciones ni parámetros administrativos del negocio.
-      const safeConfig = user.rol === 'administrador'
-        ? config
-        : { tasa: config?.tasa, empresa: config?.empresa };
-      return NextResponse.json({ ok: true, config: safeConfig });
+      return NextResponse.json({ ok: true, config: configVisibleToRole(config, user.rol) });
     }
     if (special === 'catalog') return NextResponse.json({ ok: true, lista: await getCatalog(String(url.searchParams.get('name') || '')) });
     const t = table(url.searchParams.get('table'));
@@ -111,7 +107,7 @@ export async function POST(request: Request) {
           throw new Error('Solo la tasa BCV puede ser modificada por un cajero.');
         }
         const config = await patchAppConfig(patch);
-        return NextResponse.json({ ok: true, config });
+        return NextResponse.json({ ok: true, config: configVisibleToRole(config, user.rol) });
       }
       case 'catalogPatch': {
         if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
