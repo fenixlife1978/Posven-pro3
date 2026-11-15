@@ -409,3 +409,111 @@ test('un Corte Z inválido revierte todo y permite reintentar sin dejar la caja 
   assert.equal(Number(reportsAfter.rows[0].total), Number(reportsBefore.rows[0].total) + 1);
   assert.equal(Number(operationsAfter.rows[0].total), Number(operationsBefore.rows[0].total) + 1);
 });
+
+
+test('las lecturas POS de cajero quedan limitadas a sus terminales asignadas', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-14T12:00:00.000Z';
+  const terminals = [
+    { id: 'READ-CAJA-A', usuarioId: 'read-cashier-a', nombre: 'Caja A' },
+    { id: 'READ-CAJA-B', usuarioId: 'read-cashier-b', nombre: 'Caja B' },
+  ];
+  for (const terminal of terminals) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO terminales(id,data_json,fecha) VALUES(?,?,?)',
+      args: [terminal.id, JSON.stringify(terminal), at],
+      wantRows: false,
+    });
+  }
+  const sales = [
+    { id: 'READ-SALE-A', fecha: at, terminalId: 'READ-CAJA-A', estado: 'completada', totalUSD: 12 },
+    { id: 'READ-SALE-B', fecha: at, terminalId: 'READ-CAJA-B', estado: 'completada', totalUSD: 99 },
+  ];
+  for (const sale of sales) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO ventas(id,data_json,fecha) VALUES(?,?,?)',
+      args: [sale.id, JSON.stringify(sale), at],
+      wantRows: false,
+    });
+  }
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['READ-STOCK-MOVEMENT-B', JSON.stringify({ id: 'READ-STOCK-MOVEMENT-B', productoId: 'READ-PRODUCT-SHARED', tipo: 'venta', terminalId: 'READ-CAJA-B', cantidad: 1 }), at],
+    wantRows: false,
+  });
+
+  const refunds = [
+    { id: 'READ-RETURN-A', fecha: at, ventaId: 'READ-SALE-A', totalUSD: 2 },
+    { id: 'READ-RETURN-B', fecha: at, ventaId: 'READ-SALE-B', totalUSD: 8 },
+  ];
+  for (const refund of refunds) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO devoluciones(id,data_json,fecha) VALUES(?,?,?)',
+      args: [refund.id, JSON.stringify(refund), at],
+      wantRows: false,
+    });
+  }
+
+  const debts = [
+    { id: 'READ-CXC-A', ventaId: 'READ-SALE-A', montoUSD: 12, saldoUSD: 12 },
+    { id: 'READ-CXC-B', ventaId: 'READ-SALE-B', montoUSD: 99, saldoUSD: 99 },
+    { id: 'READ-CXC-GLOBAL', cliente: 'Deuda inicial', montoUSD: 5, saldoUSD: 5 },
+  ];
+  for (const debt of debts) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+      args: [debt.id, JSON.stringify(debt), at],
+      wantRows: false,
+    });
+  }
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxp(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['READ-CXP-ADMIN', JSON.stringify({ id: 'READ-CXP-ADMIN', proveedor: 'Proveedor privado', montoUSD: 100 }), at],
+    wantRows: false,
+  });
+
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: ['READ-PRODUCT-SHARED', JSON.stringify({ id: 'READ-PRODUCT-SHARED', nombre: 'Producto compartido' }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['READ-CLIENT-SHARED', JSON.stringify({ id: 'READ-CLIENT-SHARED', nombre: 'Cliente compartido' }), at],
+    wantRows: false,
+  });
+
+  const cashier = { id: 'read-cashier-a', rol: 'cajero' };
+  assert.deepEqual(
+    (await posStore.listRecords('ventas', { limit: 100 }, cashier)).map(row => row.id),
+    ['READ-SALE-A'],
+  );
+  assert.equal(await posStore.getRecord('ventas', 'READ-SALE-B', cashier), null);
+  assert.equal(await posStore.countRecords('ventas', cashier), 1);
+  assert.deepEqual(
+    (await posStore.listRecords('ventas', { limit: 100, terminalId: 'READ-CAJA-B' }, cashier)).map(row => row.id),
+    ['READ-SALE-A'],
+  );
+  assert.ok(await posStore.getRecord('productos', 'READ-PRODUCT-SHARED', cashier));
+  assert.ok(await posStore.getRecord('clientes', 'READ-CLIENT-SHARED', cashier));
+  assert.ok(await posStore.getRecord('movimientos', 'READ-STOCK-MOVEMENT-B', cashier));
+  assert.deepEqual(
+    (await posStore.listRecords('devoluciones', { limit: 100 }, cashier)).map(row => row.id),
+    ['READ-RETURN-A'],
+  );
+  assert.equal(await posStore.countRecords('devoluciones', cashier), 1);
+  assert.deepEqual(
+    (await posStore.listRecords('cxc', { limit: 100 }, cashier)).map(row => row.id).sort(),
+    ['READ-CXC-A', 'READ-CXC-GLOBAL'],
+  );
+  assert.equal(await posStore.getRecord('cxc', 'READ-CXC-B', cashier), null);
+  assert.equal(await posStore.countRecords('cxc', cashier), 2);
+  assert.deepEqual(
+    (await posStore.listRecords('terminales', { limit: 100 }, cashier)).map(row => row.id),
+    ['READ-CAJA-A'],
+  );
+  assert.equal(await posStore.countRecords('cxp', cashier), 0);
+  assert.equal(await posStore.getRecord('cxp', 'READ-CXP-ADMIN', cashier), null);
+  assert.ok(await posStore.getRecord('ventas', 'READ-SALE-B', { id: 'read-admin', rol: 'administrador' }));
+  assert.ok(await posStore.countRecords('ventas', { id: 'read-admin', rol: 'administrador' }) >= 2);
+});

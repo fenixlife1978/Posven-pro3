@@ -345,9 +345,67 @@ function terminalSeries(prefix: string, label: string, number: number, width = 6
   return prefix + '-' + label + '-' + String(number).padStart(width, '0');
 }
 
-export async function getRecord(table: SQLiteStoreTable, id: string): Promise<any | null> {
+type ReadScopeUser = { id: string; rol: string };
+
+async function readScope(table: SQLiteStoreTable, user?: ReadScopeUser) {
+  if (!user || user.rol === 'administrador') return { clause: '', args: [] as any[] };
+  if (user.rol !== 'cajero') throw new Error('Rol sin permisos de lectura POSVEN.');
+
+  const assigned = await sqliteExecute({
+    sql: "SELECT id FROM terminales WHERE json_extract(data_json,'$.usuarioId')=?",
+    args: [String(user.id)],
+  });
+  const terminalIds = assigned.rows.map((row: any) => String(row.id)).filter(Boolean);
+  // El Kardex es un historial compartido de inventario; no contiene el libro de caja.
+  if (table === 'productos' || table === 'clientes' || table === 'movimientos') return { clause: '', args: [] as any[] };
+  if (table === 'terminales') {
+    return {
+      clause: "json_extract(r.data_json,'$.usuarioId')=?",
+      args: [String(user.id)],
+    };
+  }
+  if (table === 'cxp' || table === 'compras' || table === 'proveedores') {
+    return { clause: '1=0', args: [] as any[] };
+  }
+  if (!terminalIds.length) return { clause: '1=0', args: [] as any[] };
+
+  const placeholders = terminalIds.map(() => '?').join(',');
+  const ids = terminalIds;
+  const directTerminalTables = new Set<SQLiteStoreTable>([
+    'ventas', 'movimientos', 'reportesZ', 'libroDiario', 'caja',
+  ]);
+  if (directTerminalTables.has(table)) {
+    return {
+      clause: "json_extract(r.data_json,'$.terminalId') IN (" + placeholders + ")",
+      args: ids,
+    };
+  }
+  if (table === 'devoluciones' || table === 'anulaciones') {
+    return {
+      clause: "EXISTS (SELECT 1 FROM ventas v WHERE v.id=json_extract(r.data_json,'$.ventaId') AND json_extract(v.data_json,'$.terminalId') IN (" + placeholders + "))",
+      args: ids,
+    };
+  }
+  if (table === 'cxc') {
+    // Las CxC iniciales creadas desde Administración no tienen venta asociada
+    // y pueden cobrarse desde cualquier caja; las originadas por ventas quedan
+    // limitadas a la terminal que emitió la venta.
+    return {
+      clause: "(COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) IS NULL OR EXISTS (SELECT 1 FROM ventas v WHERE v.id=COALESCE(json_extract(r.data_json,'$.ventaId'),json_extract(r.data_json,'$.facturaId')) AND json_extract(v.data_json,'$.terminalId') IN (" + placeholders + ")))",
+      args: ids,
+    };
+  }
+  return { clause: '1=0', args: [] as any[] };
+}
+
+export async function getRecord(table: SQLiteStoreTable, id: string, user?: ReadScopeUser): Promise<any | null> {
   assertSQLiteReady();
-  const result = await sqliteExecute(txSelect(table, id));
+  const scope = await readScope(table, user);
+  const scopeSql = scope.clause ? ' AND (' + scope.clause + ')' : '';
+  const result = await sqliteExecute({
+    sql: `SELECT r.id,r.data_json FROM ${tableName(table)} r WHERE r.id=?${scopeSql} LIMIT 1`,
+    args: [String(id), ...scope.args],
+  });
   return rowFromDb(result.rows[0]);
 }
 
@@ -468,50 +526,59 @@ export async function exportBackupSnapshot() {
 export async function listRecords(
   table: SQLiteStoreTable,
   options: { limit?: number; offset?: number; terminalId?: string; estado?: string; fechaDesde?: string; fechaHasta?: string; productoId?: string } = {},
+  user?: ReadScopeUser,
 ): Promise<any[]> {
   assertSQLiteReady();
   const limit = Math.min(Math.max(Number(options.limit) || 500, 1), 10000);
   const offset = Math.max(Number(options.offset) || 0, 0);
   const args: any[] = [];
   const filters: string[] = [];
-  if (options.terminalId) {
-    filters.push("json_extract(data_json,'$.terminalId')=?");
+  // En cajeros, terminalId recibido del cliente nunca puede estrechar ni
+  // alterar el alcance real derivado de sus terminales asignadas. El filtro
+  // explícito solo se admite para administradores o llamadas internas.
+  if (options.terminalId && (!user || user.rol === 'administrador')) {
+    filters.push("json_extract(r.data_json,'$.terminalId')=?");
     args.push(String(options.terminalId));
   }
   if (options.estado) {
-    filters.push("json_extract(data_json,'$.estado')=?");
+    filters.push("json_extract(r.data_json,'$.estado')=?");
     args.push(String(options.estado));
   }
   if (options.fechaDesde) {
-    filters.push("fecha>?");
+    filters.push('r.fecha>?');
     args.push(String(options.fechaDesde));
   }
   if (options.fechaHasta) {
-    filters.push("fecha<=?");
+    filters.push('r.fecha<=?');
     args.push(String(options.fechaHasta));
   }
   if (options.productoId) {
-    filters.push("json_extract(data_json,'$.productoId')=?");
+    filters.push("json_extract(r.data_json,'$.productoId')=?");
     args.push(String(options.productoId));
   }
+  const scope = await readScope(table, user);
+  if (scope.clause) {
+    filters.push('(' + scope.clause + ')');
+    args.push(...scope.args);
+  }
   const where = filters.length ? ' WHERE ' + filters.join(' AND ') : '';
-  // productos no tiene columna fecha; se ordena por updated_at. Las demás
-  // tablas operativas sí conservan fecha para ordenar cronológicamente.
   const orderBy = table === 'productos'
-    ? 'updated_at DESC, id DESC'
-    : "COALESCE(fecha,'') DESC, id DESC";
+    ? 'r.updated_at DESC, r.id DESC'
+    : "COALESCE(r.fecha,'') DESC, r.id DESC";
   const result = await sqliteExecute({
-    sql: `SELECT id,data_json FROM ${tableName(table)}${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
+    sql: `SELECT r.id,r.data_json FROM ${tableName(table)} r${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
     args,
   });
   return result.rows.map(rowFromDb).filter(Boolean);
 }
 
-export async function countRecords(table: SQLiteStoreTable): Promise<number> {
+export async function countRecords(table: SQLiteStoreTable, user?: ReadScopeUser): Promise<number> {
   assertSQLiteReady();
+  const scope = await readScope(table, user);
+  const where = scope.clause ? ' WHERE ' + scope.clause : '';
   const result = await sqliteExecute({
-    sql: `SELECT COUNT(*) AS total FROM ${tableName(table)}`,
-    args: [],
+    sql: `SELECT COUNT(*) AS total FROM ${tableName(table)} r${where}`,
+    args: scope.args,
   });
   return Number(result.rows[0]?.total ?? 0);
 }
