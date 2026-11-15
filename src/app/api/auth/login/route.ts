@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { clearLoginAttempts, consumeLoginAttempt, createSession, ensureSeedAdmin, getUserWithSecret, verifyPassword } from '@/lib/sqlite/auth';
+import { clearLoginAttempts, consumeLoginAttempt, createSession, getUserWithSecret, verifyPassword } from '@/lib/sqlite/auth';
 import { isSQLiteConfigured } from '@/lib/sqlite/client';
 
 export const runtime = 'nodejs';
@@ -16,8 +16,6 @@ export async function POST(request: Request) {
     if (!identifier || !password) {
       return NextResponse.json({ error: 'Usuario/correo y contraseña son obligatorios.' }, { status: 400 });
     }
-
-    await ensureSeedAdmin();
 
     const row = await getUserWithSecret(identifier);
     // Usar el ID canónico evita que alternar entre nombre de usuario y correo
