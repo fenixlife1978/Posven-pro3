@@ -533,7 +533,10 @@ export async function listRecords(
   const offset = Math.max(Number(options.offset) || 0, 0);
   const args: any[] = [];
   const filters: string[] = [];
-  if (options.terminalId) {
+  // En cajeros, terminalId recibido del cliente nunca puede estrechar ni
+  // alterar el alcance real derivado de sus terminales asignadas. El filtro
+  // explícito solo se admite para administradores o llamadas internas.
+  if (options.terminalId && (!user || user.rol === 'administrador')) {
     filters.push("json_extract(r.data_json,'$.terminalId')=?");
     args.push(String(options.terminalId));
   }
