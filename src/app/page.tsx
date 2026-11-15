@@ -249,7 +249,6 @@ export default function LicoreriaPOS() {
       clearInterval(timerClock);
       clearInterval(runtimeHeartbeat);
       window.removeEventListener('beforeunload', clearRuntimeMarker);
-      clearTimeout(timerSafety);
       window.removeEventListener('error', captureError);
     };
   }, [router]);
