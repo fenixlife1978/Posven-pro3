@@ -569,3 +569,22 @@ test('un cajero no puede cobrar una CxC originada por ventas de otra terminal', 
   assert.equal(globalResult.saldoUSD, 9);
   assert.equal(globalResult.historialPagos.length, 1);
 });
+
+
+test('las respuestas de configuración ocultan secretos administrativos a cajeros', () => {
+  const { configVisibleToRole } = posStore;
+  const config = {
+    tasa: 874.5,
+    empresa: { nombre: 'Negocio de prueba' },
+    pinDevolucion: '987654',
+    claveAdministrativa: 'secreto',
+    parametrosInternos: { modo: 'admin' },
+  };
+  assert.deepEqual(configVisibleToRole(config, 'cajero'), {
+    tasa: 874.5,
+    empresa: { nombre: 'Negocio de prueba' },
+  });
+  assert.equal(configVisibleToRole(config, 'cajero').pinDevolucion, undefined);
+  assert.equal(configVisibleToRole(config, 'cajero').claveAdministrativa, undefined);
+  assert.deepEqual(configVisibleToRole(config, 'administrador'), config);
+});
