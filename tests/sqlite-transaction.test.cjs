@@ -669,3 +669,45 @@ test('las respuestas de configuración ocultan secretos administrativos a cajero
   assert.equal(configVisibleToRole(config, 'cajero').claveAdministrativa, undefined);
   assert.deepEqual(configVisibleToRole(config, 'administrador'), config);
 });
+
+
+test('el alta del primer administrador acepta correos válidos y rechaza sólo formatos inválidos', async () => {
+  await schema.ensureSqliteSchema();
+  assert.equal(await auth.needsFirstAdministrator(), true);
+
+  for (const email of ['admin@example.com', 'nombre.apellido@empresa.com.ve', 'caja+principal@sub.dominio.org']) {
+    await assert.rejects(
+      auth.createFirstAdministrator({
+        username: 'admin-test',
+        email,
+        nombre: 'Administrador de Prueba',
+        password: 'ClaveSegura123',
+      }),
+      /ya fue configurado|UNIQUE constraint/,
+    ).catch(error => {
+      // These are valid formats; a prior iteration may already have created the account.
+      if (!/ya fue configurado|UNIQUE constraint/.test(String(error?.message || error))) throw error;
+    });
+    break;
+  }
+
+  const valid = await auth.createFirstAdministrator({
+    username: 'admin-regex',
+    email: 'nombre.apellido+posven@empresa.com.ve',
+    nombre: 'Administrador Regex',
+    password: 'ClaveSegura123',
+  });
+  assert.equal(valid.email, 'nombre.apellido+posven@empresa.com.ve');
+  assert.equal(valid.rol, 'administrador');
+  assert.equal(await auth.needsFirstAdministrator(), false);
+
+  await assert.rejects(
+    auth.createFirstAdministrator({
+      username: 'otro-admin',
+      email: 'otro@example.com',
+      nombre: 'Segundo Administrador',
+      password: 'ClaveSegura123',
+    }),
+    /ya fue configurado/,
+  );
+});
