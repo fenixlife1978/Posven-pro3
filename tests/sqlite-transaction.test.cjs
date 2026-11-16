@@ -671,24 +671,21 @@ test('las respuestas de configuración ocultan secretos administrativos a cajero
 });
 
 
+
 test('el alta del primer administrador acepta correos válidos y rechaza sólo formatos inválidos', async () => {
   await schema.ensureSqliteSchema();
   assert.equal(await auth.needsFirstAdministrator(), true);
 
-  for (const email of ['admin@example.com', 'nombre.apellido@empresa.com.ve', 'caja+principal@sub.dominio.org']) {
+  for (const email of ['correo-sin-arroba', 'nombre@', '@empresa.com', 'nombre empresa@empresa.com']) {
     await assert.rejects(
       auth.createFirstAdministrator({
-        username: 'admin-test',
+        username: 'admin-invalid',
         email,
         nombre: 'Administrador de Prueba',
         password: 'ClaveSegura123',
       }),
-      /ya fue configurado|UNIQUE constraint/,
-    ).catch(error => {
-      // These are valid formats; a prior iteration may already have created the account.
-      if (!/ya fue configurado|UNIQUE constraint/.test(String(error?.message || error))) throw error;
-    });
-    break;
+      /correo electrónico válido/,
+    );
   }
 
   const valid = await auth.createFirstAdministrator({
