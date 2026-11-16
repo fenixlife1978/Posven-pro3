@@ -669,3 +669,42 @@ test('las respuestas de configuración ocultan secretos administrativos a cajero
   assert.equal(configVisibleToRole(config, 'cajero').claveAdministrativa, undefined);
   assert.deepEqual(configVisibleToRole(config, 'administrador'), config);
 });
+
+
+
+test('el alta del primer administrador acepta correos válidos y rechaza sólo formatos inválidos', async () => {
+  await schema.ensureSqliteSchema();
+  assert.equal(await auth.needsFirstAdministrator(), true);
+
+  for (const email of ['correo-sin-arroba', 'nombre@', '@empresa.com', 'nombre empresa@empresa.com']) {
+    await assert.rejects(
+      auth.createFirstAdministrator({
+        username: 'admin-invalid',
+        email,
+        nombre: 'Administrador de Prueba',
+        password: 'ClaveSegura123',
+      }),
+      /correo electrónico válido/,
+    );
+  }
+
+  const valid = await auth.createFirstAdministrator({
+    username: 'admin-regex',
+    email: 'nombre.apellido+posven@empresa.com.ve',
+    nombre: 'Administrador Regex',
+    password: 'ClaveSegura123',
+  });
+  assert.equal(valid.email, 'nombre.apellido+posven@empresa.com.ve');
+  assert.equal(valid.rol, 'administrador');
+  assert.equal(await auth.needsFirstAdministrator(), false);
+
+  await assert.rejects(
+    auth.createFirstAdministrator({
+      username: 'otro-admin',
+      email: 'otro@example.com',
+      nombre: 'Segundo Administrador',
+      password: 'ClaveSegura123',
+    }),
+    /ya fue configurado/,
+  );
+});
