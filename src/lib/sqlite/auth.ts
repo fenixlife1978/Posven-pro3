@@ -147,7 +147,7 @@ export async function createFirstAdministrator(input: {
   if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
     throw new Error('El usuario debe tener entre 3 y 32 caracteres: letras, números, punto, guion o guion bajo.');
   }
-  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error('Ingrese un correo electrónico válido.');
   }
   if (nombre.length < 2 || nombre.length > 80) throw new Error('Ingrese el nombre del administrador.');
