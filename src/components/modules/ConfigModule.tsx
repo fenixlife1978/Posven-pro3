@@ -5,7 +5,7 @@ import { AppState } from '@/lib/types';
 import { Store } from '@/lib/db-store';
 import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo, cargarRespaldoDesdeContenido } from '@/lib/backup';
+import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeContenido } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [tasa, setTasa] = useState<string | number>(state.tasa);
