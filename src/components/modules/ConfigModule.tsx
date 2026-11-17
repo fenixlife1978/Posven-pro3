@@ -5,7 +5,7 @@ import { AppState } from '@/lib/types';
 import { Store } from '@/lib/db-store';
 import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo } from '@/lib/backup';
+import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeArchivo, cargarRespaldoDesdeContenido } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [tasa, setTasa] = useState<string | number>(state.tasa);
@@ -67,27 +67,58 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     }
   };
 
-  const handleArchivoRespaldo = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const restaurarContenidoRespaldo = async (content: string) => {
     setBackupError(null);
     setBackupProgress(null);
-
     const confirmar = window.confirm('Se restaurará el sistema completo desde este respaldo. Los datos actuales serán reemplazados. ¿Desea continuar?');
     if (!confirmar) return;
 
     setIsRestoringBackup(true);
     setBackupProgress({ percent: 0, stage: 'Preparando', detail: 'Leyendo y validando el archivo…' });
-
     try {
-      await cargarRespaldoDesdeArchivo(file, (progress) => setBackupProgress(progress));
+      await cargarRespaldoDesdeContenido(content, (progress) => setBackupProgress(progress));
       toast({ title: "Respaldo Restaurado", description: "La restauración SQLite terminó correctamente. La aplicación se actualizará ahora." });
       setTimeout(() => window.location.reload(), 900);
     } catch (err: any) {
       console.error('❌ Error restaurando respaldo:', err);
       setBackupError(err?.message || 'No se pudo cargar el respaldo seleccionado.');
       setBackupProgress(null);
+    } finally {
+      setIsRestoringBackup(false);
+    }
+  };
+
+  const handleArchivoRespaldo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const content = await file.text();
+      await restaurarContenidoRespaldo(content);
+    } catch (err: any) {
+      setBackupError(err?.message || 'No se pudo leer el archivo seleccionado.');
+    }
+  };
+
+  const handleSeleccionarRespaldo = async () => {
+    const electronAPI = (window as any).electronAPI;
+    if (typeof electronAPI?.selectBackupFile !== 'function') {
+      fileInputRef.current?.click();
+      return;
+    }
+    setIsRestoringBackup(true);
+    setBackupError(null);
+    try {
+      const selected = await electronAPI.selectBackupFile();
+      setIsRestoringBackup(false);
+      if (!selected || selected.canceled) return;
+      if (selected.error) throw new Error(selected.error);
+      if (typeof selected.content !== 'string' || !selected.content) {
+        throw new Error('No se pudo leer el contenido del respaldo seleccionado.');
+      }
+      await restaurarContenidoRespaldo(selected.content);
+    } catch (err: any) {
+      setBackupError(err?.message || 'No se pudo abrir el selector de respaldos.');
     } finally {
       setIsRestoringBackup(false);
     }
@@ -310,7 +341,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
 
             <button
               className="btn h-12 px-8 font-black uppercase text-xs shadow-md flex items-center gap-2 border border-line bg-surface-soft/50 hover:bg-surface-soft"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleSeleccionarRespaldo}
               disabled={isRestoringBackup}
             >
               {isRestoringBackup ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
