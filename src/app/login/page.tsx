@@ -51,26 +51,51 @@ export default function LoginPage() {
   const [confirmation, setConfirmation] = useState("");
 
   useEffect(() => {
+    // Al llegar a /login después de cerrar sesión, descartar siempre el token
+    // de pestaña anterior. Un token revocado o heredado no debe contaminar las
+    // peticiones de comprobación ni dejar el formulario en estado de espera.
+    try { sessionStorage.removeItem(POSVEN_TAB_SESSION_KEY); } catch {}
     installLoginTabSessionFetch();
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
     const initialize = async () => {
       try {
-        const session = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
+        const session = await fetch("/api/auth/session", {
+          cache: "no-store", credentials: "same-origin", signal: controller.signal,
+        });
         if (session.ok) { router.replace("/"); return; }
-        const response = await fetch("/api/auth/setup", { cache: "no-store" });
+        const response = await fetch("/api/auth/setup", {
+          cache: "no-store", credentials: "same-origin", signal: controller.signal,
+        });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.ready) throw new Error(data.error || "Servidor local no disponible.");
         if (!cancelled) setMode(data.needsSetup ? "setup" : "login");
       } catch (error: any) {
         if (!cancelled) {
-          setStatusMessage(error?.message || "No fue posible conectar con el servidor local.");
+          setStatusMessage(error?.name === "AbortError"
+            ? "El servidor local tarda demasiado en responder. Compruebe la conexión y reintente."
+            : error?.message || "No fue posible conectar con el servidor local.");
           setMode("unavailable");
         }
+      } finally {
+        window.clearTimeout(timeout);
       }
     };
     initialize();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; window.clearTimeout(timeout); controller.abort(); };
   }, [router]);
+
+  useEffect(() => {
+    if (mode !== "login" && mode !== "setup") return;
+    // Al mostrar el formulario, devolver foco real al primer campo editable.
+    const selector = mode === "setup" ? 'input[autocomplete="name"]' : 'input[autocomplete="username"]';
+    const frame = window.requestAnimationFrame(() => {
+      const field = document.querySelector<HTMLInputElement>(selector);
+      field?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [mode]);
 
   const acceptSession = (data: any) => {
     if (data?.sessionId) sessionStorage.setItem(POSVEN_TAB_SESSION_KEY, String(data.sessionId));
