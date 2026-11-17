@@ -217,6 +217,41 @@ ipcMain.on('print-ticket', (event, printData) => {
     });
 });
 
+ipcMain.handle('select-backup-file', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { canceled: true };
+  }
+  try {
+    // Evita que el selector herede la carpeta Descargas que puede quedar
+    // bloqueada por indexación/sincronización de Windows. Abrimos Documentos.
+    let defaultPath = app.getPath('documents');
+    try {
+      await fs.promises.access(defaultPath, fs.constants.R_OK);
+    } catch {
+      defaultPath = app.getPath('userData');
+    }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Seleccionar respaldo POSVEN',
+      defaultPath,
+      buttonLabel: 'Validar respaldo',
+      properties: ['openFile'],
+      filters: [{ name: 'Respaldos POSVEN', extensions: ['json'] }, { name: 'Todos los archivos', extensions: ['*'] }],
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+    const selectedPath = result.filePaths[0];
+    const stat = await fs.promises.stat(selectedPath);
+    if (!stat.isFile()) throw new Error('El elemento seleccionado no es un archivo.');
+    if (stat.size <= 0 || stat.size > 64 * 1024 * 1024) {
+      throw new Error('El respaldo debe tener contenido y no superar 64 MB.');
+    }
+    const content = await fs.promises.readFile(selectedPath, 'utf8');
+    return { canceled: false, name: path.basename(selectedPath), content };
+  } catch (error) {
+    console.error('[POSVEN3] Error seleccionando respaldo:', error);
+    return { canceled: false, error: error?.message || 'No se pudo leer el archivo seleccionado.' };
+  }
+});
+
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });
