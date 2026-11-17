@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppState } from '@/lib/types';
 import { Store } from '@/lib/db-store';
-import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2 } from 'lucide-react';
+import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2, Wifi, WifiOff, Network } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeContenido } from '@/lib/backup';
 
@@ -21,7 +21,35 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backupProgress, setBackupProgress] = useState<{ percent: number; stage: string; detail: string } | null>(null);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [networkInfo, setNetworkInfo] = useState<any>(null);
+  const [networkError, setNetworkError] = useState('');
+  const [openingNetworkSettings, setOpeningNetworkSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (typeof api?.getNetworkInfo !== 'function') return;
+    api.getNetworkInfo()
+      .then((info: any) => setNetworkInfo(info))
+      .catch((error: any) => setNetworkError(error?.message || 'No se pudo consultar la configuración LAN.'));
+  }, []);
+
+  const abrirConfiguracionLAN = async () => {
+    const api = (window as any).electronAPI;
+    if (typeof api?.openNetworkSettings !== 'function') {
+      setNetworkError('El panel de red LAN está disponible en la aplicación de escritorio POSVEN-Pro.');
+      return;
+    }
+    setOpeningNetworkSettings(true);
+    setNetworkError('');
+    try {
+      await api.openNetworkSettings();
+    } catch (error: any) {
+      setNetworkError(error?.message || 'No se pudo abrir la configuración de red LAN.');
+    } finally {
+      setOpeningNetworkSettings(false);
+    }
+  };
 
   useEffect(() => {
     setTasa(state.tasa);
@@ -201,6 +229,52 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
 
   return (
     <div className="max-w-2xl space-y-6 animate-in fade-in duration-300 pb-20">
+      {/* ===== RED LAN ===== */}
+      <div className="card shadow-lg border-blue-500/30">
+        <div className="card-head bg-surface-soft border-b border-line px-5 py-4">
+          <h3 className="text-ink font-black uppercase text-xs tracking-widest flex items-center gap-2">
+            <Network className="w-4 h-4" /> Configuración de Red LAN
+          </h3>
+        </div>
+        <div className="card-body p-6 space-y-4 bg-white">
+          <p className="text-xs text-ink font-bold">
+            Configura este equipo como servidor o cliente. Si el descubrimiento automático falla, puedes indicar manualmente la IP privada del servidor y el puerto. La base SQLite permanece únicamente en el servidor.
+          </p>
+          {networkInfo ? (
+            <div className="rounded-xl border border-line bg-surface-soft/50 p-4 space-y-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-black uppercase text-ink/60">Modo de este equipo</span>
+                <span className="font-black uppercase text-brand-gold-deep">{networkInfo.mode === 'server' ? 'Servidor' : networkInfo.mode === 'client' ? 'Cliente' : 'No disponible'}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-black uppercase text-ink/60">Puerto</span>
+                <span className="font-mono font-bold">{networkInfo.port || 4580}</span>
+              </div>
+              {networkInfo.mode === 'server' && (
+                <>
+                  <div className="font-black uppercase text-ink/60 pt-1">Direcciones IP para las PCs clientes</div>
+                  {(networkInfo.addresses || []).length ? networkInfo.addresses.map((ip: string) => (
+                    <div key={ip} className="font-mono font-bold text-sm select-all">https://{ip}:{networkInfo.port || 4580}</div>
+                  )) : <p className="text-amber-700">No se detectó una IP privada IPv4. Comprueba el adaptador de red.</p>}
+                  {networkInfo.fingerprint && <div className="pt-2"><div className="font-black uppercase text-ink/60 mb-1">Huella TLS SHA-256 (compartir de forma segura)</div><div className="font-mono break-all select-all">{String(networkInfo.fingerprint).match(/.{1,2}/g)?.join(':')}</div></div>}
+                </>
+              )}
+              {networkInfo.mode === 'client' && (
+                <div className="flex items-center justify-between gap-2"><span className="font-black uppercase text-ink/60">Servidor configurado</span><span className="font-mono font-bold">{networkInfo.serverHost}:{networkInfo.port}</span></div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-ink/60">Consultando configuración de red del equipo…</p>
+          )}
+          <button className="btn btn-primary h-12 px-6 font-black uppercase text-xs shadow-md flex items-center gap-2" onClick={abrirConfiguracionLAN} disabled={openingNetworkSettings}>
+            {openingNetworkSettings ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+            {openingNetworkSettings ? 'ABRIENDO CONFIGURACIÓN…' : 'Configurar servidor / IP de conexión'}
+          </button>
+          {networkError && <p className="text-xs text-red-700 font-bold" role="alert">{networkError}</p>}
+          <p className="text-[11px] text-ink/60">Los cambios de IP, puerto o función servidor/cliente requieren reiniciar POSVEN-Pro. No eliminan ni modifican la base de datos.</p>
+        </div>
+      </div>
+
       {/* ===== TASA DE CAMBIO ===== */}      <div className="card shadow-lg border-line">
         <div className="card-head bg-surface-soft border-b border-line px-5 py-4">
           <h3 className="text-ink font-black uppercase text-xs tracking-widest">Tasa de Cambio Oficial</h3>
