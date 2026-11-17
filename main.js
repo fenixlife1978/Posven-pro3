@@ -259,6 +259,34 @@ ipcMain.handle('save-network-config', (event, value) => {
   return { ok: true };
 });
 
+// El panel se puede abrir desde Ajustes sin reinstalar. Los cambios de rol,
+// IP o puerto se aplican tras reiniciar para no dejar sockets/SQLite a medias.
+ipcMain.handle('open-network-settings', async (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    throw new Error('Solo la ventana principal puede abrir la configuración LAN.');
+  }
+  if (setupWindow && !setupWindow.isDestroyed()) {
+    setupWindow.focus();
+    return { opened: true };
+  }
+  const updated = await showNetworkSetup();
+  if (!updated) return { saved: false };
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Configuración LAN guardada',
+    message: 'La nueva configuración de red fue guardada.',
+    detail: 'POSVEN3 debe reiniciarse para aplicar el modo servidor/cliente, la IP y el puerto. No se modificará ni eliminará la base SQLite.',
+    buttons: ['Reiniciar ahora', 'Más tarde'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (result.response === 0) {
+    app.relaunch();
+    app.quit();
+  }
+  return { saved: true, restartRequired: true };
+});
+
 ipcMain.handle('discover-lan-servers', () => discoverLanServers());
 
 ipcMain.handle('get-network-info', () => ({
@@ -266,6 +294,8 @@ ipcMain.handle('get-network-info', () => ({
   port: networkConfig?.port || null,
   serverHost: networkConfig?.mode === 'client' ? networkConfig.host : null,
   addresses: networkConfig?.mode === 'server' ? getLanIPv4Addresses() : [],
+  fingerprint: networkConfig?.mode === 'server' ? serverTls?.fingerprint || null : networkConfig?.fingerprint || null,
+  discoveryPort: LAN_DISCOVERY_PORT,
 }));
 
 function normalizeFingerprint(value) { return String(value || '').replace(/[^a-f0-9]/gi, '').toLowerCase(); }
