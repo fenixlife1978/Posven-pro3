@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   selectBackupFile: () => ipcRenderer.invoke('select-backup-file'),
   getNetworkInfo: () => ipcRenderer.invoke('get-network-info'),
+  openNetworkSettings: () => ipcRenderer.invoke('open-network-settings'),
   discoverLanServers: () => ipcRenderer.invoke('discover-lan-servers'),
   saveNetworkConfig: (config) => ipcRenderer.invoke('save-network-config', config),
 });
