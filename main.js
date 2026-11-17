@@ -431,8 +431,18 @@ async function startLocalNextServer(port) {
       POSVEN_NEXT_DIR: app.getAppPath(),
     },
   });
+  const activeWorker = serverWorker;
   serverWorker.stdout?.on('data', chunk => console.log('[POSVEN3 server]', String(chunk).trimEnd()));
   serverWorker.stderr?.on('data', chunk => console.error('[POSVEN3 server]', String(chunk).trimEnd()));
+  serverWorker.on('error', error => console.error('[POSVEN3 server] Error del proceso utility:', error));
+  serverWorker.on('exit', code => {
+    if (serverWorker === activeWorker && !serverShuttingDown) {
+      serverWorker = null;
+      serverWorkerPort = null;
+      console.error('[POSVEN3 server] El proceso SQLite terminó inesperadamente:', code);
+      fatalError('Servidor POSVEN3 detenido', 'El proceso independiente de datos se cerró inesperadamente. Las operaciones nuevas no se aceptarán. Reinicia la aplicación y verifica el registro de Windows.');
+    }
+  });
 
   serverWorkerPort = await new Promise((resolve, reject) => {
     let settled = false;
