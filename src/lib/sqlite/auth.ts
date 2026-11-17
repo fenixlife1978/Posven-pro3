@@ -166,7 +166,7 @@ export async function createFirstAdministrator(input: {
     await tx.execute({
       sql: `INSERT INTO users
         (id, username, email, nombre, rol, password_hash, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json)
-        VALUES (?, ?, ?, ?, 'administrador', ?, 0, 0, ?, '{}')`,
+        VALUES (?, ?, ?, ?, 'administrador', ?, 0, 1, ?, '{}')`,
       args: [id, username, email, nombre, passwordHash, fecha],
       wantRows: false,
     });
