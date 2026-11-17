@@ -102,11 +102,29 @@ export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
   await restaurarBackupLocal(backup);
 }
 
+export async function cargarRespaldoDesdeContenido(
+  content: string,
+  onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
+): Promise<void> {
+  if (!content || content.length > 64 * 1024 * 1024) {
+    throw new Error('El respaldo está vacío o supera el máximo permitido de 64 MB.');
+  }
+  let backup: BackupFile;
+  try {
+    backup = JSON.parse(content) as BackupFile;
+  } catch {
+    throw new Error('El archivo seleccionado no contiene JSON válido.');
+  }
+  if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object' || Array.isArray(backup.data)) {
+    throw new Error('El archivo no es un respaldo válido de POSVEN-Pro.');
+  }
+  await restaurarBackupLocal(backup, onProgress);
+}
+
 export async function cargarRespaldoDesdeArchivo(
   file: File,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
 ): Promise<void> {
-  const backup = await leerArchivoRespaldo(file);
-  if (!backup) return;
-  await restaurarBackupLocal(backup, onProgress);
+  if (!file) return;
+  await cargarRespaldoDesdeContenido(await file.text(), onProgress);
 }
