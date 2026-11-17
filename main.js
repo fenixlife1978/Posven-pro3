@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess } = require('electron');
+const http = require('http');
 const https = require('https');
 const dgram = require('dgram');
 const crypto = require('crypto');
@@ -14,7 +15,9 @@ let mainWindow = null;
 let splashWindow = null;
 let setupWindow = null;
 let nextServer = null;
-let nextApplication = null;
+let nextApplication = null; // Retained as null; Next.js runs in serverWorker.
+let serverWorker = null;
+let serverWorkerPort = null;
 let networkConfig = null;
 let setupResolver = null;
 let serverTls = null;
@@ -413,16 +416,41 @@ function createWindow(appUrl) {
 async function startLocalNextServer(port) {
   const dataDir = path.join(app.getPath('userData'), 'data');
   fs.mkdirSync(dataDir, { recursive: true });
-  process.env.POSVEN_SQLITE_PATH = path.join(dataDir, 'posven-pro3.sqlite');
-
-  const next = require('next');
-  nextApplication = next({ dev: false, dir: app.getAppPath() });
-  await nextApplication.prepare();
-  const handler = nextApplication.getRequestHandler();
+  const sqlitePath = path.join(dataDir, 'posven-pro3.sqlite');
+  process.env.POSVEN_SQLITE_PATH = sqlitePath;
   serverTls = ensureServerTls();
+
+  // Next.js y better-sqlite3 viven en un UtilityProcess separado. Una consulta
+  // síncrona o una importación pesada ya no bloquea el hilo de interfaz Electron.
+  serverWorker = utilityProcess.fork(path.join(app.getAppPath(), 'server-worker.js'), [], {
+    serviceName: 'POSVEN3 SQLite Server',
+    stdio: 'pipe',
+    env: {
+      ...process.env,
+      POSVEN_SQLITE_PATH: sqlitePath,
+      POSVEN_NEXT_DIR: app.getAppPath(),
+    },
+  });
+  serverWorker.stdout?.on('data', chunk => console.log('[POSVEN3 server]', String(chunk).trimEnd()));
+  serverWorker.stderr?.on('data', chunk => console.error('[POSVEN3 server]', String(chunk).trimEnd()));
+
+  serverWorkerPort = await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error); else resolve(value);
+    };
+    const timer = setTimeout(() => finish(new Error('El proceso independiente del servidor SQLite excedió 60 segundos al iniciar.')), 60000);
+    serverWorker.once('message', message => {
+      if (message?.type === 'ready' && Number.isInteger(message.port)) finish(null, message.port);
+      else if (message?.type === 'error') finish(new Error(message.error || 'No se pudo iniciar el servidor SQLite.'));
+    });
+    serverWorker.once('exit', code => finish(new Error('El proceso del servidor SQLite terminó durante el inicio (código ' + code + ').')));
+  });
+
   nextServer = https.createServer({ pfx:serverTls.pfx, passphrase:serverTls.passphrase, minVersion:'TLSv1.2' }, (request, response) => {
-    // A keep-alive socket can outlive server.close(). Reject any later request
-    // before dispatching Next.js so shutdown cannot start untracked DB work.
     if (serverShuttingDown) {
       response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Connection': 'close', 'Retry-After': '5' });
       response.end(JSON.stringify({ ok: false, error: 'El servidor POSVEN3 está cerrando. Reintenta cuando vuelva a estar disponible.' }));
@@ -437,8 +465,6 @@ async function startLocalNextServer(port) {
       requestPort = Number(parsedHost.port || 443);
     } catch {}
     const configuredPort = Number(port);
-    // Recalcular las IP locales en cada petición para admitir cambios DHCP
-    // sin reiniciar el servidor ni aceptar hosts ajenos a las interfaces LAN.
     const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', ...getLanIPv4Addresses()]);
     if (!allowedHosts.has(requestHost) || requestPort !== configuredPort) {
       response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -466,10 +492,39 @@ async function startLocalNextServer(port) {
       response.end(JSON.stringify({ ok: false, error: 'Acceso permitido únicamente desde la red local.' }));
       return;
     }
-    // El origen real se toma del socket y se sobrescribe cualquier cabecera enviada por el cliente.
     request.headers['x-posven-client-ip'] = remote;
-    trackHttpRequest(request, response, handler);
+    const proxy = (incoming, outgoing) => new Promise((resolve, reject) => {
+      const upstream = http.request({
+        hostname: '127.0.0.1',
+        port: serverWorkerPort,
+        path: incoming.url || '/',
+        method: incoming.method || 'GET',
+        headers: {
+          ...incoming.headers,
+          host: incoming.headers.host,
+          'x-forwarded-host': incoming.headers.host,
+          'x-forwarded-proto': 'https',
+        },
+      }, upstreamResponse => {
+        outgoing.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.statusMessage, upstreamResponse.headers);
+        upstreamResponse.on('end', resolve);
+        upstreamResponse.on('error', reject);
+        upstreamResponse.pipe(outgoing);
+      });
+      upstream.setTimeout(120000, () => upstream.destroy(new Error('Tiempo de espera agotado esperando al servidor de datos.')));
+      upstream.on('error', error => {
+        if (!outgoing.headersSent && !outgoing.destroyed) {
+          outgoing.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          outgoing.end(JSON.stringify({ ok: false, error: 'El proceso del servidor de datos no está disponible. Reintenta.' }));
+        }
+        reject(error);
+      });
+      incoming.on('aborted', () => upstream.destroy(new Error('El cliente canceló la solicitud.')));
+      incoming.pipe(upstream);
+    });
+    trackHttpRequest(request, response, proxy);
   });
+
   await new Promise((resolve, reject) => {
     nextServer.once('error', reject);
     nextServer.listen(port, '0.0.0.0', resolve);
@@ -478,6 +533,21 @@ async function startLocalNextServer(port) {
   const address = nextServer.address();
   if (!address || typeof address === 'string') throw new Error('No se pudo abrir el servidor LAN de POSVEN3.');
   return address.port;
+}
+
+async function stopServerWorker() {
+  const worker = serverWorker;
+  serverWorker = null;
+  serverWorkerPort = null;
+  if (!worker) return;
+  await new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => { try { worker.kill(); } catch {} finish(); }, 15000);
+    worker.once('exit', finish);
+    try { worker.postMessage({ type: 'shutdown' }); }
+    catch { try { worker.kill(); } catch {} finish(); }
+  });
 }
 
 async function verifyServer(host, port, expectedFingerprint) {
@@ -640,15 +710,10 @@ async function shutdownLocalServer() {
     await serverClosed;
   }
 
-  const application = nextApplication;
+  // Las solicitudes externas ya fueron drenadas; ahora cerramos Next.js y
+  // SQLite dentro del proceso utility independiente.
+  await stopServerWorker();
   nextApplication = null;
-  if (application && typeof application.close === 'function') {
-    try {
-      await application.close();
-    } catch (error) {
-      console.error('[SHUTDOWN] Error cerrando Next.js:', error);
-    }
-  }
 
   serverTls = null;
   trustedServerFingerprint = null;
