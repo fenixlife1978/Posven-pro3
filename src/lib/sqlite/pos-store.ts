@@ -748,13 +748,24 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     });
     if (!currentAdminResult.rows.length) throw new Error('El administrador que inició la restauración ya no está activo.');
     const currentAdmin = currentAdminResult.rows[0];
+    // Compatibilidad con instalaciones creadas por el primer asistente:
+    // versiones anteriores guardaban al primer administrador con is_seed_admin=0.
+    // Si no existe una marca semilla, promovemos de forma segura al administrador
+    // autenticado que autorizó esta restauración; nunca usamos usuarios del backup.
     const seedResult = await tx.execute({
       sql: "SELECT id,username,email FROM users WHERE is_seed_admin=1 LIMIT 1",
       args: [],
     });
-    if (!seedResult.rows.length) throw new Error('No se encontró el administrador semilla local. Inicie sesión nuevamente antes de restaurar.');
-    const seedAdminId = String(seedResult.rows[0].id);
-    const seedAdminEmail = String(seedResult.rows[0].email || '').toLowerCase();
+    const seedAdmin = seedResult.rows[0] || currentAdmin;
+    const seedAdminId = String(seedAdmin.id);
+    const seedAdminEmail = String(seedAdmin.email || '').toLowerCase();
+    if (!seedResult.rows.length) {
+      await tx.execute({
+        sql: "UPDATE users SET is_seed_admin=1 WHERE id=? AND rol='administrador' AND acceso_bloqueado=0",
+        args: [String(currentAdmin.id)],
+        wantRows: false,
+      });
+    }
 
 
     const clearTables = [

@@ -166,13 +166,13 @@ export async function createFirstAdministrator(input: {
     await tx.execute({
       sql: `INSERT INTO users
         (id, username, email, nombre, rol, password_hash, acceso_bloqueado, is_seed_admin, fecha_creacion, data_json)
-        VALUES (?, ?, ?, ?, 'administrador', ?, 0, 0, ?, '{}')`,
+        VALUES (?, ?, ?, ?, 'administrador', ?, 0, 1, ?, '{}')`,
       args: [id, username, email, nombre, passwordHash, fecha],
       wantRows: false,
     });
     return mapUser({
       id, username, email, nombre, rol: 'administrador',
-      acceso_bloqueado: 0, is_seed_admin: 0, fecha_creacion: fecha,
+      acceso_bloqueado: 0, is_seed_admin: 1, fecha_creacion: fecha,
     });
   });
 }

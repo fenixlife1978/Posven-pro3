@@ -696,7 +696,25 @@ test('el alta del primer administrador acepta correos válidos y rechaza sólo f
   });
   assert.equal(valid.email, 'nombre.apellido+posven@empresa.com.ve');
   assert.equal(valid.rol, 'administrador');
+  assert.equal(valid.isSeedAdmin, true);
   assert.equal(await auth.needsFirstAdministrator(), false);
+
+  // Reproduce installations created before is_seed_admin was set correctly:
+  // restore must adopt the authenticated local administrator, not fail or
+  // trust a user record supplied by the imported backup.
+  const backup = await posStore.exportBackupSnapshot();
+  await sqliteExecute({
+    sql: 'UPDATE users SET is_seed_admin=0 WHERE id=?',
+    args: [valid.id],
+    wantRows: false,
+  });
+  const restore = await posStore.restoreBackupTransaction({
+    user: { id: valid.id, rol: 'administrador' },
+    backup,
+  });
+  assert.equal(restore.preservedAdminId, valid.id);
+  const preserved = await auth.findUser(valid.username);
+  assert.equal(preserved.isSeedAdmin, true);
 
   await assert.rejects(
     auth.createFirstAdministrator({

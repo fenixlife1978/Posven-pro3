@@ -643,4 +643,39 @@ ipcMain.on('print-ticket', (_event, printData) => {
     .catch(error => console.error('❌ Error de hardware en Roccia:', error));
 });
 
+ipcMain.handle('select-backup-file', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { canceled: true };
+  try {
+    // Abrir desde Documentos evita heredar Descargas como carpeta inicial,
+    // que puede bloquear el diálogo cuando Windows está indexando/sincronizando.
+    let defaultPath = app.getPath('documents');
+    try { await fs.promises.access(defaultPath, fs.constants.R_OK); }
+    catch { defaultPath = app.getPath('userData'); }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Seleccionar respaldo POSVEN',
+      defaultPath,
+      buttonLabel: 'Validar respaldo',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Respaldos POSVEN', extensions: ['json'] },
+        { name: 'Todos los archivos', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+    const selectedPath = result.filePaths[0];
+    const stat = await fs.promises.stat(selectedPath);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > 64 * 1024 * 1024) {
+      throw new Error('El respaldo debe ser un archivo válido y no superar 64 MB.');
+    }
+    return {
+      canceled: false,
+      name: path.basename(selectedPath),
+      content: await fs.promises.readFile(selectedPath, 'utf8'),
+    };
+  } catch (error) {
+    console.error('[POSVEN3] Error seleccionando respaldo:', error);
+    return { canceled: false, error: error?.message || 'No se pudo leer el archivo seleccionado.' };
+  }
+});
+
 ipcMain.handle('get-app-version', () => app.getVersion());

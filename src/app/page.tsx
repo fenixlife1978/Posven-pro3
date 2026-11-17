@@ -313,15 +313,26 @@ export default function LicoreriaPOS() {
   }, [activeModule, mounted]);
 
   const handleLogout = async () => {
-    if (confirm('¿Cerrar sesión del sistema?')) {
-      setLoading(true);
-      try {
-        if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(POSVEN_TAB_SESSION_KEY);
-        await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-        router.push('/login');
-      } catch (e) {
-        router.push('/login');
-      }
+    if (!confirm('¿Cerrar sesión del sistema?')) return;
+    setLoading(true);
+    try {
+      // El wrapper de sesión toma el ID de sessionStorage. Revocamos primero
+      // mientras el identificador sigue disponible; borrarlo antes enviaba
+      // una petición de logout sin identidad y dejaba la sesión viva.
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (error) {
+      console.warn('[POSVEN3] No se pudo confirmar la revocación de sesión:', error);
+    } finally {
+      try { sessionStorage.removeItem(POSVEN_TAB_SESSION_KEY); } catch {}
+      try { sessionStorage.removeItem('posven_active_module'); } catch {}
+      // Navegación completa: desmonta overlays/estados de la pantalla protegida
+      // y garantiza que el formulario de acceso vuelva a recibir foco y teclado.
+      window.location.replace('/login');
     }
   };
 
