@@ -1059,13 +1059,24 @@ let teardownFns: (() => void)[] = [];
 const masterSyncFns: Record<string, () => void> = {};
 const terminalSyncFns: Record<string, () => void> = {};
 
+// Todas las lecturas de sincronización comparten un único turno. Antes cada
+// listener podía iniciar una consulta SQLite al mismo tiempo (productos,
+// ventas, CxC/CxP, movimientos, compras, terminales y catálogos). En el servidor
+// local SQLite usa better-sqlite3 síncrono; ráfagas concurrentes saturaban el
+// event loop que también atiende la ventana Electron.
+// Se omiten ticks mientras otra lectura está activa: nunca se acumula una cola
+// de consultas atrasadas ni se bloquea la navegación esperando sincronizaciones.
+let sqlitePollingTaskActive = false;
+
 function startSqlitePolling(key: string, task: () => Promise<void>, intervalMs = 5000): () => void {
   let active = true;
   let running = false;
   let lastError = '';
+  let timer: number | undefined;
   const tick = async () => {
-    if (!active || running) return;
+    if (!active || running || sqlitePollingTaskActive || document.visibilityState === 'hidden') return;
     running = true;
+    sqlitePollingTaskActive = true;
     try {
       await task();
       lastError = '';
@@ -1077,13 +1088,24 @@ function startSqlitePolling(key: string, task: () => Promise<void>, intervalMs =
       }
     } finally {
       running = false;
+      sqlitePollingTaskActive = false;
     }
   };
-  void tick();
-  const timer = window.setInterval(() => { void tick(); }, intervalMs);
+  // Desfase pequeño para evitar que todos los listeners consulten al servidor
+  // en el mismo instante al iniciar o al volver a primer plano.
+  const initialDelay = Math.floor(Math.random() * Math.min(1500, Math.max(250, intervalMs / 3)));
+  timer = window.setTimeout(() => {
+    void tick();
+    if (active) timer = window.setInterval(() => { void tick(); }, intervalMs) as unknown as number;
+  }, initialDelay);
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') void tick();
+  };
+  document.addEventListener('visibilitychange', onVisibilityChange);
   return () => {
     active = false;
-    window.clearInterval(timer);
+    if (timer !== undefined) window.clearTimeout(timer);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
   };
 }
 
