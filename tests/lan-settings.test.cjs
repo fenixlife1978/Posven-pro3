@@ -42,6 +42,9 @@ test('Next.js y SQLite se ejecutan en un UtilityProcess separado', () => {
   assert.match(worker, /require\('next'\)/);
   assert.match(worker, /process\.parentPort\.postMessage\(\{ type: 'ready'/);
   assert.match(worker, /process\.env\.POSVEN_SQLITE_PATH/);
+  assert.match(worker, /server\.listen\(0, '127\.0\.0\.1'/);
+  assert.match(worker, /event\?\.data\?\.type === 'shutdown'/);
+  assert.match(worker, /await application\.close\(\)/);
   assert.match(main, /await stopServerWorker\(\)/);
 });
 
