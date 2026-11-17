@@ -32,3 +32,20 @@ test('la configuración cliente valida IP privada y huella SHA-256', () => {
   assert.match(main, /Ingrese la huella SHA-256/);
   assert.match(main, /verifyServer\(networkConfig\.host, networkConfig\.port, networkConfig\.fingerprint\)/);
 });
+
+
+test('Next.js y SQLite se ejecutan en un UtilityProcess separado', () => {
+  const worker = fs.readFileSync(path.join(root, 'server-worker.js'), 'utf8');
+  assert.match(main, /utilityProcess\.fork\(path\.join\(app\.getAppPath\(\), 'server-worker\.js'/);
+  assert.match(main, /serverWorkerPort/);
+  assert.match(main, /http\.request\([\s\S]*hostname: '127\.0\.0\.1'/);
+  assert.match(worker, /require\('next'\)/);
+  assert.match(worker, /process\.parentPort\.postMessage\(\{ type: 'ready'/);
+  assert.match(worker, /process\.env\.POSVEN_SQLITE_PATH/);
+  assert.match(main, /await stopServerWorker\(\)/);
+});
+
+test('el instalador incluye el proceso servidor separado', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  assert.ok(pkg.build.files.includes('server-worker.js'));
+});
