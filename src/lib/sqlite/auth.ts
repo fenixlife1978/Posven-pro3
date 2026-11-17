@@ -172,7 +172,7 @@ export async function createFirstAdministrator(input: {
     });
     return mapUser({
       id, username, email, nombre, rol: 'administrador',
-      acceso_bloqueado: 0, is_seed_admin: 0, fecha_creacion: fecha,
+      acceso_bloqueado: 0, is_seed_admin: 1, fecha_creacion: fecha,
     });
   });
 }
