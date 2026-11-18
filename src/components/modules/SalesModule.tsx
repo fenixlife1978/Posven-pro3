@@ -468,14 +468,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       return base;
     };
     const esMetodoUSD=(m:string)=>['efectivo_usd','zelle','transferencia_usd','nota_credito'].includes(normalizarMetodo(m));
-    const esMetodoBS=(m:string)=>['efectivo_bs','tarjeta','pagomovil','biopago','transferencia_bs'].includes(normalizarMetodo(m));
     const addPaymentTo=(p:any,factor=1)=>{
       const metodo=normalizarMetodo(p?.metodo||p?.method||'otros');
       const usd=Number(p?.montoUSD??p?.montoUsd??p?.usdAmount??p?.amountUSD??0)||0;
       const explicitBs=p?.montoBS??p?.montoBs??p?.amountBS??p?.amountBs??p?.totalBS??p?.totalBs;
-      const bs=Number(explicitBs??0)||(
-        esMetodoBS(metodo) ? (Number(p?.amount)||0) : 0
-      );
+      const bs=Number(explicitBs??0)||(!esMetodoUSD(metodo) ? (Number(p?.amount)||0) : 0);
       return {metodo,usd:usd*factor,bs:bs*factor};
     };
     const relevantDiario=allLibroDiario.filter(e=>inWindow(e.fecha)&&String(e.terminalId||'')===termId);
@@ -504,13 +501,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     vActivas.forEach(v=>{
       const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
-      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(['credito','nota_credito','mixto'].includes(x.metodo))return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.ventasUSD+=x.usd;else if(esMetodoBS(x.metodo))row.ventasBS+=x.bs;});
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(['credito','nota_credito','mixto'].includes(x.metodo))return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.ventasUSD+=x.usd;else row.ventasBS+=x.bs;});
     });
 
     const cobroDeudaVentas=allVentas.filter(v=>inWindow(v.fecha)&&String(v.terminalId||'')===termId&&esCobroDeuda(v));
     cobroDeudaVentas.forEach(v=>{
       const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
-      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(['credito','nota_credito','mixto'].includes(x.metodo))return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else if(esMetodoBS(x.metodo))row.cobrosBS+=x.bs;});
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(['credito','nota_credito','mixto'].includes(x.metodo))return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;});
     });
 
     // Un reintegro solo modifica el arqueo si existe un asiento que acredita
@@ -540,7 +537,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
           if(['credito','nota_credito','mixto'].includes(x.metodo))return;
           const row=ensureArqueo(x.metodo);
           if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;
-          else if(esMetodoBS(x.metodo))row.devBS+=x.bs;
+          else row.devBS+=x.bs;
         });
         return;
       }
@@ -548,7 +545,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       if(['credito','nota_credito','mixto'].includes(x.metodo))return;
       const row=ensureArqueo(x.metodo);
       if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;
-      else if(esMetodoBS(x.metodo))row.devBS+=x.bs;
+      else row.devBS+=x.bs;
     };
     aHoy.forEach((a:any)=>applyRefund(a,'anulacion'));
     dHoy.forEach((d:any)=>applyRefund(d,'devolucion'));
@@ -561,15 +558,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const movementType=String(e.tipo||'').trim().toLowerCase();
       if(movementType==='ingreso'){
         if(esMetodoUSD(metodo)) row.movPlusUSD+=montoUSD;
-        else if(esMetodoBS(metodo)) row.movPlusBS+=montoBS;
+        else row.movPlusBS+=montoBS;
       } else if(movementType==='egreso'){
         if(esMetodoUSD(metodo)) row.movMinusUSD+=montoUSD;
-        else if(esMetodoBS(metodo)) row.movMinusBS+=montoBS;
+        else row.movMinusBS+=montoBS;
       }
     });
 
     ['efectivo_bs','efectivo_usd','zelle','pagomovil','biopago','transferencia_bs','transferencia_usd','tarjeta','nota_credito'].forEach(ensureArqueo);
-    const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':esMetodoBS(metodo)?'BS':'USD'}));
+    const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':'BS'}));
     const arqueoWarnings = allVentas
       .filter((sale:any) => inWindow(sale.fecha) && String(sale.terminalId || '') === termId
         && String(sale.estado || '').toLowerCase() !== 'anulada'
