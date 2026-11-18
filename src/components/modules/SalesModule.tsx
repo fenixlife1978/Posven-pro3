@@ -490,8 +490,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
     const totalSalidasCajaBS=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS??(e as any).montoBs)||0),0);
     const totalSalidasCajaUSD=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD??(e as any).montoUsd)||0),0);
-    const totalEntradasCajaBS=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS??e.montoBs)||0),0);
-    const totalEntradasCajaUSD=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD??e.montoUsd)||0),0);
+    const totalEntradasCajaBS=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS??(e as any).montoBs)||0),0);
+    const totalEntradasCajaUSD=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD??(e as any).montoUsd)||0),0);
 
     const arqueoMap:Record<string,any>={};
     const ensureArqueo=(metodo:string)=>{
