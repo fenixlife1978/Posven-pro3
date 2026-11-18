@@ -18,7 +18,7 @@ export async function crearRespaldo(): Promise<BackupFile> {
   const response = await fetch('/api/pos/backup', {
     credentials: 'include',
     cache: 'no-store',
-    signal: AbortSignal.timeout(120000),
+    signal: AbortSignal.timeout(15 * 60 * 1000),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body?.ok !== true || body?.backup?.app !== 'posven-pro') {
