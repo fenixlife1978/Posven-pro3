@@ -580,7 +580,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':'BS'}));
     const arqueoWarnings = allVentas
       .filter((sale:any) => inWindow(sale.fecha) && String(sale.terminalId || '') === termId
-        && String(sale.estado || '').toLowerCase() !== 'anulada'
         && normalizarMetodo(sale.metodoPago) === 'mixto'
         && !(Array.isArray(sale.payments) && sale.payments.length))
       .map((sale:any) => String(sale.id));
