@@ -83,7 +83,7 @@ export function detectarRespaldoTursoTruncado(backup: BackupFile): { cappedTable
   const movements = Array.isArray(backup.data?.movimientos) ? backup.data.movimientos as any[] : [];
   const dates = movements
     .map(row => String(row?.fecha || row?.createdAt || row?.fechaMovimiento || '').slice(0, 10))
-    .filter(value => /^\\d{4}-\\d{2}-\\d{2}$/.test(value))
+    .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
     .sort();
   return {
     cappedTables,
