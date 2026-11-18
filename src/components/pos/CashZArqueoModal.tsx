@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, X } from "lucide-react";
 
 type ArqueoMethod = {
@@ -44,12 +44,17 @@ const label = (method: string) => {
     transferencia_usd: "Transferencia USD",
     tarjeta: "Tarjeta",
     credito: "Crédito",
+    nota_credito: "Crédito / Vale interno",
   };
   return map[method] || method;
 };
 
 export default function CashZArqueoModal({ open, report, onCancel, onConfirm, busy = false }: Props) {
   const [real, setReal] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (open) setReal({});
+  }, [open, report?.fecha, report?.numeroZ]);
 
   const rows = useMemo(() => {
     if (!report) return [];
@@ -67,7 +72,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm, bu
       "transferencia_bs",
       "transferencia_usd",
       "tarjeta",
-      "credito",
+      "nota_credito",
     ].forEach((m) => {
       if (!methods.has(m)) methods.set(m, { metodo: m });
     });
@@ -75,7 +80,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm, bu
     return Array.from(methods.values()).map((r) => {
       const method = String(r.metodo);
       const currency: "BS" | "USD" =
-        ["efectivo_usd", "zelle", "transferencia_usd", "usd", "dolar", "dolares"].includes(method) ? "USD" : "BS";
+        ["efectivo_usd", "zelle", "transferencia_usd", "nota_credito", "usd", "dolar", "dolares"].includes(method) ? "USD" : "BS";
 
       const opening =
         method === "efectivo_bs"
@@ -92,7 +97,7 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm, bu
 
       // Igual que tienda-pos: el sistema se calcula por método y moneda,
       // sin convertir medios no físicos a efectivo.
-      const system = opening + sales + cxc - dev + plus - minus;
+      const system = method === "nota_credito" ? 0 : opening + sales + cxc - dev + plus - minus;
 
       return { method, currency, opening, sales, cxc, dev, plus, minus, system: Number(system.toFixed(2)) };
     });
