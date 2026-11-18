@@ -62,3 +62,11 @@ test('los cobros CxC históricos del libro diario se incluyen una sola vez', () 
   assert.match(sales, /const uniqueDebtJournal=debtJournal\.filter/);
   assert.match(sales, /reference\.includes\(String\(sale\.id\)\)/);
 });
+
+test('npm test descubre solo archivos de prueba y no scripts auxiliares', () => {
+  const runner = read('scripts/run-tests.cjs');
+  const packageJson = read('package.json');
+  assert.match(runner, /readdirSync\(testDirectory\)/);
+  assert.match(runner, /name\.endsWith\('\.test\.cjs'\)/);
+  assert.match(packageJson, /"test": "node scripts\/run-tests\.cjs"/);
+});
