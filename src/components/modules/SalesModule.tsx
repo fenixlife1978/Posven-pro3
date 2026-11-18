@@ -510,16 +510,17 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const reference=String(entry.referencia||'');
       return !reference || !cobroDeudaVentas.some((sale:any)=>reference===String(sale.id)||reference.includes(String(sale.id)));
     });
+    const debtJournalParts=(entry:any)=>Array.isArray(entry.paymentParts)&&entry.paymentParts.length?entry.paymentParts:[entry];
     cobroDeudaVentas.forEach(v=>{
       const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
       pays.forEach((p:any)=>{const x=addPaymentTo(p);if(['credito','nota_credito','mixto'].includes(x.metodo))return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;});
     });
-    uniqueDebtJournal.forEach((entry:any)=>{
-      const x=addPaymentTo(entry);
+    uniqueDebtJournal.forEach((entry:any)=>debtJournalParts(entry).forEach((part:any)=>{
+      const x=addPaymentTo(part);
       if(['credito','nota_credito','mixto'].includes(x.metodo))return;
       const row=ensureArqueo(x.metodo);
       if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;
-    });
+    }));
 
     // Un reintegro solo modifica el arqueo si existe un asiento que acredita
     // la salida y permite identificar el medio realmente utilizado.
@@ -584,8 +585,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         && !(Array.isArray(sale.payments) && sale.payments.length))
       .map((sale:any) => String(sale.id));
     const ventasCreditoUSD=vActivas.filter(v=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s,v)=>s+(Number(v.totalUSD)||0),0);
-    const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0)+uniqueDebtJournal.reduce((s:number,e:any)=>s+(Number(e.montoUSD??e.montoUsd)||0),0);
-    const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0)+uniqueDebtJournal.reduce((s:number,e:any)=>s+(Number(e.montoBS??e.montoBs)||0),0);
+    const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0)+uniqueDebtJournal.reduce((s:number,e:any)=>s+debtJournalParts(e).reduce((t:number,p:any)=>t+(Number(p.montoUSD??p.montoUsd??p.usdAmount??p.amountUSD)||0),0),0);
+    const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0)+uniqueDebtJournal.reduce((s:number,e:any)=>s+debtJournalParts(e).reduce((t:number,p:any)=>t+(Number(p.montoBS??p.montoBs??p.amountBS??p.amountBs)||0),0),0);
     const cobrosDeudaPorMetodoMap: Record<string, { metodo:string; montoBS:number; montoUSD:number }> = {};
     cobroDeudaVentas.forEach((v:any) => {
       const pays = Array.isArray(v.payments) && v.payments.length
@@ -600,12 +601,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         cobrosDeudaPorMetodoMap[key].montoUSD += x.usd;
       });
     });
-    uniqueDebtJournal.forEach((entry:any)=>{
-      const metodo=normalizarMetodo(entry?.metodo||'otros');
+    uniqueDebtJournal.forEach((entry:any)=>debtJournalParts(entry).forEach((part:any)=>{
+      const metodo=normalizarMetodo(part?.metodo||part?.method||'otros');
       if(!cobrosDeudaPorMetodoMap[metodo])cobrosDeudaPorMetodoMap[metodo]={metodo,montoBS:0,montoUSD:0};
-      cobrosDeudaPorMetodoMap[metodo].montoBS+=Number(entry.montoBS??entry.montoBs)||0;
-      cobrosDeudaPorMetodoMap[metodo].montoUSD+=Number(entry.montoUSD??entry.montoUsd)||0;
-    });
+      cobrosDeudaPorMetodoMap[metodo].montoBS+=Number(part.montoBS??part.montoBs??part.amountBS??part.amountBs)||0;
+      cobrosDeudaPorMetodoMap[metodo].montoUSD+=Number(part.montoUSD??part.montoUsd??part.usdAmount??part.amountUSD)||0;
+    }));
     const cobrosDeudaPorMetodo = Object.values(cobrosDeudaPorMetodoMap);
 
     // Neto físico: solo efectivo físico de la moneda original. No se convierte
