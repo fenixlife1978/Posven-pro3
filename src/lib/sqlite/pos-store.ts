@@ -1828,12 +1828,23 @@ export async function createZClosureTransaction(params: {
       return !excludedJournalCategories.has(category);
     });
     const cashMovements = manualMovements.filter((entry: any) => ['ingreso','egreso'].includes(String(entry.tipo || '').trim().toLowerCase()));
+    const debtJournal = journal.filter((entry: any) => String(entry.categoria || '').trim().toUpperCase() === 'COBRO_DEUDA');
+    const uniqueDebtJournal = debtJournal.filter((entry: any) => {
+      const reference = String(entry.referencia || '');
+      return !reference || !debtCollections.some((sale: any) => reference === String(sale.id) || reference.includes(String(sale.id)));
+    });
     debtCollections.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
       const p = paymentValue(part);
       if (['credito','nota_credito','mixto'].includes(p.method)) return;
       const row = ensureMethod(p.method);
       if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
     }));
+    uniqueDebtJournal.forEach((entry: any) => {
+      const p = paymentValue(entry);
+      if (['credito','nota_credito','mixto'].includes(p.method)) return;
+      const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
+    });
     const applyRefund = (doc: any, kind: 'devolucion' | 'anulacion') => {
       const sale = saleById.get(String(doc.ventaId));
       const category = kind === 'devolucion' ? 'DEVOLUCION' : 'ANULACION';
@@ -1885,6 +1896,10 @@ export async function createZClosureTransaction(params: {
       const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
       row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
     }));
+    uniqueDebtJournal.forEach((entry: any) => {
+      const p = paymentValue(entry); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
+      row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
+    });
     ['efectivo_bs','efectivo_usd','zelle','pagomovil','biopago','transferencia_bs','transferencia_usd','tarjeta','nota_credito'].forEach(ensureMethod);
     const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'nota_credito']);
     const rawActuals = submitted.arqueoReal && typeof submitted.arqueoReal === 'object' ? submitted.arqueoReal : {};
@@ -1912,8 +1927,8 @@ export async function createZClosureTransaction(params: {
         if (usd) differenceUsd += delta; else differenceBs += delta;
       }
     }
-    const arqueoWarnings = sales
-      .filter((sale: any) => normalizeMethod(sale.metodoPago) === 'mixto' && !(Array.isArray(sale.payments) && sale.payments.length))
+    const arqueoWarnings = allSales
+      .filter((sale: any) => inWindow(sale.fecha) && String(sale.terminalId || '') === params.terminalId && normalizeMethod(sale.metodoPago) === 'mixto' && !(Array.isArray(sale.payments) && sale.payments.length))
       .map((sale: any) => String(sale.id));
     if (arqueoWarnings.length) throw new Error('Hay ventas con pago mixto sin desglose (' + arqueoWarnings.join(', ') + '). Corrija esos documentos antes de ejecutar el Corte Z.');
     const closedAt = new Date().toISOString();
