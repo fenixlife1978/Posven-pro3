@@ -129,11 +129,10 @@ export default function LicoreriaPOS() {
     document.addEventListener('click', preventCriticalDoubleClick, true);
     window.addEventListener('error', captureError);
 
-    const timerSafety = setTimeout(() => setLoading(false), 8000);
 
     const initializeFromLocalServer = async () => {
       try {
-        const response = await fetch('/api/auth/session', { cache: 'no-store', credentials: 'include' });
+        const response = await fetch('/api/auth/session', { cache: 'no-store', credentials: 'include', signal: AbortSignal.timeout(10000) });
         if (response.status === 401) {
           router.push('/login');
           return;
@@ -160,6 +159,7 @@ export default function LicoreriaPOS() {
           const terminalsResponse = await fetch('/api/pos/store?table=terminales&limit=500', {
             credentials: 'include',
             cache: 'no-store',
+            signal: AbortSignal.timeout(10000),
           });
           if (!terminalsResponse.ok) {
             throw new Error('No se pudieron consultar las cajas en el servidor LAN.');
@@ -239,7 +239,6 @@ export default function LicoreriaPOS() {
         clearInterval(runtimeHeartbeat);
         clearInterval(serverHealthTimer);
         window.removeEventListener('beforeunload', clearRuntimeMarker);
-        clearTimeout(timerSafety);
         document.removeEventListener('click', preventCriticalDoubleClick, true);
         window.removeEventListener('error', captureError);
       };
@@ -250,7 +249,6 @@ export default function LicoreriaPOS() {
       clearInterval(timerClock);
       clearInterval(runtimeHeartbeat);
       window.removeEventListener('beforeunload', clearRuntimeMarker);
-      clearTimeout(timerSafety);
       window.removeEventListener('error', captureError);
     };
   }, [router]);
