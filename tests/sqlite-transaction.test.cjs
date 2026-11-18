@@ -740,3 +740,31 @@ test('el alta del primer administrador acepta correos válidos y rechaza sólo f
     /ya fue configurado/,
   );
 });
+
+test('importación exclusiva de catálogos fusiona sin tocar productos ni inventario', async () => {
+  await schema.ensureSqliteSchema();
+  await posStore.patchCatalog('departamentos', ['Área de prueba POSVEN']);
+  await posStore.patchCatalog('categorias', ['Categoría especial POSVEN']);
+
+  await sqliteExecute({
+    sql: 'INSERT INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
+    args: ['CATALOG-IMPORT-KEEP', JSON.stringify({ id: 'CATALOG-IMPORT-KEEP', nombre: 'Producto intacto', stock: 17 })],
+    wantRows: false,
+  });
+
+  const result = await posStore.mergeCatalogsOnlyImportTransaction({
+    departamentos: ['AREA DE PRUEBA POSVEN', 'Nueva área POSVEN'],
+    categorias: ['categoria especial POSVEN', 'Nueva categoría POSVEN'],
+  });
+
+  assert.equal(result.plan.departamentos.added, 1);
+  assert.equal(result.plan.categorias.added, 1);
+  assert.ok(result.catalogs.departamentos.includes('Nueva área POSVEN'));
+  assert.ok(result.catalogs.categorias.includes('Nueva categoría POSVEN'));
+
+  const product = await sqliteExecute({
+    sql: 'SELECT data_json FROM productos WHERE id=?',
+    args: ['CATALOG-IMPORT-KEEP'],
+  });
+  assert.equal(JSON.parse(product.rows[0].data_json).stock, 17);
+});
