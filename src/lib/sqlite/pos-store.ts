@@ -1764,8 +1764,19 @@ export async function createZClosureTransaction(params: {
     const allReturns = await loadRows('devoluciones');
     const allVoids = await loadRows('anulaciones');
     const allJournal = await loadRows('libro_diario');
-    const cutoff = String(current.fechaUltimoZ || current.cashData?.openDate || '');
-    const inWindow = (value: any) => String(value || '') > cutoff;
+    const cutoffCandidates = [current.fechaUltimoZ, current.cashData?.openDate].filter(Boolean).map(String);
+    cutoffCandidates.sort((a, b) => {
+      const aMs = Date.parse(a); const bMs = Date.parse(b);
+      return Number.isFinite(aMs) && Number.isFinite(bMs) ? aMs - bMs : a.localeCompare(b);
+    });
+    const cutoff = cutoffCandidates[cutoffCandidates.length - 1] || '';
+    const inWindow = (value: any) => {
+      const date = String(value || '').trim();
+      if (!date) return false;
+      const dateMs = Date.parse(date); const cutoffMs = Date.parse(cutoff);
+      if (Number.isFinite(dateMs) && Number.isFinite(cutoffMs)) return dateMs >= cutoffMs;
+      return date >= cutoff;
+    };
     const isDebtCollection = (sale: any) => ['COBRO DEUDA','ABONO DEUDA','COBRO_DEUDA'].includes(String(sale?.type || '').trim().toUpperCase());
     const sales = allSales.filter((sale: any) => inWindow(sale.fecha) && sale.estado !== 'anulada' && String(sale.terminalId || '') === params.terminalId && !isDebtCollection(sale));
     const voidedSales = allSales.filter((sale: any) => inWindow(sale.fecha) && sale.estado === 'anulada' && String(sale.terminalId || '') === params.terminalId && !isDebtCollection(sale));
@@ -1784,15 +1795,22 @@ export async function createZClosureTransaction(params: {
     const normalizeMethod = (value: any) => {
       const method = String(value || 'otros').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
       if (['punto_venta','punto_de_venta','punto_pago','punto_de_pago','tarjeta_debito','tarjeta_credito'].includes(method)) return 'tarjeta';
-      return method === 'pago_movil' ? 'pagomovil' : method;
+      if (['pago_movil','pago_movil_bs'].includes(method)) return 'pagomovil';
+      if (['efectivo','efectivo_bs','efectivo_bolivares','bs','bolivares'].includes(method)) return 'efectivo_bs';
+      if (['efectivo_usd','efectivo_usd_dolares','usd','dolar','dolares','efectivo_dolares'].includes(method)) return 'efectivo_usd';
+      if (['transferencia','transferencia_bs','transferencia_bolivares'].includes(method)) return 'transferencia_bs';
+      if (['transferencia_usd','transferencia_dolares'].includes(method)) return 'transferencia_usd';
+      if (method === 'mixto') return 'mixto';
+      return method;
     };
-    const isUsdMethod = (method: string) => ['efectivo_usd','zelle','usd','dolar','dolares','transferencia_usd'].includes(normalizeMethod(method));
-    const isBsMethod = (method: string) => ['efectivo_bs','efectivo','bs','bolivares','tarjeta','pagomovil','biopago','transferencia','transferencia_bs'].includes(normalizeMethod(method));
+    const isUsdMethod = (method: string) => ['efectivo_usd','zelle','transferencia_usd','nota_credito'].includes(normalizeMethod(method));
+    const isBsMethod = (method: string) => ['efectivo_bs','tarjeta','pagomovil','biopago','transferencia_bs'].includes(normalizeMethod(method));
     const paymentParts = (record: any) => Array.isArray(record?.payments) && record.payments.length ? record.payments : [{ metodo: record?.metodoPago || 'otros', montoUSD: record?.totalUSD, montoBS: record?.totalBS, tasaAplicada: record?.tasaAplicada }];
     const paymentValue = (part: any) => {
       const method = normalizeMethod(part?.metodo || part?.method || 'otros');
-      const usd = Number(part?.montoUSD ?? part?.usdAmount ?? 0) || 0;
-      const bs = Number(part?.montoBS ?? part?.amountBS ?? part?.totalBS ?? 0) || (isBsMethod(method) ? Number(part?.amount) || 0 : 0);
+      const usd = Number(part?.montoUSD ?? part?.montoUsd ?? part?.usdAmount ?? part?.amountUSD ?? 0) || 0;
+      const explicitBs = part?.montoBS ?? part?.montoBs ?? part?.amountBS ?? part?.amountBs ?? part?.totalBS ?? part?.totalBs;
+      const bs = Number(explicitBs ?? 0) || (isBsMethod(method) ? Number(part?.amount) || 0 : 0);
       return { method, usd, bs };
     };
     const paymentMethods: Record<string, number> = {};
@@ -1800,37 +1818,62 @@ export async function createZClosureTransaction(params: {
     const ensureMethod = (method: string) => arqueo[method] || (arqueo[method] = { ventasBS:0, ventasUSD:0, cobrosBS:0, cobrosUSD:0, devBS:0, devUSD:0, movPlusBS:0, movPlusUSD:0, movMinusBS:0, movMinusUSD:0 });
     sales.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
       const p = paymentValue(part); paymentMethods[p.method] = (paymentMethods[p.method] || 0) + p.usd;
-      if (p.method === 'credito') return; const row = ensureMethod(p.method);
-      if (isUsdMethod(p.method)) row.ventasUSD += p.usd; else row.ventasBS += p.bs;
+      if (['credito','nota_credito','mixto'].includes(p.method)) return;
+      const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.ventasUSD += p.usd; else if (isBsMethod(p.method)) row.ventasBS += p.bs;
     }));
-    debtCollections.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
-      const p = paymentValue(part); const row = ensureMethod(p.method);
-      if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
-    }));
-    const applyRefund = (doc: any, isPartial: boolean) => {
-      const sale = saleById.get(String(doc.ventaId));
-      const parts = Array.isArray(doc.refundPayments) && doc.refundPayments.length ? doc.refundPayments : paymentParts(sale || { metodoPago:'otros' });
-      const factor = isPartial && !(Array.isArray(doc.refundPayments) && doc.refundPayments.length) ? (Number(doc.totalUSD) || 0) / Math.max(Number(sale?.totalUSD) || 0.000001, 0.000001) : 1;
-      parts.forEach((part: any) => { const p = paymentValue(part); const row = ensureMethod(p.method);
-        if (isUsdMethod(p.method)) row.devUSD += p.usd * factor; else row.devBS += p.bs * factor;
-      });
-    };
-    voidDocs.forEach((doc: any) => applyRefund(doc, false));
-    const voidedIds = new Set(voidDocs.map((doc: any) => String(doc.ventaId || '')));
-    voidedSales.filter((sale: any) => !voidedIds.has(String(sale.id))).forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
-      const p = paymentValue(part); const row = ensureMethod(p.method);
-      if (isUsdMethod(p.method)) row.devUSD += p.usd; else row.devBS += p.bs;
-    }));
-    returns.forEach((doc: any) => applyRefund(doc, true));
     const journal = allJournal.filter((entry: any) => inWindow(entry.fecha) && String(entry.terminalId || '') === params.terminalId);
-    const cashMovements = journal.filter((entry: any) => {
+    const excludedJournalCategories = new Set(['VENTA','COBRO_DEUDA','DEVOLUCION','ANULACION']);
+    const manualMovements = journal.filter((entry: any) => {
       const category = String(entry?.categoria || '').trim().toUpperCase().replace(/Á/g, 'A');
-      return ['MOVIMIENTO_CAJA','MOVIMIENTO DE CAJA'].includes(category) || String(entry?.type || '').toUpperCase() === 'MOVIMIENTO CAJA';
-    }).filter((entry: any) => entry.tipo === 'ingreso' || entry.tipo === 'egreso');
+      return !excludedJournalCategories.has(category);
+    });
+    const cashMovements = manualMovements.filter((entry: any) => ['ingreso','egreso'].includes(String(entry.tipo || '').trim().toLowerCase()));
+    debtCollections.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
+      const p = paymentValue(part);
+      if (['credito','nota_credito','mixto'].includes(p.method)) return;
+      const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else if (isBsMethod(p.method)) row.cobrosBS += p.bs;
+    }));
+    const applyRefund = (doc: any, kind: 'devolucion' | 'anulacion') => {
+      const sale = saleById.get(String(doc.ventaId));
+      const category = kind === 'devolucion' ? 'DEVOLUCION' : 'ANULACION';
+      const evidence = journal.find((entry: any) =>
+        String(entry.categoria || '').trim().toUpperCase().replace(/Á/g, 'A') === category &&
+        String(entry.referencia || '') === String(doc.id)
+      );
+      if (!evidence) return;
+      const journalMethod = normalizeMethod(evidence.metodo || 'otros');
+      if (journalMethod === 'nota_credito') { ensureMethod('nota_credito'); return; }
+      const explicit = Array.isArray(doc.refundPayments) && doc.refundPayments.length ? doc.refundPayments : null;
+      const sameOriginalMethod = kind === 'devolucion' && String(doc.metodoReembolso || '').toUpperCase() === 'MISMO_METODO';
+      const mixedCancellation = kind === 'anulacion' && journalMethod === 'mixto';
+      if (explicit || sameOriginalMethod || mixedCancellation) {
+        const parts = explicit || paymentParts(sale || { metodoPago:'otros' });
+        const saleTotal = Math.max(Number(sale?.totalUSD) || 0.000001, 0.000001);
+        const factor = explicit ? 1 : (Number(doc.totalUSD) || 0) / saleTotal;
+        parts.forEach((part: any) => {
+          const p = paymentValue(part);
+          if (['credito','nota_credito','mixto'].includes(p.method)) return;
+          const row = ensureMethod(p.method);
+          if (isUsdMethod(p.method)) row.devUSD += p.usd * factor; else if (isBsMethod(p.method)) row.devBS += p.bs * factor;
+        });
+        return;
+      }
+      const p = paymentValue({ metodo: evidence.metodo, montoUSD: evidence.montoUSD, montoBS: evidence.montoBS });
+      if (['credito','nota_credito','mixto'].includes(p.method)) return;
+      const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.devUSD += p.usd; else if (isBsMethod(p.method)) row.devBS += p.bs;
+    };
+    voidDocs.forEach((doc: any) => applyRefund(doc, 'anulacion'));
+    returns.forEach((doc: any) => applyRefund(doc, 'devolucion'));
     cashMovements.forEach((entry: any) => {
       const method = normalizeMethod(entry.metodo || 'otros'); const row = ensureMethod(method);
-      if (entry.tipo === 'ingreso') { if (isUsdMethod(method)) row.movPlusUSD += Number(entry.montoUSD) || 0; else if (isBsMethod(method)) row.movPlusBS += Number(entry.montoBS) || 0; }
-      else { if (isUsdMethod(method)) row.movMinusUSD += Number(entry.montoUSD) || 0; else if (isBsMethod(method)) row.movMinusBS += Number(entry.montoBS) || 0; }
+      const movementType = String(entry.tipo || '').trim().toLowerCase();
+      const amountUSD = Number(entry.montoUSD ?? entry.montoUsd) || 0;
+      const amountBS = Number(entry.montoBS ?? entry.montoBs) || 0;
+      if (movementType === 'ingreso') { if (isUsdMethod(method)) row.movPlusUSD += amountUSD; else if (isBsMethod(method)) row.movPlusBS += amountBS; }
+      else { if (isUsdMethod(method)) row.movMinusUSD += amountUSD; else if (isBsMethod(method)) row.movMinusBS += amountBS; }
     });
     const cashBs = ensureMethod('efectivo_bs'); const cashUsd = ensureMethod('efectivo_usd');
     const openingBs = Number(current.fondoCajaHoyBS) || 0; const openingUsd = Number(current.fondoCajaHoyUSD) || 0;
@@ -1843,7 +1886,8 @@ export async function createZClosureTransaction(params: {
       const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
       row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
     }));
-    const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'credito']);
+    ['efectivo_bs','efectivo_usd','zelle','pagomovil','biopago','transferencia_bs','transferencia_usd','tarjeta','nota_credito'].forEach(ensureMethod);
+    const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'nota_credito']);
     const rawActuals = submitted.arqueoReal && typeof submitted.arqueoReal === 'object' ? submitted.arqueoReal : {};
     const actualByMethod: Record<string, number> = {};
     for (const [rawMethod, rawAmount] of Object.entries(rawActuals)) {
@@ -1860,7 +1904,7 @@ export async function createZClosureTransaction(params: {
       const values = ensureMethod(method);
       const opening = method === 'efectivo_bs' ? openingBs : method === 'efectivo_usd' ? openingUsd : 0;
       const usd = isUsdMethod(method);
-      const systemAmount = opening + (usd ? values.ventasUSD + values.cobrosUSD + values.movPlusUSD - values.devUSD - values.movMinusUSD : values.ventasBS + values.cobrosBS + values.movPlusBS - values.devBS - values.movMinusBS);
+      const systemAmount = method === 'nota_credito' ? 0 : opening + (usd ? values.ventasUSD + values.cobrosUSD + values.movPlusUSD - values.devUSD - values.movMinusUSD : values.ventasBS + values.cobrosBS + values.movPlusBS - values.devBS - values.movMinusBS);
       if (Math.abs(systemAmount) >= 0.01 && !Object.prototype.hasOwnProperty.call(actualByMethod, method)) {
         throw new Error('Falta registrar el conteo real del medio de pago: ' + method + '. El Corte Z no se ejecutó.');
       }
@@ -1869,6 +1913,10 @@ export async function createZClosureTransaction(params: {
         if (usd) differenceUsd += delta; else differenceBs += delta;
       }
     }
+    const arqueoWarnings = sales
+      .filter((sale: any) => normalizeMethod(sale.metodoPago) === 'mixto' && !(Array.isArray(sale.payments) && sale.payments.length))
+      .map((sale: any) => String(sale.id));
+    if (arqueoWarnings.length) throw new Error('Hay ventas con pago mixto sin desglose (' + arqueoWarnings.join(', ') + '). Corrija esos documentos antes de ejecutar el Corte Z.');
     const closedAt = new Date().toISOString();
     const reportData = {
       id: report.id, fecha: closedAt, generatedAt: closedAt,
@@ -1878,23 +1926,23 @@ export async function createZClosureTransaction(params: {
       cantidadAnuladas: voidDocs.length + voidedSales.filter((sale: any) => !voidedIds.has(String(sale.id))).length,
       ventaBrutaUSD: brUSD, totalVentasUSD: brUSD, brUSD, descuentoUSD: discountUSD, devolucionesUSD: devUSD, ventaNetaUSD: netUSD,
       baseImponibleUSD: baseUSD, ivaUSD, exentoUSD: exemptUSD, igtfUSD,
-      metodosPago: paymentMethods, metodosArqueo: Object.entries(arqueo).map(([metodo, values]: any) => ({ metodo, ...values, moneda: isUsdMethod(metodo) ? 'USD' : 'BS' })),
+      metodosPago: paymentMethods, metodosArqueo: Object.entries(arqueo).map(([metodo, values]: any) => ({ metodo, ...values, moneda: isUsdMethod(metodo) ? 'USD' : 'BS' })), arqueoWarnings,
       cobrosDeudaUSD: debtUsd, cobrosDeudaBS: debtBs, cobrosDeudaPorMetodo: Object.values(debtByMethod),
-      manualSalidas: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      manualEntradas: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      salidasCajaUSD: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      entradasCajaUSD: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      manualSalidasBS: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
-      manualSalidasUSD: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      manualEntradasBS: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
-      manualEntradasUSD: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualSalidas: manualMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualEntradas: manualMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='ingreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      salidasCajaUSD: manualMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      entradasCajaUSD: manualMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='ingreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualSalidasBS: cashMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='egreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS ?? e.montoBs)||0),0),
+      manualSalidasUSD: cashMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='egreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD ?? e.montoUsd)||0),0),
+      manualEntradasBS: cashMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='ingreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS ?? e.montoBs)||0),0),
+      manualEntradasUSD: cashMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='ingreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD ?? e.montoUsd)||0),0),
       devEfectivoBS: cashBs.devBS, devEfectivoUSD: cashUsd.devUSD,
       totalNetoEfectivoBS: actualByMethod.efectivo_bs || 0, totalNetoEfectivoUSD: actualByMethod.efectivo_usd || 0,
       arqueoReal: actualByMethod,
       estimadoEfectivoBS: { entradas:0, egresos:0, total:estimatedBs }, estimadoEfectivoUSD: { entradas:0, egresos:0, total:estimatedUsd },
       fondoAperturaBS: openingBs, fondoAperturaUSD: openingUsd,
       acumuladoHistoricoUSD: (Number(current.acumuladoHistorico) || 0) + netUSD,
-      stats: { facturas:sales.length, devoluciones:returns.length, anulaciones:voidDocs.length, ticketPromedio:sales.length ? netUSD / sales.length : 0 },
+      stats: { facturas:sales.length, devoluciones:returns.length, anulaciones:voidDocs.length + voidedSales.filter((sale: any) => !voidDocs.some((doc: any) => String(doc.ventaId || '') === String(sale.id))).length, ticketPromedio:sales.length ? netUSD / sales.length : 0 },
       cajeroId: params.user.id, cajeroNombre: String(params.user.nombre || params.user.username || params.user.id),
       openedAt: current.cashData?.openDate || null, openedBy: String(current.cashData?.openedBy || current.cashData?.usuarioApertura || params.user.nombre || params.user.username || params.user.id), closedAt, closedBy: String(params.user.nombre || params.user.username || params.user.id), closedById: params.user.id,
       differenceBs: Number(differenceBs.toFixed(2)), differenceUSD: Number(differenceUsd.toFixed(2)),
