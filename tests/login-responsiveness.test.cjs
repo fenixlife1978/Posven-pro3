@@ -31,6 +31,11 @@ test('el login enfoca una sola vez y no roba el foco durante la escritura', () =
   assert.doesNotMatch(login, /delays = \[0, 80, 220, 450, 850\]/);
   assert.doesNotMatch(login, /setTimeout\(focusField/);
   assert.match(login, /disabled=\{false\} readOnly=\{false\} tabIndex=\{0\}/);
+  assert.match(login, /field\.disabled = false/);
+  assert.match(login, /field\.readOnly = false/);
+  assert.match(login, /window\.addEventListener\("focus", focusWhenWindowReturns\)/);
+  assert.match(login, /document\.addEventListener\("visibilitychange", focusWhenWindowReturns\)/);
+  assert.match(login, /pointer-events-none absolute left-4/);
 });
 
 test('sondeos SQLite de fondo se serializan y se suspenden con ventana oculta', () => {
