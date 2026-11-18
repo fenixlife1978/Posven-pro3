@@ -955,22 +955,22 @@ type CatalogsOnlyInput = { departamentos: string[]; categorias: string[] };
 type CatalogMergePlan = { before: number; imported: number; added: number; duplicates: number; after: number; values: string[] };
 
 function normalizeCatalogImportValue(value: string): string {
-  return String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
-    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ')
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ')
     .trim().toLocaleUpperCase('es');
 }
 
 function makeCatalogMergePlan(current: string[], incoming: string[]): CatalogMergePlan {
   const values = new Map<string, string>();
   for (const value of current) {
-    const label = String(value || '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ').trim();
+    const label = String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
     const key = normalizeCatalogImportValue(label);
     if (key && !values.has(key)) values.set(key, label);
   }
   const before = values.size;
   let added = 0;
   for (const value of incoming) {
-    const label = String(value || '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ').trim();
+    const label = String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
     const key = normalizeCatalogImportValue(label);
     if (!key) continue;
     if (!values.has(key)) { values.set(key, label); added++; }
