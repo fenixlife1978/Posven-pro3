@@ -34,6 +34,8 @@ async function start() {
   });
   server.keepAliveTimeout = 5000;
   server.headersTimeout = 15000;
+  server.requestTimeout = 15 * 60 * 1000;
+  server.timeout = 0; // No cortar handlers SQLite por inactividad mientras la operación siga activa.
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);
