@@ -378,6 +378,7 @@ export interface ReportZ {
   empresa?: { nombre?: string; rif?: string; subtitulo?: string };
   totalNetoEfectivoBS?: number;
   totalNetoEfectivoUSD?: number;
+  arqueoWarnings?: string[];
   arqueoReal?: Record<string, string | number>;
   differenceBs?: number;
   differenceUSD?: number;
