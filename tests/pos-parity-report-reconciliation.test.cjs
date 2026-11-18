@@ -46,3 +46,11 @@ test('el comprobante identifica conciliación, faltante, sobrante o ausencia de 
   assert.match(zPreview, /CIERRE CON SOBRANTE/);
   assert.match(receipt, /ARQUEO REAL NO REGISTRADO/);
 });
+
+test('Corte X ofrece conteo temporal sin persistir ni cerrar la caja', () => {
+  assert.match(cashModal, /mode: 'X' \| 'Z'/);
+  assert.match(cashModal, /LECTURA X — SIN CONTEO REAL/);
+  assert.match(cashModal, /El conteo X es opcional y temporal/);
+  assert.match(cashModal, /mode === 'Z' && \(/);
+  assert.match(sales, /setArqueoMode\(type === 'REPORT_Z' \? 'Z' : 'X'\)/);
+});
