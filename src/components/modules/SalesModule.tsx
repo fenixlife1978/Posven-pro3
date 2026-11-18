@@ -154,6 +154,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [showZArqueo, setShowZArqueo] = useState(false);
+  const [isClosingZ, setIsClosingZ] = useState(false);
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -545,6 +546,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
 
     const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':esMetodoBS(metodo)?'BS':'USD'}));
+    const arqueoWarnings = allVentas
+      .filter((sale:any) => inWindow(sale.fecha) && String(sale.terminalId || '') === termId
+        && normalizarMetodo(sale.metodoPago) === 'mixto'
+        && !(Array.isArray(sale.payments) && sale.payments.length))
+      .map((sale:any) => String(sale.id));
     const ventasCreditoUSD=vActivas.filter(v=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s,v)=>s+(Number(v.totalUSD)||0),0);
     const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0);
     const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0);
@@ -576,15 +582,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const terminalName=resolvedTerminal?.nombre||'CAJA NO IDENTIFICADA';
 
-    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,cobrosDeudaPorMetodo,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,cajeroId:assignedUserId || sessionUser?.uid || sessionUser?.id || '',cajeroNombre,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,devEfectivoBS:Number(efectivoBS.devBS||0),devEfectivoUSD:Number(efectivoUSD.devUSD||0),totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
+    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,arqueoWarnings,cobrosDeudaPorMetodo:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,cajeroId:assignedUserId || sessionUser?.uid || sessionUser?.id || '',cajeroNombre,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,devEfectivoBS:Number(efectivoBS.devBS||0),devEfectivoUSD:Number(efectivoUSD.devUSD||0),totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
-    if (showReportType || reportLoadingType) return;
+    if (showReportType || showZArqueo || reportLoadingType) return;
     setReportLoadingType(type);
     try {
-      // antes de calcular el reporte. Evita el bug de reporte en $0 tras reinicio.
-      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', Utils.getTerminalCash(currentTerminal).fechaUltimoZ || new Date().toISOString().split('T')[0]);
+      const openingState = Utils.getTerminalCash(currentTerminal);
+      if (type === 'REPORT_Z' && (!currentTerminal?.id || !openingState.isCashOpen || !openingState.cashData?.openDate || openingState.cashData?.closeDate)) {
+        throw new Error('No existe una apertura de caja vigente. Abra la caja antes de ejecutar un nuevo Corte Z.');
+      }
+      const reportCutoffs = [openingState.fechaUltimoZ, openingState.cashData?.openDate].filter(Boolean).map(String).sort();
+      const reportSince = reportCutoffs[reportCutoffs.length - 1] || Utils.hoy();
+      // Evita mezclar operaciones anteriores a la apertura actual con la jornada que se va a cerrar.
+      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', reportSince);
       
       // ✅ Verificar que los datos se cargaron correctamente
       const state = Store.get();
@@ -617,17 +629,50 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const ejecutarCierreZ = async (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
     const data = reportSnapshot;
-    if (!data) return;
+    if (!data || isClosingZ) return;
+    const liveState = Store.get();
+    const terminalEnVivo = (liveState.terminales || []).find((t:any) => String(t.id) === String(currentTerminal?.id));
+    const tc = Utils.getTerminalCash(terminalEnVivo || currentTerminal);
+    if (!terminalEnVivo?.id || !tc.isCashOpen || !tc.cashData?.openDate || tc.cashData?.closeDate) {
+      toast({ variant: 'destructive', title: 'Corte Z rechazado', description: 'La caja no tiene una apertura vigente. No se generó ningún cierre.' });
+      return;
+    }
+    if (Array.isArray(data.arqueoWarnings) && data.arqueoWarnings.length) {
+      toast({ variant: 'destructive', title: 'Arqueo no confiable', description: 'Hay ventas mixtas sin desglose de pagos. Corrija esos documentos antes de cerrar la caja.' });
+      return;
+    }
+    const rows = Array.isArray(data.metodosArqueo) ? data.metodosArqueo : [];
+    const missing = rows.some((row:any) => {
+      const raw = String(real[row.metodo] ?? '').trim().replace(',', '.');
+      return raw === '' || !Number.isFinite(Number(raw)) || Number(raw) < 0;
+    });
+    if (missing) {
+      toast({ variant: 'destructive', title: 'Arqueo incompleto', description: 'Registre el monto real de cada método de pago, incluso cuando sea cero.' });
+      return;
+    }
     const ahora = Utils.ahora();
-    const tc = Utils.getTerminalCash(currentTerminal);
-    const numeroZ = tc.ultimoZ + 1;
-    const termId = currentTerminal?.id || 'GLOBAL';
+    const numeroZ = Number(tc.ultimoZ || 0) + 1;
+    const termId = terminalEnVivo.id;
     const diff = diffOverride || { bs: 0, usd: 0 };
 
     // El arqueo previo sigue la misma regla de tienda-pos: cada medio de pago
     // se concilia en su moneda original y el cierre físico usa efectivo Bs/USD.
     const realBs = Number(String(real.efectivo_bs || '').replace(',', '.')) || 0;
     const realUSD = Number(String(real.efectivo_usd || '').replace(',', '.')) || 0;
+
+    const metodosArqueo = rows.map((row:any) => {
+      const method = String(row.metodo);
+      const currency = ['efectivo_usd','zelle','transferencia_usd'].includes(method) ? 'USD' : 'BS';
+      const opening = method === 'efectivo_bs' ? Number(data.fondoAperturaBS || 0) : method === 'efectivo_usd' ? Number(data.fondoAperturaUSD || 0) : 0;
+      const sales = currency === 'BS' ? Number(row.ventasBS || 0) : Number(row.ventasUSD || 0);
+      const cxc = currency === 'BS' ? Number(row.cobrosBS || 0) : Number(row.cobrosUSD || 0);
+      const returns = currency === 'BS' ? Number(row.devBS || 0) : Number(row.devUSD || 0);
+      const plus = currency === 'BS' ? Number(row.movPlusBS || 0) : Number(row.movPlusUSD || 0);
+      const minus = currency === 'BS' ? Number(row.movMinusBS || 0) : Number(row.movMinusUSD || 0);
+      const system = Number((opening + sales + cxc - returns + plus - minus).toFixed(2));
+      const amountReal = Number(String(real[method]).replace(',', '.'));
+      return { ...row, montoSistema: system, montoReal: amountReal, diferencia: Number((amountReal - system).toFixed(2)), moneda: currency };
+    });
 
     const nuevoZ: ReportZ = {
       id: 'Z-' + String(numeroZ).padStart(6, '0'),
@@ -649,7 +694,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       exentoUSD: data.exentoUSD,
       igtfUSD: data.igtfUSD,
       metodosPago: { ...data.paymentMethods },
-      metodosArqueo: Array.isArray(data.metodosArqueo) ? data.metodosArqueo.map((m:any) => ({ ...m })) : [],
+      metodosArqueo,
       cobrosDeudaUSD: Number(data.cobrosDeudaUSD) || 0,
       cobrosDeudaBS: Number(data.cobrosDeudaBS) || 0,
       cobrosDeudaPorMetodo: Array.isArray(data.cobrosDeudaPorMetodo) ? data.cobrosDeudaPorMetodo.map((m:any) => ({ ...m })) : [],
@@ -696,6 +741,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // No mostramos éxito ni cerramos el modal hasta recibir confirmación real
     // del endpoint transaccional de SQLite local.
     let zPersistido: any;
+    setIsClosingZ(true);
     try {
       zPersistido = await Store.createZClosure({ terminalId: termId, report: nuevoZ, terminalPatch });
     } catch (error: any) {
@@ -706,6 +752,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         description: String(error?.message || 'SQLite local no confirmó el cierre. La caja no se marcará como cerrada.'),
       });
       return;
+    } finally {
+      setIsClosingZ(false);
     }
     const zConfirmado = zPersistido.report;
 
@@ -1718,6 +1766,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <CashZArqueoModal
           open={showZArqueo}
           report={reportSnapshot}
+          busy={isClosingZ}
           onCancel={() => {
             setShowZArqueo(false);
             setShowReportType(null);
