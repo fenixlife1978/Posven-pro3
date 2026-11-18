@@ -197,10 +197,10 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
       const d = preview.plan.departamentos;
       const cat = preview.plan.categorias;
       const summary =
-        'VISTA PREVIA DE IMPORTACIÓN SEGURA\\n\\n' +
-        'DEPARTAMENTOS: ' + d.imported + ' en archivo; ' + d.before + ' actuales; ' + d.added + ' nuevos; total final ' + d.after + '.\\n' +
-        'CATEGORÍAS: ' + cat.imported + ' en archivo; ' + cat.before + ' actuales; ' + cat.added + ' nuevas; total final ' + cat.after + '.\\n\\n' +
-        'Solo se fusionarán departamentos y categorías. Productos, existencias, movimientos, ventas, compras, CxC, CxP y caja no serán modificados.\\n\\n' +
+        'VISTA PREVIA DE IMPORTACIÓN SEGURA\n\n' +
+        'DEPARTAMENTOS: ' + d.imported + ' en archivo; ' + d.before + ' actuales; ' + d.added + ' nuevos; total final ' + d.after + '.\n' +
+        'CATEGORÍAS: ' + cat.imported + ' en archivo; ' + cat.before + ' actuales; ' + cat.added + ' nuevas; total final ' + cat.after + '.\n\n' +
+        'Solo se fusionarán departamentos y categorías. Productos, existencias, movimientos, ventas, compras, CxC, CxP y caja no serán modificados.\n\n' +
         '¿Confirmas la importación?';
       if (!window.confirm(summary)) return;
       const result = await importarCatalogosDesdeArchivo(file);
