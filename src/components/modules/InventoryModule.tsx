@@ -58,9 +58,9 @@ import PeriodicInventoryExitsReport from '@/components/modules/PeriodicInventory
 const normalizeCatalogFilter = (value: unknown): string =>
   String(value ?? '')
     .normalize('NFD')
-    .replace(/[\\u0300-\\u036f]/g, '')
-    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-    .replace(/\\s+/g, ' ')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLocaleUpperCase('es');
 
@@ -111,7 +111,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     const unique = new Map<string, string>();
     [...(state.departamentos || []), ...(state.productos || []).map(p => p.departamento)]
       .forEach(value => {
-        const label = String(value ?? '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ').trim();
+        const label = String(value ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
         const key = normalizeCatalogFilter(label);
         if (key && !unique.has(key)) unique.set(key, label);
       });
@@ -122,7 +122,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     const unique = new Map<string, string>();
     [...(state.categorias || []), ...(state.productos || []).map(p => p.categoria)]
       .forEach(value => {
-        const label = String(value ?? '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ').trim();
+        const label = String(value ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
         const key = normalizeCatalogFilter(label);
         if (key && !unique.has(key)) unique.set(key, label);
       });
