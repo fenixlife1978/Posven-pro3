@@ -163,8 +163,8 @@ export async function cargarRespaldoDesdeContenido(
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
   allowPartialTursoRestore = false,
 ): Promise<void> {
-  if (!content || content.length > 64 * 1024 * 1024) {
-    throw new Error('El respaldo está vacío o supera el máximo permitido de 64 MB.');
+  if (!content) {
+    throw new Error('El respaldo está vacío.');
   }
   let backup: BackupFile;
   try {
