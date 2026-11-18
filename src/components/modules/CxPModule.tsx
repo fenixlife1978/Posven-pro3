@@ -162,15 +162,26 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       toast({ variant: "destructive", title: "Error", description: "El monto debe ser mayor a cero." });
       return;
     }
-    const montoBS = esMetodoBS ? rawMonto : rawMonto * state.tasa;
-    const amount = esMetodoBS ? rawMonto / state.tasa : rawMonto;
-    const amountCents = Math.round(amount * 100);
-    const saldoCents = Math.round((Number(showPaymentModal.saldoUSD) || 0) * 100);
-    if (amountCents > saldoCents) {
+    const tasaAplicada = Number(state.tasa) || 0;
+    if (!(tasaAplicada > 0)) {
+      toast({ variant: "destructive", title: "Error", description: "La tasa BCV debe ser mayor que cero." });
+      return;
+    }
+    const montoBS = esMetodoBS
+      ? Math.round((rawMonto + Number.EPSILON) * 100) / 100
+      : Math.round((rawMonto * tasaAplicada + Number.EPSILON) * 100) / 100;
+    const amount = esMetodoBS ? montoBS / tasaAplicada : rawMonto;
+    const amountNormalizado = esMetodoBS
+      ? Math.round((amount + Number.EPSILON) * 1000000) / 1000000
+      : Math.round((amount + Number.EPSILON) * 100) / 100;
+    const saldoUSD = Math.max(0, Number(showPaymentModal.saldoUSD) || 0);
+    const saldoCents = Math.round(saldoUSD * 100);
+    const amountCents = Math.round(amountNormalizado * 100);
+    const saldoBSExacto = Math.round((saldoUSD * tasaAplicada + Number.EPSILON) * 100) / 100;
+    if (esMetodoBS ? montoBS > saldoBSExacto + 0.005 : amountCents > saldoCents) {
       toast({ variant: "destructive", title: "Error", description: "El monto no puede ser mayor al saldo pendiente." });
       return;
     }
-    const amountNormalizado = amountCents / 100;
 
     if (isProcessing || processingRef.current) return;
     processingRef.current = true;
@@ -182,7 +193,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     const pago = {
       id: 'PAYS-' + Store.uid().toUpperCase().slice(0, 6),
       asientoId, fecha: ahoraStr, montoUSD: amountNormalizado, montoBS,
-      metodo: paymentMethod, reciboId
+      metodo: paymentMethod, reciboId, tasaAplicada
     };
     const nuevoAsiento: LibroDiarioEntry = {
       id: asientoId, fecha: ahoraStr, tipo: 'egreso',
@@ -196,6 +207,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
         collection: 'cxp',
         debtId: showPaymentModal.id,
         amountUSD: amountNormalizado,
+        amountBS: montoBS,
         payment: { ...pago, montoUSD: amountNormalizado },
         journal: nuevoAsiento
       });
@@ -215,7 +227,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     if (!grupo) return;
     const total = grupo.saldoTotal;
     if (total <= 0) return;
-    setGlobalProvider({ proveedor: provider, total });
+    setGlobalProvider({ proveedor: provider, total, debts: grupo.pendientes });
     setPaymentAmount('');
     setPaymentMethod('efectivo_usd');
     setPagoAtrasado(false);
@@ -225,8 +237,6 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
 
   const handleProcessGlobalPayment = async () => {
     if (!globalProvider || isProcessing || processingRef.current) return;
-    processingRef.current = true;
-    setIsProcessing(true);
 
     const esMetodoBS = paymentMethod === 'efectivo_bs' || paymentMethod === 'pagomovil';
     const rawMonto = parseFloat(paymentAmount) || 0;
@@ -241,8 +251,12 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       return;
     }
 
-    const montoBS = esMetodoBS ? rawMonto : rawMonto * tasaAplicada;
-    const amount = esMetodoBS ? rawMonto / tasaAplicada : rawMonto;
+    const montoBS = esMetodoBS
+      ? Math.round((rawMonto + Number.EPSILON) * 100) / 100
+      : Math.round((rawMonto * tasaAplicada + Number.EPSILON) * 100) / 100;
+    const amount = esMetodoBS
+      ? Math.round((montoBS / tasaAplicada + Number.EPSILON) * 1000000) / 1000000
+      : rawMonto;
     const fechaPago = pagoAtrasado && pagoAtrasadoFecha
       ? pagoAtrasadoFecha + 'T' + Utils.ahora().split('T')[1]
       : Utils.ahora();
@@ -252,6 +266,9 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       toast({ variant: "destructive", title: "Sin deuda pendiente", description: "Las deudas de este proveedor ya fueron actualizadas por otra caja." });
       return;
     }
+
+    processingRef.current = true;
+    setIsProcessing(true);
 
     const reciboBase = `PEND-CXP-${Store.uid().toUpperCase().slice(0, 8)}`;
     const asientoId = 'ACC-' + Store.uid().toUpperCase().slice(0, 5);
@@ -281,18 +298,22 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
       const resultadoPago = await Store.applyGlobalProviderPaymentTransaction({
         provider: globalProvider.proveedor,
         amountUSD: amount,
+        amountBS: montoBS,
         payment: pagoBase,
         journal: nuevoAsiento
       });
 
-      const totalAplicado = resultadoPago.appliedUSD;
-      if (totalAplicado <= 0.001) {
+      const totalAplicado = Number(resultadoPago.appliedUSD) || 0;
+      const aplicadoBS = Number.isFinite(Number(resultadoPago.appliedBS))
+        ? Number(resultadoPago.appliedBS)
+        : Math.round((totalAplicado * tasaAplicada + Number.EPSILON) * 100) / 100;
+      // Un pago en Bs sigue siendo válido aunque su equivalente USD sea menor a $0.001.
+      if (esMetodoBS ? aplicadoBS <= 0 : totalAplicado <= 0.001) {
         throw new Error('El saldo del proveedor cambió en otra caja. Actualice la pantalla y vuelva a intentar.');
       }
 
       const remanente = Math.max(0, amount - totalAplicado);
       const aplicados = resultadoPago.debts;
-      const aplicadoBS = Number(resultadoPago.appliedBS) > 0 ? Number(resultadoPago.appliedBS) : totalAplicado * tasaAplicada;
 
       toast({
         title: "Pago global registrado",
