@@ -1804,13 +1804,12 @@ export async function createZClosureTransaction(params: {
       return method;
     };
     const isUsdMethod = (method: string) => ['efectivo_usd','zelle','transferencia_usd','nota_credito'].includes(normalizeMethod(method));
-    const isBsMethod = (method: string) => ['efectivo_bs','tarjeta','pagomovil','biopago','transferencia_bs'].includes(normalizeMethod(method));
     const paymentParts = (record: any) => Array.isArray(record?.payments) && record.payments.length ? record.payments : [{ metodo: record?.metodoPago || 'otros', montoUSD: record?.totalUSD, montoBS: record?.totalBS, tasaAplicada: record?.tasaAplicada }];
     const paymentValue = (part: any) => {
       const method = normalizeMethod(part?.metodo || part?.method || 'otros');
       const usd = Number(part?.montoUSD ?? part?.montoUsd ?? part?.usdAmount ?? part?.amountUSD ?? 0) || 0;
       const explicitBs = part?.montoBS ?? part?.montoBs ?? part?.amountBS ?? part?.amountBs ?? part?.totalBS ?? part?.totalBs;
-      const bs = Number(explicitBs ?? 0) || (isBsMethod(method) ? Number(part?.amount) || 0 : 0);
+      const bs = Number(explicitBs ?? 0) || (!isUsdMethod(method) ? Number(part?.amount) || 0 : 0);
       return { method, usd, bs };
     };
     const paymentMethods: Record<string, number> = {};
@@ -1820,7 +1819,7 @@ export async function createZClosureTransaction(params: {
       const p = paymentValue(part); paymentMethods[p.method] = (paymentMethods[p.method] || 0) + p.usd;
       if (['credito','nota_credito','mixto'].includes(p.method)) return;
       const row = ensureMethod(p.method);
-      if (isUsdMethod(p.method)) row.ventasUSD += p.usd; else if (isBsMethod(p.method)) row.ventasBS += p.bs;
+      if (isUsdMethod(p.method)) row.ventasUSD += p.usd; else row.ventasBS += p.bs;
     }));
     const journal = allJournal.filter((entry: any) => inWindow(entry.fecha) && String(entry.terminalId || '') === params.terminalId);
     const excludedJournalCategories = new Set(['VENTA','COBRO_DEUDA','DEVOLUCION','ANULACION']);
@@ -1833,7 +1832,7 @@ export async function createZClosureTransaction(params: {
       const p = paymentValue(part);
       if (['credito','nota_credito','mixto'].includes(p.method)) return;
       const row = ensureMethod(p.method);
-      if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else if (isBsMethod(p.method)) row.cobrosBS += p.bs;
+      if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
     }));
     const applyRefund = (doc: any, kind: 'devolucion' | 'anulacion') => {
       const sale = saleById.get(String(doc.ventaId));
@@ -1856,14 +1855,14 @@ export async function createZClosureTransaction(params: {
           const p = paymentValue(part);
           if (['credito','nota_credito','mixto'].includes(p.method)) return;
           const row = ensureMethod(p.method);
-          if (isUsdMethod(p.method)) row.devUSD += p.usd * factor; else if (isBsMethod(p.method)) row.devBS += p.bs * factor;
+          if (isUsdMethod(p.method)) row.devUSD += p.usd * factor; else row.devBS += p.bs * factor;
         });
         return;
       }
       const p = paymentValue({ metodo: evidence.metodo, montoUSD: evidence.montoUSD, montoBS: evidence.montoBS });
       if (['credito','nota_credito','mixto'].includes(p.method)) return;
       const row = ensureMethod(p.method);
-      if (isUsdMethod(p.method)) row.devUSD += p.usd; else if (isBsMethod(p.method)) row.devBS += p.bs;
+      if (isUsdMethod(p.method)) row.devUSD += p.usd; else row.devBS += p.bs;
     };
     voidDocs.forEach((doc: any) => applyRefund(doc, 'anulacion'));
     returns.forEach((doc: any) => applyRefund(doc, 'devolucion'));
@@ -1872,8 +1871,8 @@ export async function createZClosureTransaction(params: {
       const movementType = String(entry.tipo || '').trim().toLowerCase();
       const amountUSD = Number(entry.montoUSD ?? entry.montoUsd) || 0;
       const amountBS = Number(entry.montoBS ?? entry.montoBs) || 0;
-      if (movementType === 'ingreso') { if (isUsdMethod(method)) row.movPlusUSD += amountUSD; else if (isBsMethod(method)) row.movPlusBS += amountBS; }
-      else { if (isUsdMethod(method)) row.movMinusUSD += amountUSD; else if (isBsMethod(method)) row.movMinusBS += amountBS; }
+      if (movementType === 'ingreso') { if (isUsdMethod(method)) row.movPlusUSD += amountUSD; else row.movPlusBS += amountBS; }
+      else { if (isUsdMethod(method)) row.movMinusUSD += amountUSD; else row.movMinusBS += amountBS; }
     });
     const cashBs = ensureMethod('efectivo_bs'); const cashUsd = ensureMethod('efectivo_usd');
     const openingBs = Number(current.fondoCajaHoyBS) || 0; const openingUsd = Number(current.fondoCajaHoyUSD) || 0;
