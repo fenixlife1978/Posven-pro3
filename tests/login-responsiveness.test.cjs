@@ -22,12 +22,14 @@ test('login tiene límite de espera y cancela las peticiones al desmontar', () =
   assert.match(login, /controller\.abort\(\)/);
 });
 
-test('al mostrar el formulario se reintenta el foco y permite reactivar campos', () => {
+test('el login enfoca una sola vez y no roba el foco durante la escritura', () => {
   assert.match(login, /requestAnimationFrame/);
-  assert.match(login, /delays = \[0, 80, 220, 450, 850\]/);
   assert.match(login, /field\.focus\(\{ preventScroll: true \}\)/);
   assert.match(login, /reactivateLoginForm/);
   assert.match(login, /posven-login-identifier/);
+  assert.match(login, /posven-login-password/);
+  assert.doesNotMatch(login, /delays = \[0, 80, 220, 450, 850\]/);
+  assert.doesNotMatch(login, /setTimeout\(focusField/);
   assert.match(login, /disabled=\{false\} readOnly=\{false\} tabIndex=\{0\}/);
 });
 
