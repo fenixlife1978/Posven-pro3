@@ -843,8 +843,8 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                <div className="bg-surface-soft p-5 rounded-[20px] text-center border border-line shadow-inner">
                   <p className="text-ink text-[9px] font-black uppercase tracking-[0.2em] mb-2">TOTAL PENDIENTE</p>
                   <p className="text-3xl font-black text-status-danger">{Utils.fmtUSD(globalProvider.total)}</p>
-                  <p className="text-base font-black text-ink mt-1">{Utils.fmtBS(globalProvider.total * (Number(state.tasa) || 0))}</p>
-                  <p className="text-[9px] font-black text-ink/70 mt-0.5 uppercase">Equivalente en BS · Tasa BCV {Number(state.tasa || 0).toFixed(2)} Bs/USD</p>
+                  <p className="text-sm font-black text-ink mt-1">{Utils.fmtBS((globalProvider.debts || []).reduce((sum: number, debt: Debt) => sum + Math.round((Number(debt.saldoUSD || 0) * (pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa) + Number.EPSILON) * 100) / 100, 0))}</p>
+                  <p className="text-[8px] font-bold text-ink/60 uppercase tracking-tight">Equivalente en Bs. · Tasa {(pagoAtrasado ? (parseFloat(pagoAtrasadoTasa) || state.tasa) : state.tasa).toFixed(2)} Bs/USD</p>
                   <p className="text-[9px] font-black text-ink mt-2 uppercase tracking-tight italic">
                     Se liquidarán las deudas desde la más antigua; el excedente se aplica como abono.
                   </p>
@@ -929,10 +929,17 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                         onChange={e => setPaymentAmount(e.target.value)}
                      />
                   </div>
-                  {esBS && appliedUSD > 0 && (
-                    <p className="text-[9px] font-black text-ink/60 mt-1 uppercase">
-                      Equiv. {Utils.fmtUSD(appliedUSD)} · Tasa {pagoAtrasado && pagoAtrasadoTasa ? `aplicada ${tasaPrev.toFixed(2)}` : `BCV ${state.tasa.toFixed(2)}`}
-                    </p>
+                  {esBS && (
+                    <div className="mt-1 space-y-1">
+                      <p className="text-[9px] font-black text-ink/70 uppercase">
+                        Para liquidar el total: {Utils.fmtBS((globalProvider.debts || []).reduce((sum: number, debt: Debt) => sum + Math.round((Number(debt.saldoUSD || 0) * tasaPrev + Number.EPSILON) * 100) / 100, 0))}
+                      </p>
+                      {appliedUSD > 0 && (
+                        <p className="text-[9px] font-black text-ink/60 uppercase">
+                          Monto ingresado equivale a {Utils.fmtUSD(appliedUSD)} · Tasa {pagoAtrasado && pagoAtrasadoTasa ? `aplicada ${tasaPrev.toFixed(2)}` : `BCV ${state.tasa.toFixed(2)}`}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
                 <button onClick={handleProcessGlobalPayment} disabled={isProcessing} className="btn btn-primary w-full h-14 font-black uppercase text-xs shadow-xl">
