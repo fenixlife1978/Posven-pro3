@@ -100,16 +100,27 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const restaurarContenidoRespaldo = async (content: string) => {
     setBackupError(null);
     setBackupProgress(null);
+    let parsed: BackupFile;
+    try {
+      const candidate = JSON.parse(content);
+      if (candidate?.type === 'catalogs-only') {
+        throw new Error('Este archivo es exclusivo de catálogos. Use «Importar solo catálogos» y no la restauración completa.');
+      }
+      if (!candidate || candidate.app !== 'posven-pro' || !candidate.data ||
+          typeof candidate.data !== 'object' || Array.isArray(candidate.data)) {
+        throw new Error('El archivo seleccionado no es un respaldo completo válido de POSVEN.');
+      }
+      parsed = candidate as BackupFile;
+    } catch (error: any) {
+      setBackupError(error?.message || 'El respaldo no contiene JSON válido.');
+      return;
+    }
+
     const confirmar = window.confirm('Se restaurará el sistema completo desde este respaldo. Los datos actuales serán reemplazados. ¿Desea continuar?');
     if (!confirmar) return;
 
     let allowPartialTursoRestore = false;
     try {
-      const parsed = JSON.parse(content) as BackupFile;
-      if ((parsed as any)?.type === 'catalogs-only') {
-        setBackupError('Este archivo es exclusivo de catálogos. Use «Importar solo catálogos» y no la restauración completa.');
-        return;
-      }
       const partial = detectarRespaldoTursoTruncado(parsed);
       if (partial.cappedTables.length) {
         const oldestDate = partial.oldestMovementDate || 'no identificable en el archivo';
