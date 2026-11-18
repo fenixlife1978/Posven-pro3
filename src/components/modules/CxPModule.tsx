@@ -170,6 +170,10 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     const montoBS = esMetodoBS
       ? Math.round((rawMonto + Number.EPSILON) * 100) / 100
       : Math.round((rawMonto * tasaAplicada + Number.EPSILON) * 100) / 100;
+    if (esMetodoBS && montoBS <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "El monto en bolívares debe ser de al menos Bs. 0,01." });
+      return;
+    }
     const amount = esMetodoBS ? montoBS / tasaAplicada : rawMonto;
     const amountNormalizado = esMetodoBS
       ? Math.round((amount + Number.EPSILON) * 1000000) / 1000000
@@ -254,6 +258,10 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
     const montoBS = esMetodoBS
       ? Math.round((rawMonto + Number.EPSILON) * 100) / 100
       : Math.round((rawMonto * tasaAplicada + Number.EPSILON) * 100) / 100;
+    if (esMetodoBS && montoBS <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "El monto en bolívares debe ser de al menos Bs. 0,01." });
+      return;
+    }
     const amount = esMetodoBS
       ? Math.round((montoBS / tasaAplicada + Number.EPSILON) * 1000000) / 1000000
       : rawMonto;
