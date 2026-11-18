@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server';
 import path from 'node:path';
 import { createSession, getRequestSessionId, getSessionUser } from '@/lib/sqlite/auth';
-import { assertSQLiteReady, exportBackupSnapshot, restoreBackupTransaction } from '@/lib/sqlite/pos-store';
+import { assertSQLiteReady, exportBackupSnapshot, getMaxBackupBytes, restoreBackupTransaction } from '@/lib/sqlite/pos-store';
 import { createSqliteBackup, getSqliteDatabasePath } from '@/lib/sqlite/database';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
-const MAX_REQUEST_BYTES = MAX_BACKUP_BYTES + 128 * 1024;
+const MAX_REQUEST_OVERHEAD_BYTES = 128 * 1024;
 
 async function requireAdmin(request: Request) {
   assertSQLiteReady();
@@ -36,9 +35,11 @@ export async function POST(request: Request) {
     // comienza en paralelo con la autenticación: requireAdmin consulta SQLite y
     // puede esperar el mutex de una operación larga; no debe dejar al cliente
     // bloqueado a mitad de la transferencia mientras el servidor no consume el body.
+    const maxBackupBytes = getMaxBackupBytes();
+    const maxRequestBytes = maxBackupBytes + MAX_REQUEST_OVERHEAD_BYTES;
     const contentLengthHeader = request.headers.get('content-length');
     const contentLength = contentLengthHeader ? Number(contentLengthHeader) : 0;
-    if (contentLengthHeader && (!Number.isSafeInteger(contentLength) || contentLength <= 0 || contentLength > MAX_REQUEST_BYTES)) {
+    if (contentLengthHeader && (!Number.isSafeInteger(contentLength) || contentLength <= 0 || contentLength > maxRequestBytes)) {
       throw Object.assign(new Error('La solicitud supera el tamaño máximo permitido para restauración.'), { status: 413 });
     }
     const authPromise = requireAdmin(request);
@@ -51,8 +52,8 @@ export async function POST(request: Request) {
     if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object') {
       throw Object.assign(new Error('El archivo no es un respaldo POSVEN válido.'), { status: 400 });
     }
-    if (Buffer.byteLength(JSON.stringify(backup), 'utf8') > MAX_BACKUP_BYTES) {
-      throw Object.assign(new Error('El respaldo supera el tamaño máximo permitido de 64 MiB.'), { status: 413 });
+    if (Buffer.byteLength(JSON.stringify(backup), 'utf8') > maxBackupBytes) {
+      throw Object.assign(new Error('El respaldo supera el límite técnico configurado de tamaño (POSVEN_MAX_BACKUP_BYTES).'), { status: 413 });
     }
 
     const databasePath = getSqliteDatabasePath();
