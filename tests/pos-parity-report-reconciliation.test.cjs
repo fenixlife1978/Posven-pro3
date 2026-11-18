@@ -70,3 +70,13 @@ test('npm test descubre solo archivos de prueba y no scripts auxiliares', () => 
   assert.match(runner, /name\.endsWith\('\.test\.cjs'\)/);
   assert.match(packageJson, /"test": "node scripts\/run-tests\.cjs"/);
 });
+
+test('inventario normaliza acentos y recupera filtros desde productos reales', () => {
+  const source = read('src/components/modules/InventoryModule.tsx');
+  assert.match(source, /normalizeCatalogFilter/);
+  assert.match(source, /state\.departamentos[^\n]*state\.productos/);
+  assert.match(source, /state\.categorias[^\n]*state\.productos/);
+  assert.match(source, /normalizeCatalogFilter\(p\.categoria\) === normalizeCatalogFilter\(catFilter\)/);
+  assert.match(source, /normalizeCatalogFilter\(p\.departamento\) === normalizeCatalogFilter\(deptFilter\)/);
+  assert.doesNotMatch(source, /DEFAULT_DEPARTMENTS|DEFAULT_CATEGORIES/);
+});
