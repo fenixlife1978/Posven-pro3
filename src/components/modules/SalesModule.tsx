@@ -367,12 +367,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     let bs = 0;
     pays.forEach((p:any) => {
       const method = String(p?.metodo || p?.method || '').toLowerCase();
-      const pUsd = Number(p?.montoUSD) || Number(p?.usdAmount) || (
+      const pUsd = Number(p?.montoUSD ?? p?.montoUsd ?? p?.usdAmount ?? p?.amountUSD) || (
         ['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(method)
-          ? (Number(p?.amount) || Number(p?.totalBS) || 0) / rate
+          ? (Number(p?.amount) || Number(p?.totalBS ?? p?.totalBs) || 0) / rate
           : 0
       );
-      const pBs = Number(p?.montoBS) || Number(p?.totalBS) || (
+      const pBs = Number(p?.montoBS ?? p?.montoBs ?? p?.amountBS ?? p?.amountBs ?? p?.totalBS ?? p?.totalBs) || (
         Number(p?.amount) || (
           ['efectivo_usd','zelle'].includes(method) ? pUsd * rate : 0
         )
@@ -505,9 +505,20 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     });
 
     const cobroDeudaVentas=allVentas.filter(v=>inWindow(v.fecha)&&String(v.terminalId||'')===termId&&esCobroDeuda(v));
+    const debtJournal=relevantDiario.filter((entry:any)=>String(entry.categoria||'').trim().toUpperCase()==='COBRO_DEUDA');
+    const uniqueDebtJournal=debtJournal.filter((entry:any)=>{
+      const reference=String(entry.referencia||'');
+      return !reference || !cobroDeudaVentas.some((sale:any)=>reference===String(sale.id)||reference.includes(String(sale.id)));
+    });
     cobroDeudaVentas.forEach(v=>{
       const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
       pays.forEach((p:any)=>{const x=addPaymentTo(p);if(['credito','nota_credito','mixto'].includes(x.metodo))return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;});
+    });
+    uniqueDebtJournal.forEach((entry:any)=>{
+      const x=addPaymentTo(entry);
+      if(['credito','nota_credito','mixto'].includes(x.metodo))return;
+      const row=ensureArqueo(x.metodo);
+      if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;
     });
 
     // Un reintegro solo modifica el arqueo si existe un asiento que acredita
@@ -574,8 +585,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         && !(Array.isArray(sale.payments) && sale.payments.length))
       .map((sale:any) => String(sale.id));
     const ventasCreditoUSD=vActivas.filter(v=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s,v)=>s+(Number(v.totalUSD)||0),0);
-    const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0);
-    const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0);
+    const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0)+uniqueDebtJournal.reduce((s:number,e:any)=>s+(Number(e.montoUSD??e.montoUsd)||0),0);
+    const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0)+uniqueDebtJournal.reduce((s:number,e:any)=>s+(Number(e.montoBS??e.montoBs)||0),0);
     const cobrosDeudaPorMetodoMap: Record<string, { metodo:string; montoBS:number; montoUSD:number }> = {};
     cobroDeudaVentas.forEach((v:any) => {
       const pays = Array.isArray(v.payments) && v.payments.length
@@ -589,6 +600,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         cobrosDeudaPorMetodoMap[key].montoBS += x.bs;
         cobrosDeudaPorMetodoMap[key].montoUSD += x.usd;
       });
+    });
+    uniqueDebtJournal.forEach((entry:any)=>{
+      const metodo=normalizarMetodo(entry?.metodo||'otros');
+      if(!cobrosDeudaPorMetodoMap[metodo])cobrosDeudaPorMetodoMap[metodo]={metodo,montoBS:0,montoUSD:0};
+      cobrosDeudaPorMetodoMap[metodo].montoBS+=Number(entry.montoBS??entry.montoBs)||0;
+      cobrosDeudaPorMetodoMap[metodo].montoUSD+=Number(entry.montoUSD??entry.montoUsd)||0;
     });
     const cobrosDeudaPorMetodo = Object.values(cobrosDeudaPorMetodoMap);
 
