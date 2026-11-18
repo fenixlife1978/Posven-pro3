@@ -46,3 +46,5 @@ POSVEN-Pro3 debe conservar la arquitectura de escritorio **SQLite local + servid
 - Las pruebas automatizadas deben descubrirse solo desde `tests/*.test.cjs` mediante `scripts/run-tests.cjs`, compatible con Windows y Linux. Los scripts auxiliares de `scripts/` no deben ejecutarse como pruebas por descubrimiento automático.
 
 - Los filtros de inventario deben normalizar acentos, mayúsculas, espacios y caracteres invisibles; además deben ofrecer categorías/departamentos presentes en productos reales aunque falten en las tablas de catálogo. No sembrar catálogos demo ni recuperar listas históricas específicas de otro comercio como valores predeterminados.
+
+- Mantener actualizado `docs/PARIDAD-POSVEN-PRO3.md` con la matriz de diferencias, decisiones de adaptación y pendientes de auditoría. No declarar paridad total hasta completar y probar cada módulo.
