@@ -54,3 +54,11 @@ test('Corte X ofrece conteo temporal sin persistir ni cerrar la caja', () => {
   assert.match(cashModal, /mode === 'Z' && \(/);
   assert.match(sales, /setArqueoMode\(type === 'REPORT_Z' \? 'Z' : 'X'\)/);
 });
+
+test('los cobros CxC históricos del libro diario se incluyen una sola vez', () => {
+  assert.match(store, /const uniqueDebtJournal = debtJournal\.filter/);
+  assert.match(store, /reference\.includes\(String\(sale\.id\)\)/);
+  assert.match(store, /uniqueDebtJournal\.forEach/);
+  assert.match(sales, /const uniqueDebtJournal=debtJournal\.filter/);
+  assert.match(sales, /reference\.includes\(String\(sale\.id\)\)/);
+});
