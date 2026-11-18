@@ -7,6 +7,9 @@ import { createSqliteBackup, getSqliteDatabasePath } from '@/lib/sqlite/database
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
+const MAX_REQUEST_BYTES = MAX_BACKUP_BYTES + 128 * 1024;
+
 async function requireAdmin(request: Request) {
   assertSQLiteReady();
   const user = await getSessionUser(getRequestSessionId(request));
@@ -29,8 +32,18 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const user = await requireAdmin(request);
-    const body = await request.json();
+    // Rechaza cuerpos excesivos antes de reservar memoria. La lectura del cuerpo
+    // comienza en paralelo con la autenticación: requireAdmin consulta SQLite y
+    // puede esperar el mutex de una operación larga; no debe dejar al cliente
+    // bloqueado a mitad de la transferencia mientras el servidor no consume el body.
+    const contentLengthHeader = request.headers.get('content-length');
+    const contentLength = contentLengthHeader ? Number(contentLengthHeader) : 0;
+    if (contentLengthHeader && (!Number.isSafeInteger(contentLength) || contentLength <= 0 || contentLength > MAX_REQUEST_BYTES)) {
+      throw Object.assign(new Error('La solicitud supera el tamaño máximo permitido para restauración.'), { status: 413 });
+    }
+    const authPromise = requireAdmin(request);
+    const bodyPromise = request.json();
+    const [user, body] = await Promise.all([authPromise, bodyPromise]);
     if (String(body?.action || '') !== 'restore') {
       throw Object.assign(new Error('La restauración debe enviarse como un único paquete validado.'), { status: 400 });
     }
@@ -38,8 +51,8 @@ export async function POST(request: Request) {
     if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object') {
       throw Object.assign(new Error('El archivo no es un respaldo POSVEN válido.'), { status: 400 });
     }
-    if (JSON.stringify(backup).length > 64 * 1024 * 1024) {
-      throw Object.assign(new Error('El respaldo supera el tamaño máximo permitido de 64 MB.'), { status: 413 });
+    if (Buffer.byteLength(JSON.stringify(backup), 'utf8') > MAX_BACKUP_BYTES) {
+      throw Object.assign(new Error('El respaldo supera el tamaño máximo permitido de 64 MiB.'), { status: 413 });
     }
 
     const databasePath = getSqliteDatabasePath();
