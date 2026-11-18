@@ -1833,18 +1833,19 @@ export async function createZClosureTransaction(params: {
       const reference = String(entry.referencia || '');
       return !reference || !debtCollections.some((sale: any) => reference === String(sale.id) || reference.includes(String(sale.id)));
     });
+    const debtJournalParts = (entry: any) => Array.isArray(entry.paymentParts) && entry.paymentParts.length ? entry.paymentParts : [entry];
     debtCollections.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
       const p = paymentValue(part);
       if (['credito','nota_credito','mixto'].includes(p.method)) return;
       const row = ensureMethod(p.method);
       if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
     }));
-    uniqueDebtJournal.forEach((entry: any) => {
-      const p = paymentValue(entry);
+    uniqueDebtJournal.forEach((entry: any) => debtJournalParts(entry).forEach((part: any) => {
+      const p = paymentValue(part);
       if (['credito','nota_credito','mixto'].includes(p.method)) return;
       const row = ensureMethod(p.method);
       if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
-    });
+    }));
     const applyRefund = (doc: any, kind: 'devolucion' | 'anulacion') => {
       const sale = saleById.get(String(doc.ventaId));
       const category = kind === 'devolucion' ? 'DEVOLUCION' : 'ANULACION';
@@ -1896,10 +1897,10 @@ export async function createZClosureTransaction(params: {
       const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
       row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
     }));
-    uniqueDebtJournal.forEach((entry: any) => {
-      const p = paymentValue(entry); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
+    uniqueDebtJournal.forEach((entry: any) => debtJournalParts(entry).forEach((part: any) => {
+      const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
       row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
-    });
+    }));
     ['efectivo_bs','efectivo_usd','zelle','pagomovil','biopago','transferencia_bs','transferencia_usd','tarjeta','nota_credito'].forEach(ensureMethod);
     const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'nota_credito']);
     const rawActuals = submitted.arqueoReal && typeof submitted.arqueoReal === 'object' ? submitted.arqueoReal : {};
