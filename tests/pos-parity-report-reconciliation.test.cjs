@@ -1,0 +1,48 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const read = (name) => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
+const sales = read('src/components/modules/SalesModule.tsx');
+const store = read('src/lib/sqlite/pos-store.ts');
+const dbStore = read('src/lib/db-store.ts');
+const cashModal = read('src/components/pos/CashZArqueoModal.tsx');
+const zPreview = read('src/components/pos/ZReportPreview80mm.tsx');
+const receipt = read('src/components/pos/ReceiptModal.tsx');
+
+test('X/Z incluye operaciones de la apertura y carga anulaciones del período', () => {
+  assert.match(dbStore, /return itemMs >= cutoffMs/);
+  assert.match(dbStore, /loadReportWindow\('anulaciones', termId, desde\)/);
+  assert.match(dbStore, /ensureLoaded\('anulaciones'\)/);
+  assert.match(sales, /return dateMs >= cutoffMs/);
+  assert.match(store, /return dateMs >= cutoffMs/);
+});
+
+test('el arqueo no inventa salidas por devoluciones o anulaciones sin asiento de reintegro', () => {
+  assert.match(store, /const applyRefund = \(doc: any, kind: 'devolucion' \| 'anulacion'\)/);
+  assert.match(store, /if \(!evidence\) return/);
+  assert.match(store, /String\(evidence\.referencia \|\| ''\) === String\(doc\.id\)/);
+  assert.doesNotMatch(store, /voidedSales\.filter\([\s\S]{0,220}?row\.devUSD/);
+  assert.match(store, /const excludedJournalCategories = new Set\(\['VENTA','COBRO_DEUDA','DEVOLUCION','ANULACION'\]\)/);
+});
+
+test('el cierre Z rechaza pagos mixtos sin desglose y no trata vale interno como efectivo', () => {
+  assert.match(sales, /arqueoWarnings = allVentas/);
+  assert.match(sales, /normalizarMetodo\(sale\.metodoPago\) === 'mixto'/);
+  assert.match(store, /const arqueoWarnings = sales/);
+  assert.match(store, /if \(arqueoWarnings\.length\) throw new Error/);
+  assert.match(store, /const systemAmount = method === 'nota_credito' \? 0/);
+  assert.match(cashModal, /"nota_credito"/);
+  assert.match(cashModal, /method === "nota_credito" \? 0/);
+  assert.match(cashModal, /hasUnresolvedPayments/);
+  assert.match(cashModal, /missingRequired = rows\.filter\(\(row\) => String\(real\[row\.method\] \?\? ""\)\.trim\(\) === ""\)/);
+});
+
+test('el comprobante identifica conciliación, faltante, sobrante o ausencia de arqueo real', () => {
+  assert.match(zPreview, /ARQUEO REAL NO REGISTRADO/);
+  assert.match(zPreview, /ARQUEO CONCILIADO/);
+  assert.match(zPreview, /CIERRE CON FALTANTE/);
+  assert.match(zPreview, /CIERRE CON SOBRANTE/);
+  assert.match(receipt, /ARQUEO REAL NO REGISTRADO/);
+});
