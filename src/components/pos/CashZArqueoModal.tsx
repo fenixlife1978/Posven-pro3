@@ -23,6 +23,7 @@ type Props = {
   report: any;
   onCancel: () => void;
   onConfirm: (real: Record<string, string>, diff: { bs: number; usd: number }) => void;
+  busy?: boolean;
 };
 
 const money = (value: number, currency: "BS" | "USD") =>
@@ -47,7 +48,7 @@ const label = (method: string) => {
   return map[method] || method;
 };
 
-export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: Props) {
+export default function CashZArqueoModal({ open, report, onCancel, onConfirm, busy = false }: Props) {
   const [real, setReal] = useState<Record<string, string>>({});
 
   const rows = useMemo(() => {
@@ -113,22 +114,20 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
 
   if (!open || !report) return null;
 
-  // No declarar conciliado si hay medios con importe esperado que aún no
-  // fueron contados. Los campos vacíos no equivalen a un conteo real de cero.
-  const missingRequired = rows.filter((row) => {
-    const raw = String(real[row.method] ?? "").trim();
-    return Math.abs(row.system) >= 0.01 && raw === "";
-  });
+  // Cada método debe tener un conteo explícito, incluso cuando el monto real sea cero.
+  const missingRequired = rows.filter((row) => String(real[row.method] ?? "").trim() === "");
+  const hasUnresolvedPayments = Array.isArray(report.arqueoWarnings) && report.arqueoWarnings.length > 0;
   const invalidEntered = rows.filter((row) => {
     const raw = String(real[row.method] ?? "").trim();
     if (!raw) return false;
     const amount = Number(raw.replace(",", "."));
     return !Number.isFinite(amount) || amount < 0;
   });
-  const reconciled = missingRequired.length === 0 && invalidEntered.length === 0 &&
+  const reconciled = !hasUnresolvedPayments && missingRequired.length === 0 && invalidEntered.length === 0 &&
     Math.abs(diff.bs) < 0.01 && Math.abs(diff.usd) < 0.01;
   const positive = diff.bs > 0.01 || diff.usd > 0.01;
-  const result = reconciled ? "ARQUEO CONCILIADO"
+  const result = hasUnresolvedPayments ? "PAGOS MIXTOS SIN DESGLOSE — REVISAR VENTAS"
+    : reconciled ? "ARQUEO CONCILIADO"
     : missingRequired.length ? "ARQUEO PENDIENTE"
     : invalidEntered.length ? "REVISE LOS MONTOS"
     : positive ? "SOBRANTE" : "FALTANTE";
@@ -209,27 +208,29 @@ export default function CashZArqueoModal({ open, report, onCancel, onConfirm }: 
               Diferencia Bs.: <b>{money(diff.bs, "BS")}</b> · Diferencia USD: <b>{money(diff.usd, "USD")}</b>
             </div>
             <div className="text-[10px] text-ink/50 mt-1">
-              {missingRequired.length > 0
-                ? `Faltan por contar ${missingRequired.length} medio(s) con monto esperado. Un campo vacío no se considera conciliado.`
-                : invalidEntered.length > 0
-                  ? "Hay montos inválidos o negativos. Corríjalos antes de ejecutar Z."
-                  : "El monto real se introduce por cada medio de pago. El sistema no convierte pagos electrónicos a efectivo."}
+              {hasUnresolvedPayments
+                ? `Hay ${report.arqueoWarnings.length} venta(s) con pago mixto sin desglose. Corrija esos documentos antes de ejecutar Z.`
+                : missingRequired.length > 0
+                  ? `Faltan por contar ${missingRequired.length} medio(s) de pago. Registre un monto, incluso cero, para cada método.`
+                  : invalidEntered.length > 0
+                    ? "Hay montos inválidos o negativos. Corríjalos antes de ejecutar Z."
+                    : "El monto real se introduce por cada medio de pago. El sistema no convierte pagos electrónicos a efectivo."}
             </div>
           </div>
         </div>
 
         <div className="p-4 bg-surface-soft border-t border-line flex justify-end gap-2">
-          <button onClick={onCancel} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px]">Cancelar</button>
+          <button onClick={onCancel} disabled={busy} className="px-5 h-10 rounded-xl border border-line text-ink font-black uppercase text-[10px] disabled:opacity-40">Cancelar</button>
           <button
             onClick={() => {
-              if (missingRequired.length > 0 || invalidEntered.length > 0) return;
+              if (hasUnresolvedPayments || missingRequired.length > 0 || invalidEntered.length > 0 || busy) return;
               onConfirm(real, diff);
             }}
-            disabled={missingRequired.length > 0 || invalidEntered.length > 0}
-            title={missingRequired.length > 0 ? "Ingrese el monto real de cada medio que tiene un monto esperado." : invalidEntered.length > 0 ? "Corrija los montos inválidos." : "Guardar arqueo y ejecutar Z"}
+            disabled={busy || hasUnresolvedPayments || missingRequired.length > 0 || invalidEntered.length > 0}
+            title={hasUnresolvedPayments ? "Corrija las ventas mixtas sin desglose antes de ejecutar Z." : missingRequired.length > 0 ? "Ingrese el monto real de cada medio de pago, incluso cuando sea cero." : invalidEntered.length > 0 ? "Corrija los montos inválidos." : busy ? "Guardando el cierre Z…" : "Guardar arqueo y ejecutar Z"}
             className="px-5 h-10 rounded-xl bg-status-danger text-white font-black uppercase text-[10px] shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Guardar y ejecutar Z
+            {busy ? "Guardando Z…" : "Guardar y ejecutar Z"}
           </button>
         </div>
       </div>
