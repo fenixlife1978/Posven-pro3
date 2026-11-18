@@ -50,6 +50,28 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
 
+  const unlockLoginFields = () => {
+    for (const id of ["posven-login-identifier", "posven-login-password"]) {
+      const field = document.getElementById(id) as HTMLInputElement | null;
+      if (!field) continue;
+      field.disabled = false;
+      field.readOnly = false;
+      field.removeAttribute("disabled");
+      field.removeAttribute("readonly");
+      field.tabIndex = 0;
+      field.style.pointerEvents = "auto";
+      field.style.userSelect = "text";
+    }
+  };
+
+  const focusLoginIdentifier = () => {
+    unlockLoginFields();
+    const field = document.querySelector<HTMLInputElement>("#posven-login-identifier");
+    if (field) {
+      try { field.focus({ preventScroll: true }); } catch { field.focus(); }
+    }
+  };
+
   useEffect(() => {
     // Al llegar a /login después de cerrar sesión, descartar siempre el token
     // de pestaña anterior. Un token revocado o heredado no debe contaminar las
@@ -91,21 +113,39 @@ export default function LoginPage() {
     // Enfocar una sola vez al presentar el formulario. Los reintentos temporizados
     // anteriores podían robar el foco cuando el usuario ya estaba escribiendo
     // en el campo de contraseña, haciendo parecer que el teclado no respondía.
+    const focusWhenWindowReturns = () => {
+      unlockLoginFields();
+      const active = document.activeElement;
+      if (active === document.body || active === document.documentElement) {
+        const field = mode === "setup"
+          ? document.querySelector<HTMLInputElement>('input[autocomplete="name"]')
+          : document.querySelector<HTMLInputElement>("#posven-login-identifier");
+        if (field) {
+          try { field.focus({ preventScroll: true }); } catch { field.focus(); }
+        }
+      }
+    };
     const frame = window.requestAnimationFrame(() => {
-      const selector = mode === "setup" ? 'input[autocomplete="name"]' : "#posven-login-identifier";
-      const field = document.querySelector<HTMLInputElement>(selector);
-      if (field && !field.disabled && !field.readOnly) {
-        try { field.focus({ preventScroll: true }); } catch { field.focus(); }
+      window.focus();
+      if (mode === "login") focusLoginIdentifier();
+      else {
+        unlockLoginFields();
+        const field = document.querySelector<HTMLInputElement>('input[autocomplete="name"]');
+        if (field) { try { field.focus({ preventScroll: true }); } catch { field.focus(); } }
       }
     });
-    return () => window.cancelAnimationFrame(frame);
+    window.addEventListener("focus", focusWhenWindowReturns);
+    document.addEventListener("visibilitychange", focusWhenWindowReturns);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("focus", focusWhenWindowReturns);
+      document.removeEventListener("visibilitychange", focusWhenWindowReturns);
+    };
   }, [mode]);
 
   const reactivateLoginForm = () => {
-    const field = document.querySelector<HTMLInputElement>("#posven-login-identifier");
-    if (field && !field.disabled && !field.readOnly) {
-      try { field.focus({ preventScroll: true }); } catch { field.focus(); }
-    }
+    window.focus();
+    focusLoginIdentifier();
   };
 
   const acceptSession = (data: any) => {
@@ -190,8 +230,8 @@ export default function LoginPage() {
             <form onSubmit={handleFirstAdmin} className="space-y-4">
               <div><label className={labelClass}>Nombre y apellido</label><input className={inputClass} value={nombre} onChange={e => setNombre(e.target.value)} autoComplete="name" required minLength={2} maxLength={80} placeholder="Nombre del responsable" /></div>
               <div><label className={labelClass}>Usuario de acceso</label><div className="relative"><UserRound className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input className={inputClass + " pl-12"} value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" placeholder="admin" /></div><p className="text-[11px] text-gray-400 mt-1 ml-1">3–32 caracteres: letras, números, punto, guion o guion bajo.</p></div>
-              <div><label className={labelClass}>Correo electrónico</label><div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type="email" className={inputClass + " pl-12"} value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required placeholder="correo@empresa.com" /></div></div>
-              <div><label className={labelClass}>Contraseña (mínimo 10 caracteres)</label><div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type={showPassword ? "text" : "password"} className={inputClass + " pl-12 pr-12"} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" required minLength={10} placeholder="Cree una contraseña segura" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">{showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button></div></div>
+              <div><label className={labelClass}>Correo electrónico</label><div className="relative"><Mail className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type="email" className={inputClass + " pl-12"} value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required placeholder="correo@empresa.com" /></div></div>
+              <div><label className={labelClass}>Contraseña (mínimo 10 caracteres)</label><div className="relative"><Lock className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input type={showPassword ? "text" : "password"} className={inputClass + " pl-12 pr-12"} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" required minLength={10} placeholder="Cree una contraseña segura" /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">{showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button></div></div>
               <div><label className={labelClass}>Repita la contraseña</label><input type="password" className={inputClass} value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="new-password" required minLength={10} placeholder="Confirme la contraseña" /></div>
               <button type="submit" disabled={loading} className="w-full h-14 bg-[#C8952E] text-black font-black text-sm rounded-2xl hover:bg-[#D9A540] disabled:opacity-50 shadow-lg uppercase tracking-widest">{loading ? "Configurando administrador..." : "Crear administrador y entrar"}</button>
               <p className="text-[11px] text-center text-gray-400">La cuenta se crea una sola vez en la base SQLite del servidor.</p>
