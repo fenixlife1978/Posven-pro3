@@ -72,10 +72,26 @@ function descargarCredencialesRestauradas(credentials: Array<{ username: string;
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+export function validarRespaldoParaRestauracion(backup: BackupFile): void {
+  const meta = backup?.meta;
+  if (!meta || meta.source !== 'turso' || meta.complete === true || !meta.tursoTables) return;
+  const cappedTables = Object.entries(meta.tursoTables)
+    .filter(([, count]) => Number(count) >= 10000)
+    .map(([name]) => name);
+  if (cappedTables.length) {
+    throw new Error(
+      'Respaldo antiguo posiblemente truncado en: ' + cappedTables.join(', ') +
+      '. POSVEN-Pro3 detuvo la carga antes de enviar el archivo para evitar restaurar un historial incompleto. ' +
+      'Genere desde POSVEN2 un respaldo paginado/completo que no limite las tablas a 10.000 registros.'
+    );
+  }
+}
+
 async function restaurarBackupLocal(
   backup: BackupFile,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
 ): Promise<void> {
+  validarRespaldoParaRestauracion(backup);
   onProgress?.({ percent: 8, stage: 'Preparando', detail: 'Validando respaldo y preparando el envío…' });
   const payload = JSON.stringify({ action: 'restore', backup });
   const body: any = await new Promise((resolve, reject) => {
