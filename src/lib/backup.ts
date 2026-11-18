@@ -78,7 +78,7 @@ export function detectarRespaldoTursoTruncado(backup: BackupFile): { cappedTable
     return { cappedTables: [], oldestMovementDate: null, movementCount: 0 };
   }
   const cappedTables = Object.entries(meta.tursoTables)
-    .filter(([, count]) => Number(count) >= 10000)
+    .filter(([, count]) => Number(count) === 10000)
     .map(([name]) => name);
   const movements = Array.isArray(backup.data?.movimientos) ? backup.data.movimientos as any[] : [];
   const dates = movements
