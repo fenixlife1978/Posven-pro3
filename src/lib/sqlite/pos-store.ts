@@ -950,6 +950,86 @@ export async function patchCatalog(name: string, lista: any[]): Promise<any[]> {
   await sqliteExecute({ sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP', args: [String(name), JSON.stringify(value), '{}'], wantRows: false });
   return value;
 }
+
+type CatalogsOnlyInput = { departamentos: string[]; categorias: string[] };
+type CatalogMergePlan = { before: number; imported: number; added: number; duplicates: number; after: number; values: string[] };
+
+function normalizeCatalogImportValue(value: string): string {
+  return String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ')
+    .trim().toLocaleUpperCase('es');
+}
+
+function makeCatalogMergePlan(current: string[], incoming: string[]): CatalogMergePlan {
+  const values = new Map<string, string>();
+  for (const value of current) {
+    const label = String(value || '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ').trim();
+    const key = normalizeCatalogImportValue(label);
+    if (key && !values.has(key)) values.set(key, label);
+  }
+  const before = values.size;
+  let added = 0;
+  for (const value of incoming) {
+    const label = String(value || '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '').replace(/\\s+/g, ' ').trim();
+    const key = normalizeCatalogImportValue(label);
+    if (!key) continue;
+    if (!values.has(key)) { values.set(key, label); added++; }
+  }
+  const merged = Array.from(values.values());
+  return { before, imported: incoming.length, added, duplicates: Math.max(0, incoming.length - added), after: merged.length, values: merged };
+}
+
+function validateCatalogsOnlyInput(input: any): CatalogsOnlyInput {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      Object.keys(input).sort().join(',') !== 'categorias,departamentos') {
+    throw new Error('El archivo debe contener únicamente departamentos y categorías.');
+  }
+  for (const name of ['departamentos', 'categorias'] as const) {
+    const values = input[name];
+    if (!Array.isArray(values) || values.some((value: unknown) =>
+      typeof value !== 'string' || !value.trim() || value.length > 120
+    )) throw new Error('El catálogo ' + name + ' contiene datos inválidos.');
+  }
+  return { departamentos: input.departamentos, categorias: input.categorias };
+}
+
+export async function previewCatalogsOnlyImport(input: any) {
+  assertSQLiteReady();
+  const data = validateCatalogsOnlyInput(input);
+  const [departments, categories] = await Promise.all([getCatalog('departamentos'), getCatalog('categorias')]);
+  const d = makeCatalogMergePlan(departments, data.departamentos);
+  const c = makeCatalogMergePlan(categories, data.categorias);
+  return { ok: true as const, action: 'preview' as const, plan: { departamentos: d, categorias: c }, catalogs: { departamentos: d.values, categorias: c.values } };
+}
+
+export async function mergeCatalogsOnlyImportTransaction(input: any) {
+  assertSQLiteReady();
+  const data = validateCatalogsOnlyInput(input);
+  // Asegura los catálogos base antes de entrar en la transacción de fusión.
+  await Promise.all([getCatalog('departamentos'), getCatalog('categorias')]);
+  return sqliteInteractiveTransaction(async tx => {
+    const merged: Record<string, CatalogMergePlan> = {};
+    for (const name of ['departamentos', 'categorias'] as const) {
+      const result = await tx.execute({ sql: 'SELECT lista_json FROM catalogos WHERE nombre=? LIMIT 1', args: [name] });
+      let current: string[] = [];
+      if (result.rows.length) {
+        try {
+          const parsed = JSON.parse(String(result.rows[0].lista_json || '[]'));
+          current = Array.isArray(parsed) ? parsed.filter((value: unknown): value is string => typeof value === 'string') : [];
+        } catch { throw new Error('El catálogo local ' + name + ' está dañado; no se modificó ningún catálogo.'); }
+      }
+      const incoming = data[name];
+      const plan = makeCatalogMergePlan(current, incoming);
+      merged[name] = plan;
+      await tx.execute({
+        sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP',
+        args: [name, JSON.stringify(plan.values), '{}'],
+        wantRows: false,
+      });
+    }
+    return { ok: true as const, action: 'import' as const, plan: merged, catalogs: { departamentos: merged.departamentos.values, categorias: merged.categorias.values } };
+  });
+}
 export async function syncProductChanges(params: {
   changes: Array<{ before?: any | null; after?: any | null }>;
   deletedIds?: string[];
