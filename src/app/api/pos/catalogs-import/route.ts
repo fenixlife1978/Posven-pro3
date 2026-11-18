@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     if (!user) throw Object.assign(new Error('No autenticado.'), { status: 401 });
     if (user.rol !== 'administrador') throw Object.assign(new Error('Se requiere administrador.'), { status: 403 });
 
-    const body = await request.json();
+    const contentLength = Number(request.headers.get('content-length') || 0);\n    if (contentLength > 1024 * 1024 + 16 * 1024) {\n      throw Object.assign(new Error('El archivo de catálogos supera el límite técnico de 1 MB.'), { status: 413 });\n    }\n\n    const body = await request.json();
     const backup = body?.backup;
     if (!backup || backup.app !== 'posven-pro' || backup.type !== 'catalogs-only' ||
         !backup.data || typeof backup.data !== 'object' || Array.isArray(backup.data)) {
