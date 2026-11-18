@@ -468,7 +468,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             <button
               className="btn btn-primary h-12 px-8 font-black uppercase text-xs shadow-md flex items-center gap-2"
               onClick={handleCrearRespaldo}
-              disabled={isBackingUp}
+              disabled={isBackingUp || isRestoringBackup || isImportingCatalogs}
             >
               {isBackingUp ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {isBackingUp ? 'PREPARANDO RESPALDO...' : 'Crear Respaldo'}
@@ -477,7 +477,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             <button
               className="btn h-12 px-8 font-black uppercase text-xs shadow-md flex items-center gap-2 border border-line bg-surface-soft/50 hover:bg-surface-soft"
               onClick={handleSeleccionarRespaldo}
-              disabled={isRestoringBackup}
+              disabled={isRestoringBackup || isImportingCatalogs}
             >
               {isRestoringBackup ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
               {isRestoringBackup ? 'RESTAURANDO...' : 'Cargar Respaldo'}
