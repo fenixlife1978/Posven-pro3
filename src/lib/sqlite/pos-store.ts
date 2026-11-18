@@ -411,7 +411,6 @@ export async function exportBackupSnapshot() {
     const data: Record<string, any> = {};
     const sqliteTables: Record<string, number> = {};
     const catalogs: Record<string, number> = {};
-    let totalRows = 0;
     const entries = [
       { key: 'productos', table: 'productos' },
       { key: 'movimientos', table: 'movimientos' },
@@ -444,9 +443,7 @@ export async function exportBackupSnapshot() {
         }
       });
       data[entry.key] = rows;
-      totalRows += rows.length;
       sqliteTables[entry.key === 'cashHistory' ? 'caja' : entry.key] = rows.length;
-      if (rows.length > 200000) throw new Error('El respaldo supera el límite de 200.000 registros en ' + entry.key + '.');
     }
 
     const catalogResult = await tx.execute({
@@ -465,7 +462,6 @@ export async function exportBackupSnapshot() {
       const name = String(row.nombre || '');
       if (!name) continue;
       data[name] = list;
-      totalRows += list.length;
       catalogs[name] = list.length;
     }
 
@@ -501,9 +497,7 @@ export async function exportBackupSnapshot() {
       args: [],
     });
     data.users = usersResult.rows;
-    totalRows += usersResult.rows.length;
     sqliteTables.users = usersResult.rows.length;
-    if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
 
     const snapshot = {
       app: 'posven-pro',
@@ -638,6 +632,8 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
 
 export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any; allowPartialTursoRestore?: boolean }) {
   assertSQLiteReady();
+  // Lotes pequeños limitan la memoria temporal y el trabajo por sentencia, sin limitar el total de registros.
+  const RESTORE_BATCH_SIZE = 500;
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
 
   const backup = params.backup;
@@ -736,7 +732,7 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
   }
   const backupUsers = Array.isArray(data.users) ? data.users : [];
   totalRows += backupUsers.length;
-  if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
+
   if (Number(backup.version || 0) < 1 || Number(backup.version || 0) > 3) {
     throw new Error('La versión del respaldo no es compatible con POSVEN3.');
   }
@@ -804,7 +800,10 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
           throw new Error('El respaldo contiene un registro sin identificador en ' + entry.key + '.');
         }
       }
-      if (rows.length) await tx.executeBatch(rows.map((row: any) => rowStatement(entry.table, row)));
+      for (let offset = 0; offset < rows.length; offset += RESTORE_BATCH_SIZE) {
+        const batch = rows.slice(offset, offset + RESTORE_BATCH_SIZE);
+        await tx.executeBatch(batch.map((row: any) => rowStatement(entry.table, row)));
+      }
       counts[entry.table] = (counts[entry.table] || 0) + rows.length;
     }
 
