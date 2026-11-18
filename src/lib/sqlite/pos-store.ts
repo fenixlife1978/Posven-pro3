@@ -797,15 +797,15 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     for (const entry of tableKeys) {
       if (entry.key === 'caja' && Array.isArray(data.cashHistory)) continue;
       const rows = Array.isArray(data[entry.key]) ? data[entry.key] : [];
-      let inserted = 0;
+      // Valida todo el lote antes de ejecutarlo y reutiliza sentencias SQL
+      // preparadas durante la transacción; evita preparar un INSERT por registro.
       for (const row of rows) {
         if (!row || typeof row !== 'object' || !String(row.id || '').trim()) {
           throw new Error('El respaldo contiene un registro sin identificador en ' + entry.key + '.');
         }
-        await tx.execute(rowStatement(entry.table, row));
-        inserted++;
       }
-      counts[entry.table] = (counts[entry.table] || 0) + inserted;
+      if (rows.length) await tx.executeBatch(rows.map(row => rowStatement(entry.table, row)));
+      counts[entry.table] = (counts[entry.table] || 0) + rows.length;
     }
 
     for (const name of catalogNames) {
