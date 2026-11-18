@@ -154,6 +154,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [showZArqueo, setShowZArqueo] = useState(false);
+  const [arqueoMode, setArqueoMode] = useState<'X' | 'Z'>('Z');
   const [isClosingZ, setIsClosingZ] = useState(false);
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   const [cliente, setCliente] = useState('Consumidor final');
@@ -638,11 +639,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       
       const data = getFreshReportData();
       setReportSnapshot(data);
-      if (type === 'REPORT_Z') {
-        setShowZArqueo(true);
-      } else {
-        setShowReportType(type);
-      }
+      setArqueoMode(type === 'REPORT_Z' ? 'Z' : 'X');
+      setShowZArqueo(true);
     } catch (e) {
       console.error('Error abriendo reporte X/Z:', e);
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del reporte. Reintenta.' });
@@ -1789,6 +1787,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showZArqueo && reportSnapshot && (
         <CashZArqueoModal
           open={showZArqueo}
+          mode={arqueoMode}
           report={reportSnapshot}
           busy={isClosingZ}
           onCancel={() => {
