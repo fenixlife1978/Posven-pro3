@@ -22,9 +22,13 @@ test('login tiene límite de espera y cancela las peticiones al desmontar', () =
   assert.match(login, /controller\.abort\(\)/);
 });
 
-test('al mostrar el formulario se devuelve el foco al campo editable', () => {
+test('al mostrar el formulario se reintenta el foco y permite reactivar campos', () => {
   assert.match(login, /requestAnimationFrame/);
-  assert.match(login, /field\?\.focus\(\)/);
+  assert.match(login, /delays = \[0, 80, 220, 450, 850\]/);
+  assert.match(login, /field\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(login, /reactivateLoginForm/);
+  assert.match(login, /posven-login-identifier/);
+  assert.match(login, /disabled=\{false\} readOnly=\{false\} tabIndex=\{0\}/);
 });
 
 test('sondeos SQLite de fondo se serializan y se suspenden con ventana oculta', () => {
