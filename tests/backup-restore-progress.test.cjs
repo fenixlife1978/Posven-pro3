@@ -23,12 +23,15 @@ test('la restauración permite procesos largos y advierte ante timeout sin reint
 const backupRoute = fs.readFileSync(path.join(__dirname, '..', 'src/app/api/pos/backup/route.ts'), 'utf8');
 
 test('la API consume el cuerpo limitado mientras espera la autenticación SQLite', () => {
-  assert.match(backupRoute, /MAX_REQUEST_BYTES = MAX_BACKUP_BYTES \+ 128 \* 1024/);
+  assert.match(backupRoute, /const maxBackupBytes = getMaxBackupBytes\(\)/);
+  assert.match(backupRoute, /const maxRequestBytes = maxBackupBytes \+ MAX_REQUEST_OVERHEAD_BYTES/);
   assert.match(backupRoute, /content-length/);
   assert.match(backupRoute, /const authPromise = requireAdmin\(request\)/);
   assert.match(backupRoute, /const bodyPromise = request\.json\(\)/);
   assert.match(backupRoute, /Promise\.all\(\[authPromise, bodyPromise\]\)/);
-  assert.match(backupRoute, /Buffer\.byteLength\(JSON\.stringify\(backup\), 'utf8'\)/);
+  assert.match(backupRoute, /Buffer\.byteLength\(JSON\.stringify\(backup\), 'utf8'\) > maxBackupBytes/);
+  assert.match(backupRoute, /getMaxBackupBytes/);
+  assert.doesNotMatch(backup, /content\.length > 64 \* 1024 \* 1024/);
 });
 
 test('un respaldo Turso truncado requiere confirmación explícita antes de iniciar XHR', () => {
@@ -57,5 +60,6 @@ test('los respaldos exportan y restauran todas las operaciones sin topes de cant
   assert.match(sqliteStore, /for \(let offset = 0; offset < rows\.length; offset \+= RESTORE_BATCH_SIZE\)/);
   assert.match(sqliteStore, /await tx\.executeBatch\(batch\.map\(\(row: any\) => rowStatement\(entry\.table, row\)\)\)/);
   // Se conserva únicamente el límite técnico de bytes; no es un tope de operaciones.
-  assert.match(sqliteStore, /Buffer\.byteLength\(JSON\.stringify\(snapshot\), 'utf8'\) > 60 \* 1024 \* 1024/);
+  assert.match(sqliteStore, /export function getMaxBackupBytes\(\)/);
+  assert.match(sqliteStore, /Buffer\.byteLength\(JSON\.stringify\(snapshot\), 'utf8'\) > getMaxBackupBytes\(\)/);
 });
