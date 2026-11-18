@@ -22,7 +22,7 @@ test('X/Z incluye operaciones de la apertura y carga anulaciones del período', 
 test('el arqueo no inventa salidas por devoluciones o anulaciones sin asiento de reintegro', () => {
   assert.match(store, /const applyRefund = \(doc: any, kind: 'devolucion' \| 'anulacion'\)/);
   assert.match(store, /if \(!evidence\) return/);
-  assert.match(store, /String\(evidence\.referencia \|\| ''\) === String\(doc\.id\)/);
+  assert.match(store, /String\(entry\.referencia \|\| ''\) === String\(doc\.id\)/);
   assert.doesNotMatch(store, /voidedSales\.filter\([\s\S]{0,220}?row\.devUSD/);
   assert.match(store, /const excludedJournalCategories = new Set\(\['VENTA','COBRO_DEUDA','DEVOLUCION','ANULACION'\]\)/);
 });
@@ -30,7 +30,7 @@ test('el arqueo no inventa salidas por devoluciones o anulaciones sin asiento de
 test('el cierre Z rechaza pagos mixtos sin desglose y no trata vale interno como efectivo', () => {
   assert.match(sales, /arqueoWarnings = allVentas/);
   assert.match(sales, /normalizarMetodo\(sale\.metodoPago\) === 'mixto'/);
-  assert.match(store, /const arqueoWarnings = sales/);
+  assert.match(store, /const arqueoWarnings = allSales/);
   assert.match(store, /if \(arqueoWarnings\.length\) throw new Error/);
   assert.match(store, /const systemAmount = method === 'nota_credito' \? 0/);
   assert.match(cashModal, /"nota_credito"/);
