@@ -20,7 +20,7 @@ POSVEN-Pro sirve como referencia para descubrir reglas de negocio y mejoras. POS
 | Compras | Pro3 incluye deduplicación entre compras canónicas e históricas, selector de proveedores completo y filtros de rango. | Conservar; no reemplazar por la versión menos robusta de Pro. |
 | Inventario | Pro3 conserva inventario local, conteo, Kardex, etiquetas y reporte de salidas periódicas. Faltaba normalización de etiquetas y recuperar filtros desde productos reales. | PR #40 normaliza acentos, mayúsculas, espacios y caracteres invisibles; agrega categorías/departamentos usados por productos reales sin sembrar datos demo. |
 | Reportes e impresión | Pro3 ya tiene vista Z de 80 mm y mejoras de consolidado. | Conservar; PR #40 corrige ventana de datos y separación esperado/contado. |
-| Configuración y respaldo | Pro3 tiene restauración SQLite y panel LAN; Pro usa endpoints/servicios remotos. | Mantener restauración local; PR #40 elimina topes artificiales por cantidad de filas y hace configurable el límite técnico de bytes. |
+| Configuración y respaldo | Pro3 tiene restauración SQLite y panel LAN; faltaba la importación exclusiva de catálogos que tenía Pro. | PR #40 agrega importación local de catálogos con vista previa, confirmación admin y fusión transaccional; también elimina topes artificiales por cantidad de filas y hace configurable el límite técnico de bytes. |
 | Usuarios / control global | La lógica funcional de pantallas se conserva; cambian las llamadas de persistencia. | Adaptar a SQLite local; no copiar autenticación cloud. |
 | Contabilidad, proveedores y caja | Las pantallas compartidas mantienen funciones equivalentes; la capa de persistencia difiere por arquitectura. | Revisar reglas de negocio al tocar cada módulo; mantener SQLite local. |
 
@@ -40,7 +40,7 @@ POSVEN-Pro sirve como referencia para descubrir reglas de negocio y mejoras. POS
 4. Ventana inclusiva de sesión X/Z, arqueo real por método, control de pagos mixtos y conciliación.
 5. Exclusión de vales y ventas a crédito del efectivo; devoluciones/anulaciones solo afectan caja con asiento de reintegro real.
 6. Deduplicación de cobros CxC históricos frente a referencias del libro diario.
-7. Normalización de búsqueda/filtros de inventario y recuperación de filtros desde productos reales.
+7. Normalización de búsqueda/filtros de inventario y recuperación de filtros desde productos reales.\n8. Importación exclusiva de departamentos/categorías con vista previa y fusión SQLite sin tocar inventario ni operaciones.
 
 ## Pendiente de auditoría profunda
 
