@@ -80,3 +80,18 @@ test('inventario normaliza acentos y recupera filtros desde productos reales', (
   assert.match(source, /normalizeCatalogFilter\(p\.departamento\) === normalizeCatalogFilter\(deptFilter\)/);
   assert.doesNotMatch(source, /DEFAULT_DEPARTMENTS|DEFAULT_CATEGORIES/);
 });
+
+test('importación de catálogos es exclusiva, administrativa y no sustituye la restauración completa', () => {
+  const route = read('src/app/api/pos/catalogs-import/route.ts');
+  const client = read('src/lib/backup.ts');
+  const settings = read('src/components/modules/ConfigModule.tsx');
+  const store = read('src/lib/sqlite/pos-store.ts');
+  assert.match(route, /user\.rol !== 'administrador'/);
+  assert.match(route, /IMPORTAR_SOLO_CATALOGOS/);
+  assert.match(store, /mergeCatalogsOnlyImportTransaction/);
+  assert.match(store, /sqliteInteractiveTransaction/);
+  assert.match(client, /previsualizarCatalogosDesdeArchivo/);
+  assert.match(client, /importarCatalogosDesdeArchivo/);
+  assert.match(settings, /Importar solo catálogos/);
+  assert.match(settings, /Productos, existencias, movimientos, ventas, compras, CxC, CxP y caja no serán modificados/);
+});
