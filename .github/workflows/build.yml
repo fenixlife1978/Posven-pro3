@@ -78,6 +78,9 @@ jobs:
       - name: Install dependencies from the committed lockfile
         run: npm ci --no-audit --no-fund
 
+      - name: Rebuild SQLite native binding for Node 20 tests
+        run: npm rebuild better-sqlite3 --build-from-source --runtime=node --target=20.20.2 --dist-url=https://nodejs.org/download/release
+
       - name: Run regression tests
         run: npm test
 
