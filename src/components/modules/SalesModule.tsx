@@ -737,8 +737,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       stats: { ...data.stats }
     };
 
-    if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
-
     const terminalActual = state.terminales.find(t => String(t.id) === String(termId));
     if (!terminalActual) {
       toast({ variant: 'destructive', title: 'No se pudo cerrar la caja', description: 'No se encontró la terminal asignada. No se confirmó ningún corte Z.' });
@@ -778,6 +776,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       setIsClosingZ(false);
     }
     const zConfirmado = zPersistido.report;
+    if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
 
     toast({ title: `Corte Z ${zConfirmado.id} confirmado en SQLite local`, description: `Diferencia Bs. ${Utils.fmtBS(zConfirmado.differenceBs)} · USD ${Utils.fmtUSD(zConfirmado.differenceUSD)}` });
 
@@ -1436,8 +1435,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => handleOpenReport('REPORT_X')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_X' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
-        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_Z' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
+        <button onClick={() => handleOpenReport('REPORT_X')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_X' || (showZArqueo && arqueoMode === 'X') ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
+        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_Z' || (showZArqueo && arqueoMode === 'Z') ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
         
         {view === 'pos' && (
