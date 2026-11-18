@@ -39,7 +39,7 @@ test('un respaldo Turso truncado requiere confirmación explícita antes de inic
   assert.match(backup, /validarRespaldoParaRestauracion\(backup, allowPartialTursoRestore\)/);
   assert.match(backup, /cappedTables\.length && !allowPartialTursoRestore/);
   assert.match(backup, /confirmPartialTursoRestore: allowPartialTursoRestore/);
-  assert.match(backup, /Number\(count\) >= 10000/);
+  assert.match(backup, /Number\(count\) === 10000/);
   const config = fs.readFileSync(path.join(__dirname, '..', 'src/components/modules/ConfigModule.tsx'), 'utf8');
   assert.match(config, /Kardex anterior al /);
   assert.match(config, /¿Autoriza la restauración parcial\?/);
