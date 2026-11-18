@@ -1938,7 +1938,7 @@ export async function createZClosureTransaction(params: {
       terminalId: params.terminalId, terminalName: String(current.nombre || current.name || params.terminalId),
       numeroZ: nextNumber, desdeFactura: sortedSales[0]?.id || 'N/A', hastaFactura: sortedSales[sortedSales.length-1]?.id || 'N/A',
       desdeNotaCredito: sortedReturns[0]?.id || 'N/A', hastaNotaCredito: sortedReturns[sortedReturns.length-1]?.id || 'N/A',
-      cantidadAnuladas: voidDocs.length + voidedSales.filter((sale: any) => !voidedIds.has(String(sale.id))).length,
+      cantidadAnuladas: voidDocs.length + voidedSales.filter((sale: any) => !voidDocs.some((doc: any) => String(doc.ventaId || '') === String(sale.id))).length,
       ventaBrutaUSD: brUSD, totalVentasUSD: brUSD, brUSD, descuentoUSD: discountUSD, devolucionesUSD: devUSD, ventaNetaUSD: netUSD,
       baseImponibleUSD: baseUSD, ivaUSD, exentoUSD: exemptUSD, igtfUSD,
       metodosPago: paymentMethods, metodosArqueo: Object.entries(arqueo).map(([metodo, values]: any) => ({ metodo, ...values, moneda: isUsdMethod(metodo) ? 'USD' : 'BS' })), arqueoWarnings,
