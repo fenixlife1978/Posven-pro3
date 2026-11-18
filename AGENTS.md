@@ -44,3 +44,5 @@ POSVEN-Pro3 debe conservar la arquitectura de escritorio **SQLite local + servid
 - Un conteo de exactamente 10.000 filas en un respaldo Turso antiguo es una señal de posible límite histórico, no prueba de truncamiento. Mostrar advertencia y pedir confirmación; no afirmar que faltan registros sin evidencia adicional.
 
 - Las pruebas automatizadas deben descubrirse solo desde `tests/*.test.cjs` mediante `scripts/run-tests.cjs`, compatible con Windows y Linux. Los scripts auxiliares de `scripts/` no deben ejecutarse como pruebas por descubrimiento automático.
+
+- Los filtros de inventario deben normalizar acentos, mayúsculas, espacios y caracteres invisibles; además deben ofrecer categorías/departamentos presentes en productos reales aunque falten en las tablas de catálogo. No sembrar catálogos demo ni recuperar listas históricas específicas de otro comercio como valores predeterminados.
