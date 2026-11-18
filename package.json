@@ -86,6 +86,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "server-worker.js",
       ".next/**/*",
       "public/**/*",
       "package.json",

@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess } = require('electron');
+const http = require('http');
 const https = require('https');
 const dgram = require('dgram');
 const crypto = require('crypto');
@@ -14,7 +15,9 @@ let mainWindow = null;
 let splashWindow = null;
 let setupWindow = null;
 let nextServer = null;
-let nextApplication = null;
+let nextApplication = null; // Retained as null; Next.js runs in serverWorker.
+let serverWorker = null;
+let serverWorkerPort = null;
 let networkConfig = null;
 let setupResolver = null;
 let serverTls = null;
@@ -238,6 +241,15 @@ h1{margin:0 0 7px;font-size:25px}p{color:#64748b;line-height:1.5}.choice{display
 <div id="error"></div><button id="save">Guardar y continuar</button>
 <p class="hint">Recomendación: reserva la IP del servidor en el router para evitar que cambie.</p>
 </main><script>
+const currentNetwork = ${JSON.stringify(networkConfig || { mode: "server", port: DEFAULT_PORT })};
+const initialMode = currentNetwork.mode === 'client' ? 'client' : 'server';
+document.querySelector('input[name="mode"][value="' + initialMode + '"]').checked = true;
+document.getElementById('port').value = String(currentNetwork.port || ${DEFAULT_PORT});
+if (initialMode === 'client') {
+  document.getElementById('host').value = currentNetwork.host || '';
+  document.getElementById('fingerprint').value = currentNetwork.fingerprint || '';
+  document.getElementById('hostBox').classList.remove('hidden');
+}
 document.getElementById('discover').addEventListener('click',async()=>{const status=document.getElementById('discoveryStatus');const choice=document.getElementById('serverChoice');status.textContent='Buscando equipos POSVEN3 en esta red…';choice.classList.add('hidden');try{const servers=await window.electronAPI.discoverLanServers();if(!servers.length){status.textContent='No se encontró servidor. Verifica que esté encendido y que el firewall permita UDP 4581.';return;}choice.innerHTML='';servers.forEach((server,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=server.serverName+' — '+server.addresses.join(', ');choice.appendChild(option);});const apply=()=>{const chosen=servers[Number(choice.value)||0];document.getElementById('host').value=chosen.addresses[0];document.getElementById('port').value=chosen.port;document.getElementById('fingerprint').value='';document.querySelector('input[name="mode"][value="client"]').checked=true;hostBox.classList.remove('hidden');status.textContent='Servidor encontrado: '+chosen.serverName+'. La dirección se completó automáticamente; introduce manualmente la huella SHA-256 que ves en la pantalla del servidor.';};choice.onchange=apply;if(servers.length>1){choice.classList.remove('hidden');status.textContent='Se encontraron '+servers.length+' servidores. Selecciona el equipo correcto y compara su huella TLS.';}apply();}catch(e){status.textContent=e.message||'No se pudo buscar el servidor.';}});\n\nconst hostBox=document.getElementById('hostBox');document.querySelectorAll('input[name="mode"]').forEach(el=>el.addEventListener('change',()=>{hostBox.classList.toggle('hidden',document.querySelector('input[name="mode"]:checked').value!=='client')}));
 document.getElementById('save').addEventListener('click',async()=>{const mode=document.querySelector('input[name="mode"]:checked').value;const host=document.getElementById('host').value.trim();const fingerprint=document.getElementById('fingerprint').value.trim();const port=Number(document.getElementById('port').value);const error=document.getElementById('error');error.textContent='';try{await window.electronAPI.saveNetworkConfig({mode,host,port,fingerprint})}catch(e){error.textContent=e.message||'No se pudo guardar la configuración.'}});
 </script></body></html>`;
@@ -259,6 +271,34 @@ ipcMain.handle('save-network-config', (event, value) => {
   return { ok: true };
 });
 
+// El panel se puede abrir desde Ajustes sin reinstalar. Los cambios de rol,
+// IP o puerto se aplican tras reiniciar para no dejar sockets/SQLite a medias.
+ipcMain.handle('open-network-settings', async (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    throw new Error('Solo la ventana principal puede abrir la configuración LAN.');
+  }
+  if (setupWindow && !setupWindow.isDestroyed()) {
+    setupWindow.focus();
+    return { opened: true };
+  }
+  const updated = await showNetworkSetup();
+  if (!updated) return { saved: false };
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Configuración LAN guardada',
+    message: 'La nueva configuración de red fue guardada.',
+    detail: 'POSVEN3 debe reiniciarse para aplicar el modo servidor/cliente, la IP y el puerto. No se modificará ni eliminará la base SQLite.',
+    buttons: ['Reiniciar ahora', 'Más tarde'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (result.response === 0) {
+    app.relaunch();
+    app.quit();
+  }
+  return { saved: true, restartRequired: true };
+});
+
 ipcMain.handle('discover-lan-servers', () => discoverLanServers());
 
 ipcMain.handle('get-network-info', () => ({
@@ -266,6 +306,8 @@ ipcMain.handle('get-network-info', () => ({
   port: networkConfig?.port || null,
   serverHost: networkConfig?.mode === 'client' ? networkConfig.host : null,
   addresses: networkConfig?.mode === 'server' ? getLanIPv4Addresses() : [],
+  fingerprint: networkConfig?.mode === 'server' ? serverTls?.fingerprint || null : networkConfig?.fingerprint || null,
+  discoveryPort: LAN_DISCOVERY_PORT,
 }));
 
 function normalizeFingerprint(value) { return String(value || '').replace(/[^a-f0-9]/gi, '').toLowerCase(); }
@@ -374,16 +416,51 @@ function createWindow(appUrl) {
 async function startLocalNextServer(port) {
   const dataDir = path.join(app.getPath('userData'), 'data');
   fs.mkdirSync(dataDir, { recursive: true });
-  process.env.POSVEN_SQLITE_PATH = path.join(dataDir, 'posven-pro3.sqlite');
-
-  const next = require('next');
-  nextApplication = next({ dev: false, dir: app.getAppPath() });
-  await nextApplication.prepare();
-  const handler = nextApplication.getRequestHandler();
+  const sqlitePath = path.join(dataDir, 'posven-pro3.sqlite');
+  process.env.POSVEN_SQLITE_PATH = sqlitePath;
   serverTls = ensureServerTls();
+
+  // Next.js y better-sqlite3 viven en un UtilityProcess separado. Una consulta
+  // síncrona o una importación pesada ya no bloquea el hilo de interfaz Electron.
+  serverWorker = utilityProcess.fork(path.join(app.getAppPath(), 'server-worker.js'), [], {
+    serviceName: 'POSVEN3 SQLite Server',
+    stdio: 'pipe',
+    env: {
+      ...process.env,
+      POSVEN_SQLITE_PATH: sqlitePath,
+      POSVEN_NEXT_DIR: app.getAppPath(),
+    },
+  });
+  const activeWorker = serverWorker;
+  serverWorker.stdout?.on('data', chunk => console.log('[POSVEN3 server]', String(chunk).trimEnd()));
+  serverWorker.stderr?.on('data', chunk => console.error('[POSVEN3 server]', String(chunk).trimEnd()));
+  serverWorker.on('error', error => console.error('[POSVEN3 server] Error del proceso utility:', error));
+  serverWorker.on('exit', code => {
+    if (serverWorker === activeWorker && !serverShuttingDown) {
+      serverWorker = null;
+      serverWorkerPort = null;
+      console.error('[POSVEN3 server] El proceso SQLite terminó inesperadamente:', code);
+      fatalError('Servidor POSVEN3 detenido', 'El proceso independiente de datos se cerró inesperadamente. Las operaciones nuevas no se aceptarán. Reinicia la aplicación y verifica el registro de Windows.');
+    }
+  });
+
+  serverWorkerPort = await new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error); else resolve(value);
+    };
+    const timer = setTimeout(() => finish(new Error('El proceso independiente del servidor SQLite excedió 60 segundos al iniciar.')), 60000);
+    serverWorker.once('message', message => {
+      if (message?.type === 'ready' && Number.isInteger(message.port)) finish(null, message.port);
+      else if (message?.type === 'error') finish(new Error(message.error || 'No se pudo iniciar el servidor SQLite.'));
+    });
+    serverWorker.once('exit', code => finish(new Error('El proceso del servidor SQLite terminó durante el inicio (código ' + code + ').')));
+  });
+
   nextServer = https.createServer({ pfx:serverTls.pfx, passphrase:serverTls.passphrase, minVersion:'TLSv1.2' }, (request, response) => {
-    // A keep-alive socket can outlive server.close(). Reject any later request
-    // before dispatching Next.js so shutdown cannot start untracked DB work.
     if (serverShuttingDown) {
       response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Connection': 'close', 'Retry-After': '5' });
       response.end(JSON.stringify({ ok: false, error: 'El servidor POSVEN3 está cerrando. Reintenta cuando vuelva a estar disponible.' }));
@@ -398,8 +475,6 @@ async function startLocalNextServer(port) {
       requestPort = Number(parsedHost.port || 443);
     } catch {}
     const configuredPort = Number(port);
-    // Recalcular las IP locales en cada petición para admitir cambios DHCP
-    // sin reiniciar el servidor ni aceptar hosts ajenos a las interfaces LAN.
     const allowedHosts = new Set(['localhost', '127.0.0.1', '::1', ...getLanIPv4Addresses()]);
     if (!allowedHosts.has(requestHost) || requestPort !== configuredPort) {
       response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -427,10 +502,39 @@ async function startLocalNextServer(port) {
       response.end(JSON.stringify({ ok: false, error: 'Acceso permitido únicamente desde la red local.' }));
       return;
     }
-    // El origen real se toma del socket y se sobrescribe cualquier cabecera enviada por el cliente.
     request.headers['x-posven-client-ip'] = remote;
-    trackHttpRequest(request, response, handler);
+    const proxy = (incoming, outgoing) => new Promise((resolve, reject) => {
+      const upstream = http.request({
+        hostname: '127.0.0.1',
+        port: serverWorkerPort,
+        path: incoming.url || '/',
+        method: incoming.method || 'GET',
+        headers: {
+          ...incoming.headers,
+          host: incoming.headers.host,
+          'x-forwarded-host': incoming.headers.host,
+          'x-forwarded-proto': 'https',
+        },
+      }, upstreamResponse => {
+        outgoing.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.statusMessage, upstreamResponse.headers);
+        upstreamResponse.on('end', resolve);
+        upstreamResponse.on('error', reject);
+        upstreamResponse.pipe(outgoing);
+      });
+      upstream.setTimeout(120000, () => upstream.destroy(new Error('Tiempo de espera agotado esperando al servidor de datos.')));
+      upstream.on('error', error => {
+        if (!outgoing.headersSent && !outgoing.destroyed) {
+          outgoing.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          outgoing.end(JSON.stringify({ ok: false, error: 'El proceso del servidor de datos no está disponible. Reintenta.' }));
+        }
+        reject(error);
+      });
+      incoming.on('aborted', () => upstream.destroy(new Error('El cliente canceló la solicitud.')));
+      incoming.pipe(upstream);
+    });
+    trackHttpRequest(request, response, proxy);
   });
+
   await new Promise((resolve, reject) => {
     nextServer.once('error', reject);
     nextServer.listen(port, '0.0.0.0', resolve);
@@ -439,6 +543,21 @@ async function startLocalNextServer(port) {
   const address = nextServer.address();
   if (!address || typeof address === 'string') throw new Error('No se pudo abrir el servidor LAN de POSVEN3.');
   return address.port;
+}
+
+async function stopServerWorker() {
+  const worker = serverWorker;
+  serverWorker = null;
+  serverWorkerPort = null;
+  if (!worker) return;
+  await new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => { try { worker.kill(); } catch {} finish(); }, 15000);
+    worker.once('exit', finish);
+    try { worker.postMessage({ type: 'shutdown' }); }
+    catch { try { worker.kill(); } catch {} finish(); }
+  });
 }
 
 async function verifyServer(host, port, expectedFingerprint) {
@@ -601,15 +720,10 @@ async function shutdownLocalServer() {
     await serverClosed;
   }
 
-  const application = nextApplication;
+  // Las solicitudes externas ya fueron drenadas; ahora cerramos Next.js y
+  // SQLite dentro del proceso utility independiente.
+  await stopServerWorker();
   nextApplication = null;
-  if (application && typeof application.close === 'function') {
-    try {
-      await application.close();
-    } catch (error) {
-      console.error('[SHUTDOWN] Error cerrando Next.js:', error);
-    }
-  }
 
   serverTls = null;
   trustedServerFingerprint = null;
