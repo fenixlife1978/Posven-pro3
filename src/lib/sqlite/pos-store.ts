@@ -804,7 +804,7 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
           throw new Error('El respaldo contiene un registro sin identificador en ' + entry.key + '.');
         }
       }
-      if (rows.length) await tx.executeBatch(rows.map(row => rowStatement(entry.table, row)));
+      if (rows.length) await tx.executeBatch(rows.map((row: any) => rowStatement(entry.table, row)));
       counts[entry.table] = (counts[entry.table] || 0) + rows.length;
     }
 
