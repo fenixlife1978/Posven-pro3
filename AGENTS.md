@@ -42,3 +42,5 @@ POSVEN-Pro3 debe conservar la arquitectura de escritorio **SQLite local + servid
 - Devoluciones/anulaciones solo afectan el efectivo del método realmente reintegrado cuando exista evidencia en el libro diario. No inventar salidas desde el método original de venta. Los vales/notas de crédito y ventas a crédito no son efectivo.
 - Normalizar métodos de pago históricos y clasificar movimientos manuales por categoría/tipo, excluyendo ventas, cobros CxC, devoluciones y anulaciones para evitar doble contabilización.
 - Un conteo de exactamente 10.000 filas en un respaldo Turso antiguo es una señal de posible límite histórico, no prueba de truncamiento. Mostrar advertencia y pedir confirmación; no afirmar que faltan registros sin evidencia adicional.
+
+- Las pruebas automatizadas deben descubrirse solo desde `tests/*.test.cjs` mediante `scripts/run-tests.cjs`, compatible con Windows y Linux. Los scripts auxiliares de `scripts/` no deben ejecutarse como pruebas por descubrimiento automático.
