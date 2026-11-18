@@ -110,8 +110,9 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
         const movementCount = partial.movementCount.toLocaleString('es-VE');
         const warning =
           'ADVERTENCIA: RESTAURACIÓN PARCIAL DE HISTORIAL\n\n' +
-          'Este respaldo Turso contiene exactamente ' + movementCount + ' movimientos y alcanza el límite de 10.000 registros. ' +
-          'El Kardex anterior al ' + oldestDate + ' podría faltar. La fecha más antigua incluida no demuestra que el historial comience allí.\n\n' +
+          (partial.cappedTables.includes('movimientos')
+            ? 'La tabla movimientos contiene ' + movementCount + ' registros y alcanza el límite de 10.000. El Kardex anterior al ' + oldestDate + ' podría faltar; la fecha más antigua incluida no demuestra que el historial comience allí.'
+            : 'El manifiesto alcanza el límite de 10.000 registros en: ' + partial.cappedTables.join(', ') + '. Parte del historial de esas tablas podría faltar.') + '\n\n' +
           'La fotografía de existencias se restaurará desde los productos incluidos, pero NO se garantiza la integridad histórica del Kardex ni que estén presentes todos los movimientos anteriores.\n\n' +
           'Tablas afectadas: ' + partial.cappedTables.join(', ') + '.\n\n' +
           'Si continúa, acepta expresamente restaurar este respaldo incompleto. ¿Autoriza la restauración parcial?';
