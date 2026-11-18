@@ -32,3 +32,13 @@ POSVEN-Pro3 debe conservar la arquitectura de escritorio **SQLite local + servid
 7. **No desplegar en Vercel ni publicar producción** salvo autorización explícita del usuario. No usar Preview como sustituto.
 8. No declarar una función terminada basándose solo en que compila; comprobar sus rutas de ejecución y resultados con pruebas apropiadas.
 9. Mantener datos reales y trazabilidad; no introducir datos demo, mocks operativos ni resultados ficticios.
+
+## Reglas funcionales de paridad POS / Caja
+- Los pagos CxP en bolívares deben conservar los centavos de Bs aunque su equivalente USD sea menor a USD 0,01. Guardar tasa aplicada, monto BS y equivalente USD con precisión suficiente; no validar ni liquidar exclusivamente con centavos USD.
+- Los cobros globales CxC/CxP deben deduplicar asientos del libro diario frente a recibos/ventas por referencia; incluir asientos históricos sin documento asociado una sola vez y respetar el desglose de pagos mixtos.
+- Los reportes X/Z deben usar la sesión activa de la terminal y una ventana de fechas inclusiva en la marca temporal de apertura/último Z. Cargar ventas, devoluciones, anulaciones y libro diario del período completo.
+- El arqueo X es informativo y temporal: nunca persiste conteos ni cierra la caja. El arqueo Z exige un valor real para cada método, incluso cero, bloquea ventas mixtas sin desglose y solo cierra tras confirmación SQLite.
+- En Z, separar siempre el monto esperado por el sistema del monto físico contado. Persistir el contado en la sesión cerrada y mostrar en el comprobante si hubo conciliación, faltante, sobrante o ausencia de arqueo real.
+- Devoluciones/anulaciones solo afectan el efectivo del método realmente reintegrado cuando exista evidencia en el libro diario. No inventar salidas desde el método original de venta. Los vales/notas de crédito y ventas a crédito no son efectivo.
+- Normalizar métodos de pago históricos y clasificar movimientos manuales por categoría/tipo, excluyendo ventas, cobros CxC, devoluciones y anulaciones para evitar doble contabilización.
+- Un conteo de exactamente 10.000 filas en un respaldo Turso antiguo es una señal de posible límite histórico, no prueba de truncamiento. Mostrar advertencia y pedir confirmación; no afirmar que faltan registros sin evidencia adicional.
