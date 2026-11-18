@@ -47,3 +47,15 @@ test('un respaldo Turso truncado requiere confirmación explícita antes de inic
   const route = fs.readFileSync(path.join(__dirname, '..', 'src/app/api/pos/backup/route.ts'), 'utf8');
   assert.match(route, /confirmPartialTursoRestore === true/);
 });
+
+const sqliteStore = fs.readFileSync(path.join(__dirname, '..', 'src/lib/sqlite/pos-store.ts'), 'utf8');
+
+test('los respaldos exportan y restauran todas las operaciones sin topes de cantidad', () => {
+  assert.match(sqliteStore, /SELECT id,data_json FROM ' \+ entry\.table \+ ' ORDER BY rowid/);
+  assert.doesNotMatch(sqliteStore, /200000|200\.000/);
+  assert.match(sqliteStore, /const RESTORE_BATCH_SIZE = 500/);
+  assert.match(sqliteStore, /for \(let offset = 0; offset < rows\.length; offset \+= RESTORE_BATCH_SIZE\)/);
+  assert.match(sqliteStore, /await tx\.executeBatch\(batch\.map\(\(row: any\) => rowStatement\(entry\.table, row\)\)\)/);
+  // Se conserva únicamente el límite técnico de bytes; no es un tope de operaciones.
+  assert.match(sqliteStore, /Buffer\.byteLength\(JSON\.stringify\(snapshot\), 'utf8'\) > 60 \* 1024 \* 1024/);
+});
