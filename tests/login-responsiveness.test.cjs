@@ -6,6 +6,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const login = fs.readFileSync(path.join(root, 'src/app/login/page.tsx'), 'utf8');
 const store = fs.readFileSync(path.join(root, 'src/lib/db-store.ts'), 'utf8');
+const desktop = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 
 test('login descarta el identificador de sesión de pestaña anterior antes de validar sesión', () => {
   const clear = login.indexOf('sessionStorage.removeItem(POSVEN_TAB_SESSION_KEY)');
@@ -42,4 +43,8 @@ test('sondeos SQLite de fondo se serializan y se suspenden con ventana oculta', 
   assert.match(store, /sqlitePollingTaskActive/);
   assert.match(store, /document\.visibilityState === 'hidden'/);
   assert.match(store, /document\.addEventListener\('visibilitychange'/);
+});
+
+test('Electron devuelve el foco del teclado al contenido web al recuperar la ventana', () => {
+  assert.match(desktop, /mainWindow\.on\('focus',[\s\S]*?mainWindow\.webContents\.focus\(\)/);
 });
