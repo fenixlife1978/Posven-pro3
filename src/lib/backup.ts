@@ -76,21 +76,44 @@ async function restaurarBackupLocal(
   backup: BackupFile,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
 ): Promise<void> {
-  onProgress?.({ percent: 5, stage: 'Preparando', detail: 'Validando respaldo y preparando copia de seguridad local…' });
-  const response = await fetch('/api/pos/backup', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    cache: 'no-store',
-    signal: AbortSignal.timeout(120000),
-    body: JSON.stringify({ action: 'restore', backup }),
+  onProgress?.({ percent: 8, stage: 'Preparando', detail: 'Validando respaldo y preparando el envío…' });
+  const payload = JSON.stringify({ action: 'restore', backup });
+  const body: any = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/pos/backup', true);
+    xhr.withCredentials = true;
+    xhr.timeout = 15 * 60 * 1000;
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    // Mantiene el mismo contexto de sesión que el wrapper global de fetch.
+    try {
+      const sessionId = sessionStorage.getItem('posven_session_id');
+      xhr.setRequestHeader('x-posven-session-mode', 'tab');
+      if (sessionId) xhr.setRequestHeader('x-posven-session', sessionId);
+    } catch {}
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total <= 0) return;
+      const percent = Math.min(35, 8 + Math.round((event.loaded / event.total) * 27));
+      onProgress?.({ percent, stage: 'Enviando respaldo', detail: 'Enviados ' + (event.loaded / 1024 / 1024).toFixed(1) + ' de ' + (event.total / 1024 / 1024).toFixed(1) + ' MB.' });
+    };
+    xhr.upload.onload = () => {
+      onProgress?.({ percent: 40, stage: 'Procesando en SQLite', detail: 'Archivo recibido. Validando datos, creando copia de seguridad y restaurando la base de datos. Este proceso puede tardar; no cierre la aplicación.' });
+    };
+    xhr.onload = () => {
+      let parsed: any = {};
+      try { parsed = xhr.responseText ? JSON.parse(xhr.responseText) : {}; }
+      catch { reject(new Error(xhr.responseText || 'El servidor devolvió una respuesta no válida.')); return; }
+      if (xhr.status < 200 || xhr.status >= 300 || parsed?.ok === false) {
+        reject(new Error(parsed?.error || ('Error HTTP ' + xhr.status + ' al restaurar el respaldo.')));
+        return;
+      }
+      resolve(parsed);
+    };
+    xhr.onerror = () => reject(new Error('Se perdió la conexión con el servidor local durante la restauración. Compruebe el estado de la base de datos antes de volver a intentarlo.'));
+    xhr.ontimeout = () => reject(new Error('La restauración superó el límite de 15 minutos. No vuelva a intentarlo a ciegas: compruebe primero si la base de datos fue restaurada y conserve la copia de seguridad automática.'));
+    xhr.onabort = () => reject(new Error('La solicitud de restauración fue cancelada.'));
+    xhr.send(payload);
   });
-  const raw = await response.text();
-  let body: any = {};
-  try { body = raw ? JSON.parse(raw) : {}; } catch { body = { error: raw || 'Respuesta no válida.' }; }
-  if (!response.ok || body?.ok === false) {
-    throw new Error(body?.error || ('Error HTTP ' + response.status + ' al restaurar el respaldo.'));
-  }
+  onProgress?.({ percent: 92, stage: 'Verificando resultado', detail: 'SQLite confirmó la restauración. Verificando la respuesta y preparando el acceso…' });
   if (body.sessionId && typeof sessionStorage !== 'undefined') {
     sessionStorage.setItem('posven_session_id', String(body.sessionId));
   }
