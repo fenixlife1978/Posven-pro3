@@ -48,3 +48,5 @@ POSVEN-Pro3 debe conservar la arquitectura de escritorio **SQLite local + servid
 - Los filtros de inventario deben normalizar acentos, mayúsculas, espacios y caracteres invisibles; además deben ofrecer categorías/departamentos presentes en productos reales aunque falten en las tablas de catálogo. No sembrar catálogos demo ni recuperar listas históricas específicas de otro comercio como valores predeterminados.
 
 - Mantener actualizado `docs/PARIDAD-POSVEN-PRO3.md` con la matriz de diferencias, decisiones de adaptación y pendientes de auditoría. No declarar paridad total hasta completar y probar cada módulo.
+
+- La importación de catálogos desde respaldo exclusivo debe ofrecer vista previa, exigir administrador y confirmación explícita, fusionar sin duplicados en una transacción SQLite y no modificar productos, stock, movimientos, ventas, compras, CxC/CxP ni caja.
