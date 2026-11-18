@@ -19,3 +19,23 @@ test('la restauración permite procesos largos y advierte ante timeout sin reint
   assert.match(backup, /xhr\.onerror/);
   assert.match(backup, /xhr\.ontimeout/);
 });
+
+const backupRoute = fs.readFileSync(path.join(__dirname, '..', 'src/app/api/pos/backup/route.ts'), 'utf8');
+
+test('la API consume el cuerpo limitado mientras espera la autenticación SQLite', () => {
+  assert.match(backupRoute, /MAX_REQUEST_BYTES = MAX_BACKUP_BYTES \+ 128 \* 1024/);
+  assert.match(backupRoute, /content-length/);
+  assert.match(backupRoute, /const authPromise = requireAdmin\(request\)/);
+  assert.match(backupRoute, /const bodyPromise = request\.json\(\)/);
+  assert.match(backupRoute, /Promise\.all\(\[authPromise, bodyPromise\]\)/);
+  assert.match(backupRoute, /Buffer\.byteLength\(JSON\.stringify\(backup\), 'utf8'\)/);
+});
+
+test('un respaldo Turso posiblemente truncado se rechaza antes de iniciar XHR', () => {
+  const validation = backup.indexOf('validarRespaldoParaRestauracion(backup);');
+  const send = backup.indexOf('xhr.send(payload)');
+  assert.ok(validation >= 0, 'debe validar el manifiesto antes de enviar');
+  assert.ok(send > validation, 'el envío debe ocurrir después de la prevalidación');
+  assert.match(backup, /Number\(count\) >= 10000/);
+  assert.match(backup, /detuvo la carga antes de enviar el archivo/);
+});

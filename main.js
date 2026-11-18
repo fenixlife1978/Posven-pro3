@@ -394,6 +394,12 @@ function createWindow(appUrl) {
   mainWindow.once('ready-to-show', () => {
     clearTimeout(readyTimeout); closeSplash(); mainWindow.show(); mainWindow.focus();
   });
+  // Electron puede devolver el foco a la ventana nativa después de un diálogo
+  // del sistema sin dejar enfocado el contenido web. Recuperar el foco del
+  // webContents conserva el campo activo y permite volver a escribir en Login.
+  mainWindow.on('focus', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.focus();
+  });
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error('did-fail-load:', errorCode, errorDescription, validatedURL);
     if (errorCode !== -3) fatalError('No se pudo cargar POSVEN3', errorDescription + ' (código ' + errorCode + ')\nURL: ' + validatedURL);
