@@ -11,6 +11,8 @@ test('el proxy HTTPS de escritorio no corta restauraciones SQLite a los 120 segu
   assert.match(desktopServer, /upstream\.setTimeout\(LONG_OPERATION_TIMEOUT_MS/);
   assert.match(desktopServer, /nextServer\.requestTimeout = LONG_OPERATION_TIMEOUT_MS/);
   assert.doesNotMatch(desktopServer, /upstream\.setTimeout\(120000/);
+  const backupClient = fs.readFileSync(path.join(__dirname, '..', 'src/lib/backup.ts'), 'utf8');
+  assert.match(backupClient, /signal: AbortSignal\.timeout\(15 \* 60 \* 1000\)/);
 });
 
 test('el servidor interno Next.js acepta el cuerpo completo de una restauración prolongada', () => {
