@@ -49,6 +49,8 @@ POSVEN3 genera respaldos JSON desde SQLite local. Para recuperar información de
 
 La restauración valida tablas, catálogos, versión y conteos, crea una copia de seguridad de la SQLite actual y reemplaza los datos dentro de una transacción. Al terminar ejecuta comprobaciones de integridad y claves foráneas. Si algo falla, la transacción se revierte y la base anterior permanece disponible. La restauración invalida las sesiones de las otras cajas; deberán iniciar sesión nuevamente.
 
+La exportación y restauración no imponen topes por cantidad de operaciones o registros. El tamaño del archivo es un límite técnico de seguridad configurable mediante la variable de entorno `POSVEN_MAX_BACKUP_BYTES` (en bytes); por defecto es `67108864` (64 MiB). Si se cambia el límite, debe configurarse en el proceso que ejecuta el servidor local. Los lotes internos solo controlan el uso de memoria y el rendimiento; no omiten filas.
+
 Los respaldos administrativos de POSVEN2 no contienen hashes de contraseña. POSVEN3 conserva los identificadores y datos de cada usuario, genera contraseñas temporales aleatorias y descarga un archivo privado con esas claves. Los hashes presentes en respaldos SQLite de POSVEN3 se conservan.
 
 ## Generar el instalador Windows
