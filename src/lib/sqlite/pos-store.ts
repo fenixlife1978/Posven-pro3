@@ -636,7 +636,7 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
   });
 }
 
-export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any }) {
+export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any; allowPartialTursoRestore?: boolean }) {
   assertSQLiteReady();
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
 
@@ -667,8 +667,8 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     const capped = Object.entries(backup.meta.tursoTables || {})
       .filter(([, count]) => Number(count) >= 10000)
       .map(([name]) => name);
-    if (capped.length) {
-      throw new Error('Respaldo antiguo posiblemente truncado en: ' + capped.join(', ') + '. Genere una nueva copia paginada desde POSVEN2.');
+    if (capped.length && params.allowPartialTursoRestore !== true) {
+      throw new Error('Respaldo antiguo posiblemente truncado en: ' + capped.join(', ') + '. La restauración parcial requiere confirmación explícita del administrador.');
     }
   }
   if (backup.meta?.source === 'turso' && backup.meta.tursoTables) {

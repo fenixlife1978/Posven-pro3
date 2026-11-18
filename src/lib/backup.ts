@@ -72,17 +72,33 @@ function descargarCredencialesRestauradas(credentials: Array<{ username: string;
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function validarRespaldoParaRestauracion(backup: BackupFile): void {
+export function detectarRespaldoTursoTruncado(backup: BackupFile): { cappedTables: string[]; oldestMovementDate: string | null; movementCount: number } {
   const meta = backup?.meta;
-  if (!meta || meta.source !== 'turso' || meta.complete === true || !meta.tursoTables) return;
+  if (!meta || meta.source !== 'turso' || meta.complete === true || !meta.tursoTables) {
+    return { cappedTables: [], oldestMovementDate: null, movementCount: 0 };
+  }
   const cappedTables = Object.entries(meta.tursoTables)
     .filter(([, count]) => Number(count) >= 10000)
     .map(([name]) => name);
-  if (cappedTables.length) {
+  const movements = Array.isArray(backup.data?.movimientos) ? backup.data.movimientos as any[] : [];
+  const dates = movements
+    .map(row => String(row?.fecha || row?.createdAt || row?.fechaMovimiento || '').slice(0, 10))
+    .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
+    .sort();
+  return {
+    cappedTables,
+    oldestMovementDate: dates[0] || null,
+    movementCount: movements.length,
+  };
+}
+
+export function validarRespaldoParaRestauracion(backup: BackupFile, allowPartialTursoRestore = false): void {
+  const { cappedTables } = detectarRespaldoTursoTruncado(backup);
+  if (cappedTables.length && !allowPartialTursoRestore) {
     throw new Error(
       'Respaldo antiguo posiblemente truncado en: ' + cappedTables.join(', ') +
       '. POSVEN-Pro3 detuvo la carga antes de enviar el archivo para evitar restaurar un historial incompleto. ' +
-      'Genere desde POSVEN2 un respaldo paginado/completo que no limite las tablas a 10.000 registros.'
+      'La restauración parcial requiere confirmación explícita del administrador.'
     );
   }
 }
@@ -90,10 +106,11 @@ export function validarRespaldoParaRestauracion(backup: BackupFile): void {
 async function restaurarBackupLocal(
   backup: BackupFile,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
+  allowPartialTursoRestore = false,
 ): Promise<void> {
-  validarRespaldoParaRestauracion(backup);
+  validarRespaldoParaRestauracion(backup, allowPartialTursoRestore);
   onProgress?.({ percent: 8, stage: 'Preparando', detail: 'Validando respaldo y preparando el envío…' });
-  const payload = JSON.stringify({ action: 'restore', backup });
+  const payload = JSON.stringify({ action: 'restore', backup, confirmPartialTursoRestore: allowPartialTursoRestore });
   const body: any = await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/pos/backup', true);
@@ -144,6 +161,7 @@ export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
 export async function cargarRespaldoDesdeContenido(
   content: string,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
+  allowPartialTursoRestore = false,
 ): Promise<void> {
   if (!content || content.length > 64 * 1024 * 1024) {
     throw new Error('El respaldo está vacío o supera el máximo permitido de 64 MB.');
@@ -157,7 +175,7 @@ export async function cargarRespaldoDesdeContenido(
   if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object' || Array.isArray(backup.data)) {
     throw new Error('El archivo no es un respaldo válido de POSVEN-Pro.');
   }
-  await restaurarBackupLocal(backup, onProgress);
+  await restaurarBackupLocal(backup, onProgress, allowPartialTursoRestore);
 }
 
 export async function cargarRespaldoDesdeArchivo(

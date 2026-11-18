@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     const safetyCopy = path.join(backupDirectory, 'antes-restauracion-' + timestamp + '.sqlite');
     await createSqliteBackup(safetyCopy);
 
-    const result = await restoreBackupTransaction({ user, backup });
+    const result = await restoreBackupTransaction({ user, backup, allowPartialTursoRestore: body?.confirmPartialTursoRestore === true });
     const session = await createSession(String(result.preservedAdminId));
     const response = NextResponse.json({
       ok: true,

@@ -31,11 +31,19 @@ test('la API consume el cuerpo limitado mientras espera la autenticación SQLite
   assert.match(backupRoute, /Buffer\.byteLength\(JSON\.stringify\(backup\), 'utf8'\)/);
 });
 
-test('un respaldo Turso posiblemente truncado se rechaza antes de iniciar XHR', () => {
-  const validation = backup.indexOf('validarRespaldoParaRestauracion(backup);');
-  const send = backup.indexOf('xhr.send(payload)');
-  assert.ok(validation >= 0, 'debe validar el manifiesto antes de enviar');
-  assert.ok(send > validation, 'el envío debe ocurrir después de la prevalidación');
+test('un respaldo Turso truncado requiere confirmación explícita antes de iniciar XHR', () => {
+  assert.match(backup, /detectarRespaldoTursoTruncado/);
+  assert.match(backup, /validarRespaldoParaRestauracion\(backup, allowPartialTursoRestore\)/);
+  assert.match(backup, /cappedTables\.length && !allowPartialTursoRestore/);
+  assert.match(backup, /confirmPartialTursoRestore: allowPartialTursoRestore/);
   assert.match(backup, /Number\(count\) >= 10000/);
-  assert.match(backup, /detuvo la carga antes de enviar el archivo/);
+  const config = fs.readFileSync(path.join(__dirname, '..', 'src/components/modules/ConfigModule.tsx'), 'utf8');
+  assert.match(config, /Kardex anterior al /);
+  assert.match(config, /¿Autoriza la restauración parcial\?/);
+  assert.match(config, /cargarRespaldoDesdeContenido\(content, \(progress\) => setBackupProgress\(progress\), allowPartialTursoRestore\)/);
+  const store = fs.readFileSync(path.join(__dirname, '..', 'src/lib/sqlite/pos-store.ts'), 'utf8');
+  assert.match(store, /allowPartialTursoRestore\?: boolean/);
+  assert.match(store, /params\.allowPartialTursoRestore !== true/);
+  const route = fs.readFileSync(path.join(__dirname, '..', 'src/app/api/pos/backup/route.ts'), 'utf8');
+  assert.match(route, /confirmPartialTursoRestore === true/);
 });
