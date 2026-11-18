@@ -87,6 +87,7 @@ export async function sqliteTransaction(statements: SQLiteStatement[]) {
 
 export type SQLiteTransactionContext = {
   execute: (statement: SQLiteStatement) => Promise<SQLiteResult>;
+  executeBatch: (statements: SQLiteStatement[]) => Promise<SQLiteResult[]>;
 };
 
 export async function sqliteInteractiveTransaction<T>(
@@ -96,10 +97,28 @@ export async function sqliteInteractiveTransaction<T>(
     const db = getSqliteDatabase();
     db.exec('BEGIN IMMEDIATE');
     let active = true;
+    const preparedBySql = new Map<string, any>();
+    const executePrepared = (statement: SQLiteStatement): SQLiteResult => {
+      let prepared = preparedBySql.get(statement.sql);
+      if (!prepared) {
+        prepared = db.prepare(statement.sql);
+        preparedBySql.set(statement.sql, prepared);
+      }
+      const args = Array.isArray(statement.args) ? statement.args : [];
+      if (prepared.reader && statement.wantRows !== false) {
+        return { rows: prepared.all(...args), affected_row_count: 0, last_insert_rowid: null };
+      }
+      const result = prepared.run(...args);
+      return { rows: [], affected_row_count: Number(result.changes || 0), last_insert_rowid: result.lastInsertRowid == null ? null : String(result.lastInsertRowid) };
+    };
     const tx: SQLiteTransactionContext = {
       execute: async (statement) => {
         if (!active) throw new Error('La transacción SQLite ya fue cerrada.');
-        return executeDirect(statement);
+        return executePrepared(statement);
+      },
+      executeBatch: async (statements) => {
+        if (!active) throw new Error('La transacción SQLite ya fue cerrada.');
+        return statements.map(executePrepared);
       },
     };
 

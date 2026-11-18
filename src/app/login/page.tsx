@@ -38,7 +38,6 @@ export default function LoginPage() {
   const [mode, setMode] = useState<SetupStatus>("checking");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [loginFormRecoveryKey, setLoginFormRecoveryKey] = useState(0);
   const [statusMessage, setStatusMessage] = useState("Comprobando la instalación local...");
 
   const [identifier, setIdentifier] = useState("");
@@ -89,37 +88,24 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (mode !== "login" && mode !== "setup") return;
-    // Electron puede conservar una transición de foco pendiente al cerrar una sesión.
-    // Reintentamos el foco durante un breve intervalo y limpiamos todos los reintentos
-    // al desmontar, en vez de depender de un único requestAnimationFrame.
-    const selector = mode === "setup" ? 'input[autocomplete="name"]' : "#posven-login-identifier";
-    const delays = [0, 80, 220, 450, 850];
-    const frames: number[] = [];
-    const timers: number[] = [];
-    const focusField = () => {
+    // Enfocar una sola vez al presentar el formulario. Los reintentos temporizados
+    // anteriores podían robar el foco cuando el usuario ya estaba escribiendo
+    // en el campo de contraseña, haciendo parecer que el teclado no respondía.
+    const frame = window.requestAnimationFrame(() => {
+      const selector = mode === "setup" ? 'input[autocomplete="name"]' : "#posven-login-identifier";
       const field = document.querySelector<HTMLInputElement>(selector);
-      if (!field || field.disabled || field.readOnly) return;
-      if (document.activeElement !== field) {
+      if (field && !field.disabled && !field.readOnly) {
         try { field.focus({ preventScroll: true }); } catch { field.focus(); }
       }
-    };
-    delays.forEach((delay) => {
-      if (delay === 0) frames.push(window.requestAnimationFrame(focusField));
-      else timers.push(window.setTimeout(focusField, delay));
     });
-    return () => {
-      frames.forEach(window.cancelAnimationFrame);
-      timers.forEach(window.clearTimeout);
-    };
-  }, [mode, loginFormRecoveryKey]);
+    return () => window.cancelAnimationFrame(frame);
+  }, [mode]);
 
   const reactivateLoginForm = () => {
-    setLoginFormRecoveryKey((key) => key + 1);
-    setLoading(false);
-    window.setTimeout(() => {
-      const field = document.querySelector<HTMLInputElement>("#posven-login-identifier");
-      try { field?.focus({ preventScroll: true }); } catch { field?.focus(); }
-    }, 0);
+    const field = document.querySelector<HTMLInputElement>("#posven-login-identifier");
+    if (field && !field.disabled && !field.readOnly) {
+      try { field.focus({ preventScroll: true }); } catch { field.focus(); }
+    }
   };
 
   const acceptSession = (data: any) => {
@@ -214,7 +200,7 @@ export default function LoginPage() {
         ) : (
           <>
             <div className="text-center mb-8"><h1 className="text-[28px] font-extrabold text-black mb-2">¡Bienvenido!</h1><p className="text-gray-400 text-sm">Ingrese sus credenciales de acceso.</p></div>
-            <form key={`login-form-${loginFormRecoveryKey}`} onSubmit={handleLogin} className="space-y-5" autoComplete="on">
+            <form onSubmit={handleLogin} className="space-y-5" autoComplete="on">
               <div><label className={labelClass}>Perfil de usuario</label><select className={inputClass} value={role} onChange={e => setRole(e.target.value)} required><option value="administrador">Administrador</option><option value="cajero">Cajero / Operador</option></select></div>
               <div><label htmlFor="posven-login-identifier" className={labelClass}>Correo o usuario</label><div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input id="posven-login-identifier" type="text" className={inputClass + " pl-12"} value={identifier} onChange={e => setIdentifier(e.target.value)} autoComplete="username" required placeholder="Usuario o correo" disabled={false} readOnly={false} tabIndex={0} /></div></div>
               <div><label htmlFor="posven-login-password" className={labelClass}>Contraseña</label><div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" /><input id="posven-login-password" type={showPassword ? "text" : "password"} className={inputClass + " pl-12 pr-12"} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} autoComplete="current-password" required placeholder="••••••••" disabled={false} readOnly={false} tabIndex={0} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">{showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button></div></div>

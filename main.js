@@ -26,6 +26,7 @@ let lanDiscoveryServer = null;
 let serverShuttingDown = false;
 
 const DEFAULT_PORT = 4580;
+const LONG_OPERATION_TIMEOUT_MS = 15 * 60 * 1000; // Restauraciones grandes y otras operaciones SQLite prolongadas.
 
 // Una solicitud solo se considera drenada cuando terminó el handler de Next
 // y la respuesta HTTP terminó o el cliente desconectó. El cierre nunca debe
@@ -521,7 +522,7 @@ async function startLocalNextServer(port) {
         upstreamResponse.on('error', reject);
         upstreamResponse.pipe(outgoing);
       });
-      upstream.setTimeout(120000, () => upstream.destroy(new Error('Tiempo de espera agotado esperando al servidor de datos.')));
+      upstream.setTimeout(LONG_OPERATION_TIMEOUT_MS, () => upstream.destroy(new Error('La operación superó el límite de espera de 15 minutos del servidor de datos.')));
       upstream.on('error', error => {
         if (!outgoing.headersSent && !outgoing.destroyed) {
           outgoing.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -534,6 +535,9 @@ async function startLocalNextServer(port) {
     });
     trackHttpRequest(request, response, proxy);
   });
+
+  // El cuerpo de solicitudes grandes debe poder llegar completo al proxy local.
+  nextServer.requestTimeout = LONG_OPERATION_TIMEOUT_MS;
 
   await new Promise((resolve, reject) => {
     nextServer.once('error', reject);

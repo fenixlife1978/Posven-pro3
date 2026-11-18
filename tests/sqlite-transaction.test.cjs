@@ -387,6 +387,20 @@ test('los intentos concurrentes no superan el límite por usuario y origen', asy
   assert.equal(results.filter(result => !result.allowed).length, 4);
 });
 
+test('executeBatch reutiliza sentencias y conserva el orden dentro de una transacción', async () => {
+  await sqliteInteractiveTransaction(async tx => {
+    await tx.execute({ sql: 'CREATE TABLE IF NOT EXISTS batch_regression (id TEXT PRIMARY KEY, value TEXT)', wantRows: false });
+    await tx.executeBatch([
+      { sql: 'INSERT OR REPLACE INTO batch_regression(id,value) VALUES(?,?)', args: ['batch-1', 'uno'], wantRows: false },
+      { sql: 'INSERT OR REPLACE INTO batch_regression(id,value) VALUES(?,?)', args: ['batch-2', 'dos'], wantRows: false },
+      { sql: 'INSERT OR REPLACE INTO batch_regression(id,value) VALUES(?,?)', args: ['batch-3', 'tres'], wantRows: false },
+    ]);
+  });
+  const rows = await sqliteExecute({ sql: 'SELECT id,value FROM batch_regression ORDER BY id' });
+  assert.deepEqual(rows.rows.map(row => [row.id, row.value]), [['batch-1', 'uno'], ['batch-2', 'dos'], ['batch-3', 'tres']]);
+});
+
+
 after(() => {
   try { database.closeSqliteDatabase(); } catch {}
   try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
