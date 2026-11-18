@@ -232,6 +232,16 @@ export function assertSQLiteReady() {
   if (!isSQLiteConfigured()) throw new Error('SQLite local no está configurado.');
 }
 
+const DEFAULT_MAX_BACKUP_BYTES = 64 * 1024 * 1024;
+
+/** Límite técnico de bytes configurable; nunca limita la cantidad de registros. */
+export function getMaxBackupBytes(): number {
+  const configured = Number(process.env.POSVEN_MAX_BACKUP_BYTES);
+  return Number.isSafeInteger(configured) && configured >= 1024 * 1024
+    ? configured
+    : DEFAULT_MAX_BACKUP_BYTES;
+}
+
 function clean(value: any): any {
   if (value === undefined) return null;
   if (typeof value === 'number' && !Number.isFinite(value)) return null;
@@ -506,8 +516,8 @@ export async function exportBackupSnapshot() {
       data,
       meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
     };
-    if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > 60 * 1024 * 1024) {
-      throw new Error('El respaldo supera el tamaño seguro de 60 MB. Reduzca el histórico o genere una copia por período.');
+    if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > getMaxBackupBytes()) {
+      throw new Error('El respaldo supera el límite técnico de tamaño configurado (POSVEN_MAX_BACKUP_BYTES). No se limitó por cantidad de operaciones.');
     }
     return snapshot;
   });
