@@ -187,3 +187,12 @@ Se detectó que exportBackupSnapshot exporta todos los registros de catalogos y 
 **Prueba añadida:** crea un respaldo con un catálogo personalizado, verifica que un respaldo con IDs duplicados sea rechazado sin borrar un producto local y después restaura el archivo válido comprobando la recuperación del catálogo personalizado y del producto. La prueba corre sobre SQLite temporal real y también fuerza un error SQL después de iniciar el reemplazo para comprobar que el rollback restaura los datos previos. El resultado final debe confirmarse con los workflows de TypeScript y compilación Windows.
 
 **Pendiente de auditoría:** comprobar la coherencia de catálogos con nombres reservados en respaldos históricos y la recuperación/decisión de usuarios con colisiones. El rollback ante un fallo SQL intermedio ya tiene prueba de regresión.
+
+
+### CxC: conciliación del saldo resumen en cobros globales
+
+La auditoría detectó que el cobro global actualizaba el saldo de la deuda CxC, el historial de pagos y el asiento, pero solo descontaba el resumen financiero del cliente cuando la llamada incluía su cédula. Las deudas históricas registradas únicamente por nombre podían quedar con el saldo resumen del cliente desactualizado.
+
+**Corrección aplicada:** el cobro global busca primero por cédula y, si no encuentra ficha vinculada, por nombre exacto sin distinguir mayúsculas/minúsculas. Si encuentra exactamente un cliente, descuenta el cobro aplicado en la misma transacción SQLite. Si encuentra homónimos, aborta la operación completa para no modificar la ficha equivocada.
+
+**Pruebas añadidas:** cobro por nombre actualiza deuda CxC y resumen del cliente; clientes homónimos provocan rollback sin alterar deuda ni fichas. Se conservan las reglas de caja: el cobro CxC puede quedar vinculado a terminal, mientras el pago global CxP sigue siendo administrativo y no depende de caja.
