@@ -1472,7 +1472,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         {view === 'pos' && (
           <button
             onClick={() => { setAdjustmentSearch(''); setAdjustmentProductId(''); setAdjustmentType('consumo'); setAdjustmentQty('1'); setAdjustmentDetail(''); setShowPosAdjustment(true); }}
-            className="btn btn-sm bg-white text-ink font-bold border border-brand-gold/40 hover:bg-brand-gold-soft transition-colors"
+            className="btn btn-sm shrink-0 bg-white text-ink font-bold border border-brand-gold/40 hover:bg-brand-gold-soft transition-colors"
             title="Registrar consumo, colaboración o ajuste de inventario"
             aria-label="Ajustes de inventario"
           ><Settings2 className="w-3.5 h-3.5 text-brand-gold-deep"/> Ajustes</button>
@@ -1859,21 +1859,22 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                 <h3 className="text-sm font-black uppercase text-ink">Ajuste de inventario</h3>
                 <p className="text-[9px] text-ink/50 font-bold uppercase mt-1">{currentTerminal?.nombre || 'Caja activa'}</p>
               </div>
-              <button onClick={() => setShowPosAdjustment(false)} className="p-1 text-ink/60 hover:text-ink"><X className="w-5 h-5"/></button>
+              <button onClick={() => setShowPosAdjustment(false)} disabled={savingAdjustment} className="p-1 text-ink/60 hover:text-ink disabled:opacity-40" aria-label="Cerrar ajustes"><X className="w-5 h-5"/></button>
             </div>
             <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
               <div>
                 <label className="text-[10px] font-black uppercase text-ink/60 block mb-1">Buscar producto</label>
-                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre o código del producto"/>
+                <input value={adjustmentSearch} onChange={e => { setAdjustmentSearch(e.target.value); setAdjustmentProductId(''); }} className="w-full h-11 px-4 bg-white border border-line rounded-xl text-sm font-bold outline-none focus:border-brand-gold" placeholder="Nombre, código o código de barras"/>
                 <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-line divide-y divide-line">
-                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && ((p.nombre || '').toLowerCase().includes(adjustmentSearch.toLowerCase()) || (p.codigo || '').toLowerCase().includes(adjustmentSearch.toLowerCase()))).slice(0,8).map(p => (
+                  {(state.productos || []).filter(p => p.activo && adjustmentSearch.trim().length > 0 && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))).slice(0,8).map(p => (
                     <button type="button" key={p.id} onClick={() => { setAdjustmentProductId(p.id); setAdjustmentSearch(p.nombre); }} className={`w-full p-3 text-left flex justify-between items-center hover:bg-brand-gold-soft ${adjustmentProductId === p.id ? 'bg-brand-gold-soft' : 'bg-white'}`}>
-                      <span className="text-xs font-black uppercase text-ink">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo}</span></span>
-                      <span className="text-xs font-bold text-ink/60">Stock: {p.stock}</span>
+                      <span className="text-xs font-black uppercase text-ink min-w-0 truncate">{p.nombre}<span className="block text-[9px] text-ink/50">{p.codigo || p.barcode || p.internalCode || 'Sin código'}</span></span>
+                      <span className="text-xs font-bold text-ink/60 shrink-0 ml-2">Stock: {p.stock}</span>
                     </button>
                   ))}
                 </div>
                 {adjustmentProductId && <p className="text-[10px] font-bold text-status-success mt-1">Seleccionado · Existencia: {state.productos.find(p => p.id === adjustmentProductId)?.stock ?? '—'}</p>}
+                {adjustmentSearch.trim().length > 0 && !adjustmentProductId && !(state.productos || []).some(p => p.activo && [p.nombre, p.codigo, p.barcode, p.internalCode, p.alternateCode, p.supplierCode].some(value => String(value || '').toLocaleLowerCase('es').includes(adjustmentSearch.trim().toLocaleLowerCase('es')))) && <p className="text-[10px] text-status-danger mt-1">No se encontraron productos activos.</p>}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
