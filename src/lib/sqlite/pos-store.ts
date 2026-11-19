@@ -1491,7 +1491,7 @@ export async function syncProductsStockFromKardex() {
             SELECT COALESCE(json_extract(m.data_json,'$.stockDespues'),0)
             FROM movimientos m
             WHERE json_extract(m.data_json,'$.productoId') = productos.id
-            ORDER BY COALESCE(m.fecha,'' ) DESC, m.id DESC
+            ORDER BY COALESCE(m.fecha,'' ) DESC, m.rowid DESC
             LIMIT 1
           )
         ),
