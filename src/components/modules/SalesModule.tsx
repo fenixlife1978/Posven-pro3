@@ -1300,7 +1300,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const saleAbono: Sale = {
         id: reciboProvisional, fecha: ahoraStr, cliente: nombreClienteCanonico,
         items: [{ productoId: 'ABONO', nombre: `ABONO A FACTURA #${showAbonoModal.id}`, cantidad: 1, precioUnitUSD: totalAbonado, subtotalUSD: totalAbonado }],
-        subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonado * state.tasa,
+        subtotalUSD: totalAbonado, descuentoUSD: 0, totalUSD: totalAbonado, totalBS: totalAbonadoBS,
         metodoPago: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
         estado: 'completada', type: 'COBRO DEUDA', payments: [...pagosAbono],
         terminalId: terminal?.id, terminalName: terminal?.nombre || 'SISTEMA GLOBAL', tasa: state.tasa
@@ -2240,7 +2240,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                           <td className="p-4 text-xs font-black mono">{d.id}</td>
                           <td className="p-4 text-right text-xs font-black">{Utils.fmtUSD(d.montoUSD)}</td>
                           <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
-                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                          <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{fmtSaldoCxC(d.saldoUSD)}</td>
                           <td className="p-4 text-center">
                             <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
                               {d.estado}
