@@ -2224,14 +2224,16 @@ export async function applyDebtPaymentTransaction(params: {
       : saldoCalculado;
     const saldoCents = Math.round(saldo * 100);
     const amountCents = Math.round(Number(amountUSD) * 100);
+    const saldoMicros = Math.round(saldo * 1000000);
+    const amountMicros = Math.round(Number(amountUSD) * 1000000);
     const tasaPago = Number(payment?.tasaAplicada) || 0;
     const saldoBSExacto = esPagoBs
       ? Math.round((saldo * tasaPago + Number.EPSILON) * 100) / 100
       : 0;
-    if (esPagoBs ? saldoBSExacto <= 0 : saldoCents <= 0) throw new Error('La deuda ya está pagada.');
-    if (esPagoBs
+    if (esPagoBsCxp ? saldoBSExacto <= 0 : (esPagoBsCxc ? saldoMicros <= 0 : saldoCents <= 0)) throw new Error('La deuda ya está pagada.');
+    if (esPagoBsCxp
       ? Number(amountBS) > saldoBSExacto + 0.005
-      : amountCents > saldoCents) {
+      : (esPagoBsCxc ? amountMicros > saldoMicros : amountCents > saldoCents)) {
       throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
     }
 
@@ -2249,23 +2251,31 @@ export async function applyDebtPaymentTransaction(params: {
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalForOperation),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
-    const appliedBS = esPagoBs
+    const applied = esPagoBsCxp
+      ? (Math.min(Math.round((Number(amountBS) + Number.EPSILON) * 100) / 100, saldoBSExacto) >= saldoBSExacto - 0.005
+        ? saldo
+        : Math.min(saldo, Math.round((Math.min(Number(amountBS), saldoBSExacto) / tasaPago + Number.EPSILON) * 1000000) / 1000000))
+      : esPagoBsCxc
+        ? Math.min(saldoMicros, amountMicros) / 1000000
+        : Math.min(amountCents, saldoCents) / 100;
+    const appliedBS = esPagoBsCxp
       ? Math.min(Math.round((Number(amountBS) + Number.EPSILON) * 100) / 100, saldoBSExacto)
-      : (Number(amountBS) > 0
-        ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS))
-        : (Number(payment?.montoBS) || (Math.min(amountCents, saldoCents) / 100) * tasaPago));
-    const applied = esPagoBs
-      ? (appliedBS >= saldoBSExacto - 0.005 ? saldo : Math.min(saldo, Math.round((appliedBS / tasaPago + Number.EPSILON) * 1000000) / 1000000))
-      : Math.min(amountCents, saldoCents) / 100;
+      : esPagoBsCxc
+        ? (applied >= saldo - 0.0000005
+          ? saldoBSExacto
+          : Math.min(saldoBSExacto, Math.round((applied * tasaPago + Number.EPSILON) * 100) / 100))
+        : (Number(amountBS) > 0
+          ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS))
+          : (Number(payment?.montoBS) || (Math.min(amountCents, saldoCents) / 100) * tasaPago));
 
     const paymentWithTerminal = collection === 'cxc'
       ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''}
       : {...payment, terminalId: undefined, terminalName: undefined, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''};
     const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,operationId:opId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
 
-    const saldoFinal = esPagoBs && appliedBS >= saldoBSExacto - 0.005
+    const saldoFinal = esPagoBsCxp && appliedBS >= saldoBSExacto - 0.005
       ? 0
-      : Math.max(0, saldo - applied);
+      : (esPagoBsCxc && applied >= saldo - 0.0000005 ? 0 : Math.max(0, saldo - applied));
     const updated={
       ...debt,
       abonadoUSD: esPagoBs
