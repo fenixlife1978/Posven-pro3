@@ -2400,26 +2400,35 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     const esPagoBs=esPagoBsCxp||esPagoBsCxc;
     docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>0.0000005&&d?.estado!=='pagada');
     let remCents=esPagoBs?0:Math.max(0,Math.round(Number(amountUSD)*100));
+    let remMicros=esPagoBsCxc?Math.max(0,Math.round(Number(amountUSD)*1000000)):0;
     let remBS=esPagoBs
       ? Math.round((Number(amountBS)+Number.EPSILON)*100)/100
       : (Number(amountBS)>0?Number(amountBS):Number(amountUSD)*tasaAplicada);
     let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:SQLiteStatement[]=[];
     for(const d of docs){
-      if(esPagoBs ? remBS<=0.0000005 : remCents<=0) break;
+      if(esPagoBsCxp ? remBS<=0.0000005 : (esPagoBsCxc ? remMicros<=0 : remCents<=0)) break;
       const saldo=Math.max(0,Number(d.saldoUSD)||0);
       const debtCents=Math.max(0,Math.round(saldo*100));
+      const debtMicros=Math.max(0,Math.round(saldo*1000000));
       const debtBS=Math.round((saldo*tasaAplicada+Number.EPSILON)*100)/100;
-      const pagoBS=esPagoBs
+      const pago=esPagoBsCxp
+        ? (Math.min(remBS,debtBS)>=debtBS-0.0000005 ? saldo : Math.min(saldo,Math.round((Math.min(remBS,debtBS)/tasaAplicada+Number.EPSILON)*1000000)/1000000))
+        : esPagoBsCxc
+          ? Math.min(debtMicros,remMicros)/1000000
+          : Math.min(debtCents,remCents)/100;
+      const pagoBS=esPagoBsCxp
         ? Math.min(remBS,debtBS)
-        : collection==='cxp'
-          ? Math.min(remBS,Math.round((Math.min(debtCents,remCents)/100*tasaAplicada+Number.EPSILON)*100)/100)
-          : Math.min(remBS,(Math.min(debtCents,remCents)/100)*tasaAplicada);
-      const pago=esPagoBs
-        ? (pagoBS>=debtBS-0.0000005 ? saldo : Math.min(saldo,Math.round((pagoBS/tasaAplicada+Number.EPSILON)*1000000)/1000000))
-        : Math.min(debtCents,remCents)/100;
-      if(pago<=0.0000005 || (esPagoBs && pagoBS<=0.0000005)) continue;
-      if(esPagoBs) remBS=Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100);
-      else {
+        : esPagoBsCxc
+          ? Math.min(remBS,debtBS,Math.round((pago*tasaAplicada+Number.EPSILON)*100)/100)
+          : collection==='cxp'
+            ? Math.min(remBS,Math.round((Math.min(debtCents,remCents)/100*tasaAplicada+Number.EPSILON)*100)/100)
+            : Math.min(remBS,(Math.min(debtCents,remCents)/100)*tasaAplicada);
+      if(pago<=0.0000005 || ((esPagoBsCxp||esPagoBsCxc) && pagoBS<=0.0000005)) continue;
+      if(esPagoBsCxp) remBS=Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100);
+      else if(esPagoBsCxc) {
+        remMicros=Math.max(0,remMicros-Math.round(pago*1000000));
+        remBS=Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100);
+      } else {
         remCents-=Math.round(pago*100);
         remBS=collection==='cxp'
           ? Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100)
@@ -2427,22 +2436,22 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       }
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
       h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pago,montoBS:pagoBS}));
-      const saldoNuevo=esPagoBs
-        ? (pagoBS>=debtBS-0.0000005 ? 0 : Math.max(0,Math.round((saldo-pago+Number.EPSILON)*1000000)/1000000))
+      const saldoNuevo=(esPagoBsCxp||esPagoBsCxc)
+        ? (pago>=saldo-0.0000005 ? 0 : Math.max(0,Math.round((saldo-pago+Number.EPSILON)*1000000)/1000000))
         : Math.max(0,saldo-pago);
-      const saldoFinal=esPagoBs ? (saldoNuevo<=0.0000005?0:saldoNuevo) : saldoNuevo;
+      const saldoFinal=(esPagoBsCxp||esPagoBsCxc) ? (saldoNuevo<=0.0000005?0:saldoNuevo) : saldoNuevo;
       const updated={
         ...d,
         abonadoUSD:esPagoBs
           ? Math.round(((Number(d.abonadoUSD)||0)+pago+Number.EPSILON)*1000000)/1000000
           : (Number(d.abonadoUSD)||0)+pago,
         saldoUSD:saldoFinal,
-        estado:esPagoBs ? (saldoFinal===0?'pagada':'parcial') : (saldoFinal<=0.0000005?'pagada':'parcial'),
+        estado:(esPagoBsCxp||esPagoBsCxc) ? (saldoFinal===0?'pagada':'parcial') : (saldoFinal<=0.0000005?'pagada':'parcial'),
         historialPagos:h
       };
       statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pago,appliedBS:pagoBS}); appliedUSD+=pago; appliedBS+=pagoBS;
     }
-    if(esPagoBs ? appliedBS<=0.0000005 : appliedUSD<=0.000001) throw new Error('No hay saldo pendiente para registrar este pago.');
+    if(esPagoBsCxp ? appliedBS<=0.0000005 : appliedUSD<=0.0000005) throw new Error('No hay saldo pendiente para registrar este pago.');
     if(collection==='cxc'){
       let customerRows:any[]=[];
       if(customerCedula){
