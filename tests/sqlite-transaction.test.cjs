@@ -1026,3 +1026,30 @@ test('reversar un abono CxP no modifica saldos de clientes', async () => {
   const customer = await posStore.getRecord('clientes', 'CLIENT-UNCHANGED-CXP', { id: 'admin-cxp-test', rol: 'administrador' });
   assert.equal(customer.debt, 17);
 });
+
+
+test('reversar un pago CxP subcentavo conserva precisión de seis decimales', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T13:40:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxp(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXP-SUBCENT-REVERSE', JSON.stringify({
+      id: 'CXP-SUBCENT-REVERSE', proveedor: 'Proveedor Subcentavo',
+      montoUSD: 0.001, abonadoUSD: 0.0006, saldoUSD: 0.0004, estado: 'parcial',
+      historialPagos: [{
+        id: 'PAYMENT-SUBCENT-REVERSE', montoUSD: 0.0006, montoBS: 0.05,
+        metodo: 'efectivo_bs', tasaAplicada: 83.333333,
+      }],
+    }), at],
+    wantRows: false,
+  });
+  const result = await posStore.reverseDebtPaymentTransaction({
+    operationId: 'REVERSE-CXP-SUBCENT-001',
+    collection: 'cxp',
+    debtId: 'CXP-SUBCENT-REVERSE',
+    paymentId: 'PAYMENT-SUBCENT-REVERSE',
+  });
+  assert.equal(result.abonadoUSD, 0);
+  assert.equal(result.saldoUSD, 0.001);
+  assert.equal(result.estado, 'pendiente');
+});
