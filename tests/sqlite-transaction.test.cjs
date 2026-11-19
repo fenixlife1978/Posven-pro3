@@ -880,3 +880,26 @@ test('la sincronización genérica de clientes no puede alterar saldos financier
   assert.equal(existing.name, 'Cliente actualizado');
   assert.equal(created.debt, 0);
 });
+
+
+test('la sincronización genérica no elimina clientes ni deja CxC huérfanas', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T12:30:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CLIENT-DELETE-GUARD', JSON.stringify({ id: 'CLIENT-DELETE-GUARD', name: 'Cliente protegido', cedula: 'V-200', debt: 25 }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-DELETE-GUARD', JSON.stringify({ id: 'CXC-DELETE-GUARD', cliente: 'Cliente protegido [V-200]', montoUSD: 25, saldoUSD: 25, estado: 'pendiente' }), at],
+    wantRows: false,
+  });
+
+  await assert.rejects(
+    posStore.syncRecords({ table: 'clientes', records: [], deletedIds: ['CLIENT-DELETE-GUARD'] }),
+    /operación transaccional de eliminación/,
+  );
+  assert.ok(await posStore.getRecord('clientes', 'CLIENT-DELETE-GUARD', { id: 'admin-delete-test', rol: 'administrador' }));
+  assert.ok(await posStore.getRecord('cxc', 'CXC-DELETE-GUARD', { id: 'admin-delete-test', rol: 'administrador' }));
+});
