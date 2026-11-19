@@ -17,6 +17,7 @@ La tarea estratégica permanente de POSVEN-Pro3 es comparar sistemáticamente lo
 - Después de cada integración, añadir pruebas de regresión que demuestren la mejora y protejan el comportamiento existente; ejecutar las pruebas pertinentes, TypeScript y build, corregir fallos y repetir. Para cambios de Electron/instalador, verificar también el workflow de Windows y distinguir CI de pruebas físicas.
 - Mantener `docs/PARIDAD-POSVEN-PRO3.md` como registro vivo de la comparación entre ambos repositorios. Actualizarlo al descubrir diferencias, decidir adaptaciones, integrar mejoras y completar verificaciones. La auditoría debe continuar en futuras tareas hasta reducir y justificar las diferencias; nunca declarar paridad total sin evidencia por módulo.
 - POSVEN-Pro es una **fuente de mejoras funcionales**, no una autoridad para cambiar la arquitectura de POSVEN-Pro3. Preservar también las capacidades propias de POSVEN-Pro3, como SQLite local, operación LAN, idempotencia, aislamiento de cajas, transacciones atómicas y seguridad local.
+
 ## Respaldos y restauración: sin límites artificiales de operaciones
 - Exportar y restaurar todos los registros existentes de todas las tablas y catálogos incluidos en el formato de respaldo, sin topes fijos por cantidad de operaciones, movimientos, ventas, filas o registros.
 - No introducir límites como 10.000, 100.000 o 200.000 registros. Los tamaños de lote solo controlan el rendimiento de inserción; nunca deben truncar, omitir ni rechazar registros por su cantidad.
