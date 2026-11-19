@@ -1790,6 +1790,11 @@ test('un conteo físico obsoleto se rechaza si el stock cambió antes de confirm
 test('un conteo físico vigente aplica el stock contado y no persiste el campo temporal de validación', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T23:40:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO app_config(id,data_json,updated_at) VALUES(?,?,?)',
+    args: ['general', JSON.stringify({ tasa: 100 }), at],
+    wantRows: false,
+  });
   const productId = 'INV-CURRENT-PHYSICAL-COUNT';
   await sqliteExecute({
     sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
@@ -1826,14 +1831,14 @@ test('la reconciliación Kardex respeta el orden de inserción cuando dos movimi
   await sqliteExecute({
     sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha,updated_at) VALUES(?,?,?,?)',
     args: ['ZZZ-FIRST-MOVEMENT', JSON.stringify({
-      id: 'ZZZ-FIRST-MOVEMENT', productoId, fecha: at, cantidad: 2, stockAntes: 0, stockDespues: 2,
+      id: 'ZZZ-FIRST-MOVEMENT', productoId: productId, fecha: at, cantidad: 2, stockAntes: 0, stockDespues: 2,
     }), at, at],
     wantRows: false,
   });
   await sqliteExecute({
     sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha,updated_at) VALUES(?,?,?,?)',
     args: ['AAA-SECOND-MOVEMENT', JSON.stringify({
-      id: 'AAA-SECOND-MOVEMENT', productoId, fecha: at, cantidad: 3, stockAntes: 2, stockDespues: 5,
+      id: 'AAA-SECOND-MOVEMENT', productoId: productId, fecha: at, cantidad: 3, stockAntes: 2, stockDespues: 5,
     }), at, at],
     wantRows: false,
   });
