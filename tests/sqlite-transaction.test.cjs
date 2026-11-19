@@ -850,3 +850,33 @@ test('dos solicitudes concurrentes no pueden degradar simultáneamente a los úl
   await auth.deleteUser(first.id);
   await auth.deleteUser(second.id);
 });
+
+
+test('la sincronización genérica de clientes no puede alterar saldos financieros de CxC', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T12:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CLIENT-DEBT-PROTECTED', JSON.stringify({
+      id: 'CLIENT-DEBT-PROTECTED', name: 'Cliente con deuda', cedula: 'V-100',
+      phone: '000', debt: 125.5,
+    }), at],
+    wantRows: false,
+  });
+
+  const result = await posStore.syncRecords({
+    table: 'clientes',
+    records: [
+      { id: 'CLIENT-DEBT-PROTECTED', name: 'Cliente actualizado', cedula: 'V-100', phone: '111', debt: 999999 },
+      { id: 'CLIENT-DEBT-NEW', name: 'Cliente nuevo', cedula: 'V-101', debt: 5000 },
+    ],
+  });
+  assert.equal(result.records[0].debt, 125.5);
+  assert.equal(result.records[1].debt, 0);
+
+  const existing = await posStore.getRecord('clientes', 'CLIENT-DEBT-PROTECTED', { id: 'cashier-debt-test', rol: 'cajero' });
+  const created = await posStore.getRecord('clientes', 'CLIENT-DEBT-NEW', { id: 'cashier-debt-test', rol: 'cajero' });
+  assert.equal(existing.debt, 125.5);
+  assert.equal(existing.name, 'Cliente actualizado');
+  assert.equal(created.debt, 0);
+});
