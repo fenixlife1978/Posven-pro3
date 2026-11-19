@@ -1672,7 +1672,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                         </td>
                         <td className="py-4"><div className="text-ink font-black text-sm uppercase">{clientName}</div></td>
                         <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
-                        <td className="text-right py-4 font-black text-status-info text-base">{Utils.fmtUSD(group.totalUSD)}</td>
+                        <td className="text-right py-4 font-black text-status-info text-base">{fmtSaldoCxC(group.totalUSD)}</td>
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
                         <td className="text-center py-4"><div className="flex items-center justify-center gap-2">
                           <button onClick={() => handleOpenGlobalCreditPayment(clientName, group.debts)} className="h-10 px-3 rounded-full flex items-center justify-center gap-1.5 bg-brand-gold text-black border-2 border-brand-gold hover:bg-brand-gold-deep transition-all shadow-md font-black text-[9px] uppercase whitespace-nowrap" title="PAGO GLOBAL" aria-label="PAGO GLOBAL">
