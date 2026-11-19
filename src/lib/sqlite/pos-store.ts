@@ -762,7 +762,6 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     'cashData','config',
   ];
   let totalRows = 0;
-  const seenIdsByTable = new Map<string, Set<string>>();
   for (const entry of tableKeys) {
     // cashHistory es el nombre canónico del respaldo; caja solo es alias heredado.
     if (entry.key === 'caja' && Array.isArray(data.cashHistory)) continue;
@@ -775,7 +774,6 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       if (seen.has(id)) throw new Error('El respaldo contiene identificadores duplicados en ' + entry.key + ': ' + id + '. No se modificó SQLite local.');
       seen.add(id);
     }
-    seenIdsByTable.set(entry.table, seen);
   }
   for (const name of catalogNames) {
     if (Array.isArray(data[name])) totalRows += data[name].length;
