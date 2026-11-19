@@ -22,7 +22,7 @@ test('CxP global payments can apply a valid Bs amount below one USD cent', () =>
   assert.match(store, /const esPagoBsCxpInicial=collection==='cxp'/);
   assert.match(store, /let remCents=esPagoBs\?0:/);
   assert.match(store, /if\(esPagoBsCxp \? appliedBS<=0\.0000005 : appliedUSD<=0\.000001\)/);
-  assert.match(store, /saldoNuevo=esPagoBsCxp[\s\S]*?1000000/);
+  assert.match(store, /saldoNuevo=\(esPagoBsCxp\|\|esPagoBsCxc\)[\s\S]*?1000000/);
 });
 
 
@@ -34,8 +34,8 @@ test('CxC individual Bs and mixed payments preserve six-decimal USD equivalents'
   assert.match(sales, /montoBS: totalAbonadoBS,[\s\S]*?tasaAplicada: state\.tasa,[\s\S]*?paymentParts/);
   assert.match(sales, /Math\.abs\(appliedUSD - totalAbonado\) > 0\.000001/);
   assert.match(store, /const esPagoBsCxc = collection === 'cxc'[\s\S]*?paymentParts\.some/);
-  assert.match(store, /const applied = esPagoBs[\s\S]*?1000000/);
-  assert.match(store, /const saldoFinal = esPagoBs[\s\S]*?saldo - applied/);
+  assert.match(store, /const applied = esPagoBsCxp[\s\S]*?esPagoBsCxc[\s\S]*?1000000/);
+  assert.match(store, /const saldoFinal = esPagoBsCxp[\s\S]*?esPagoBsCxc[\s\S]*?saldo - applied/);
 });
 
 test('CxC and CxP keep sub-cent debts active and display their Bs equivalent', () => {
