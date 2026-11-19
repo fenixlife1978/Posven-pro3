@@ -160,3 +160,10 @@ La ruta `recordsSync` permite a cajeros sincronizar fichas de clientes, pero la 
 **Prueba de regresión:** `tests/sqlite-transaction.test.cjs` intenta elevar una deuda existente a 999999 y crear un cliente con deuda inicial 5000 mediante sincronización genérica; verifica que el saldo existente se conserve y el nuevo comience en cero, sin impedir la actualización de los datos de contacto.
 
 La misma ruta genérica ya no permite eliminar clientes, ni siquiera con perfil administrador: exige `deleteCustomerAndDebtsTransaction`, que valida las deudas pendientes y elimina cliente e historial en una única transacción. Se añadió una prueba que intenta borrar un cliente con CxC por sincronización genérica y verifica que ambos registros permanezcan intactos.
+
+### CxC: saldo canónico y reversión de abonos
+
+- El alta de una deuda CxC para un cliente nuevo ahora fija `clientes.debt` al monto de la deuda registrada; no confía en el valor resumen suministrado por el cliente HTTP.
+- Al reversar un abono CxC, la misma transacción SQLite restaura el saldo resumen del cliente, además de recalcular la deuda y ajustar el asiento contable. El ID del cliente actualizado se guarda en la operación para que los reintentos idempotentes recuperen el mismo resultado sin sumar dos veces.
+- Se valida el tipo de cartera (`cxc`/`cxp`) antes de operar.
+- Pruebas nuevas cubren creación con saldo manipulado, reversión y reintento idempotente.
