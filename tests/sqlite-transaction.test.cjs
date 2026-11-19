@@ -1278,6 +1278,146 @@ test('registrar compra devuelve productos actualizados y calcula costo ponderado
 });
 
 
+test('eliminar la primera compra reconstruye el Kardex desde el saldo anterior al primer movimiento', async () => {
+  await schema.ensureSqliteSchema();
+  const baseAt = '2026-11-19T10:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: ['PURCHASE-DELETE-BASE', JSON.stringify({
+      id: 'PURCHASE-DELETE-BASE', nombre: 'Producto Base Compra', stock: 5, costoUSD: 8,
+    }), baseAt],
+    wantRows: false,
+  });
+  const first = {
+    operationId: 'PURCHASE-DELETE-FIRST-OP',
+    purchase: {
+      id: 'PURCHASE-DELETE-FIRST', fecha: '2026-11-19', fechaHora: baseAt,
+      proveedor: 'Proveedor Kardex', numeroFactura: 'FAC-DELETE-FIRST',
+      montoUSD: 30, items: [{ productoId: 'PURCHASE-DELETE-BASE', cantidad: 3, costoUnitarioUSD: 10 }],
+    },
+    items: [{ productoId: 'PURCHASE-DELETE-BASE', cantidad: 3, costoUnitarioUSD: 10, subtotalUSD: 30 }],
+    purchaseDate: '2026-11-19', purchaseDateTime: baseAt,
+    supplier: 'Proveedor Kardex', invoiceNumber: 'FAC-DELETE-FIRST', exchangeRate: 370,
+  };
+  await posStore.createPurchaseTransaction(first);
+  const secondAt = '2026-11-19T11:00:00.000Z';
+  await posStore.createPurchaseTransaction({
+    operationId: 'PURCHASE-DELETE-SECOND-OP',
+    purchase: {
+      id: 'PURCHASE-DELETE-SECOND', fecha: '2026-11-19', fechaHora: secondAt,
+      proveedor: 'Proveedor Kardex', numeroFactura: 'FAC-DELETE-SECOND',
+      montoUSD: 24, items: [{ productoId: 'PURCHASE-DELETE-BASE', cantidad: 2, costoUnitarioUSD: 12 }],
+    },
+    items: [{ productoId: 'PURCHASE-DELETE-BASE', cantidad: 2, costoUnitarioUSD: 12, subtotalUSD: 24 }],
+    purchaseDate: '2026-11-19', purchaseDateTime: secondAt,
+    supplier: 'Proveedor Kardex', invoiceNumber: 'FAC-DELETE-SECOND', exchangeRate: 370,
+  });
+
+  const before = await posStore.getRecord('productos', 'PURCHASE-DELETE-BASE', { id: 'admin-purchase-delete-test', rol: 'administrador' });
+  assert.equal(before.stock, 10);
+  assert.equal(before.costoUSD, 9.4);
+
+  const deleted = await posStore.deletePurchaseTransaction({
+    operationId: 'PURCHASE-DELETE-FIRST-OPERATION',
+    purchaseId: 'PURCHASE-DELETE-FIRST',
+    invoiceNumber: 'FAC-DELETE-FIRST',
+    supplier: 'Proveedor Kardex',
+    purchaseDate: '2026-11-19',
+  });
+  assert.equal(deleted.deletedPurchase, 1);
+  const after = await posStore.getRecord('productos', 'PURCHASE-DELETE-BASE', { id: 'admin-purchase-delete-test', rol: 'administrador' });
+  assert.equal(after.stock, 7);
+  assert.equal(after.costoUSD, 64 / 7);
+  const remaining = await sqliteExecute({
+    sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",
+    args: ['PURCHASE-DELETE-BASE'],
+  });
+  assert.equal(remaining.rows.length, 1);
+  const movement = JSON.parse(remaining.rows[0].data_json);
+  assert.equal(movement.stockAntes, 5);
+  assert.equal(movement.stockDespues, 7);
+});
+
+test('no permite borrar una compra si hay salidas posteriores que exigen recalcular el costo histórico', async () => {
+  await schema.ensureSqliteSchema();
+  const purchaseAt = '2026-11-19T12:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: ['PURCHASE-DELETE-SALE-PRODUCT', JSON.stringify({
+      id: 'PURCHASE-DELETE-SALE-PRODUCT', nombre: 'Producto con Venta Posterior', stock: 5, costoUSD: 8,
+    }), purchaseAt],
+    wantRows: false,
+  });
+  await posStore.createPurchaseTransaction({
+    operationId: 'PURCHASE-DELETE-SALE-OP',
+    purchase: {
+      id: 'PURCHASE-DELETE-SALE', fecha: '2026-11-19', fechaHora: purchaseAt,
+      proveedor: 'Proveedor con Venta', numeroFactura: 'FAC-DELETE-SALE',
+      montoUSD: 30, items: [{ productoId: 'PURCHASE-DELETE-SALE-PRODUCT', cantidad: 3, costoUnitarioUSD: 10 }],
+    },
+    items: [{ productoId: 'PURCHASE-DELETE-SALE-PRODUCT', cantidad: 3, costoUnitarioUSD: 10, subtotalUSD: 30 }],
+    purchaseDate: '2026-11-19', purchaseDateTime: purchaseAt,
+    supplier: 'Proveedor con Venta', invoiceNumber: 'FAC-DELETE-SALE', exchangeRate: 370,
+  });
+  const saleAt = '2026-11-19T13:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT INTO movimientos(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['PURCHASE-DELETE-SALE-MOV', JSON.stringify({
+      id: 'PURCHASE-DELETE-SALE-MOV', productoId: 'PURCHASE-DELETE-SALE-PRODUCT',
+      tipo: 'venta', cantidad: -2, stockAntes: 8, stockDespues: 6,
+      costoUnitarioUSD: 8.75, fecha: saleAt, referencia: 'VENTA TEST',
+    }), saleAt],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'UPDATE productos SET data_json=json_set(data_json,\'$.stock\',6) WHERE id=?',
+    args: ['PURCHASE-DELETE-SALE-PRODUCT'],
+    wantRows: false,
+  });
+
+  await assert.rejects(
+    posStore.deletePurchaseTransaction({
+      operationId: 'PURCHASE-DELETE-SALE-OPERATION',
+      purchaseId: 'PURCHASE-DELETE-SALE',
+      invoiceNumber: 'FAC-DELETE-SALE',
+      supplier: 'Proveedor con Venta',
+      purchaseDate: '2026-11-19',
+    }),
+    /movimientos posteriores de tipo venta/,
+  );
+  const product = await posStore.getRecord('productos', 'PURCHASE-DELETE-SALE-PRODUCT', { id: 'admin-purchase-delete-test', rol: 'administrador' });
+  assert.equal(product.stock, 6);
+  assert.equal(product.costoUSD, 8.75);
+  const purchase = await posStore.getRecord('compras', 'PURCHASE-DELETE-SALE', { id: 'admin-purchase-delete-test', rol: 'administrador' });
+  assert.ok(purchase, 'la compra debe permanecer intacta cuando la eliminación se rechaza');
+  const saleMovement = await posStore.getRecord('movimientos', 'PURCHASE-DELETE-SALE-MOV', { id: 'admin-purchase-delete-test', rol: 'administrador' });
+  assert.equal(saleMovement.cantidad, -2);
+});
+
+test('el id de compra no puede utilizarse para borrar una factura distinta', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T13:30:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO compras(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['PURCHASE-ID-MISMATCH', JSON.stringify({
+      id: 'PURCHASE-ID-MISMATCH', numeroFactura: 'FAC-REAL', proveedor: 'Proveedor Real', fecha: '2026-11-19',
+    }), '2026-11-19'],
+    wantRows: false,
+  });
+  await assert.rejects(
+    posStore.deletePurchaseTransaction({
+      operationId: 'PURCHASE-ID-MISMATCH-DELETE',
+      purchaseId: 'PURCHASE-ID-MISMATCH',
+      invoiceNumber: 'FAC-FALSA',
+      supplier: 'Proveedor Falso',
+      purchaseDate: '2026-11-19',
+    }),
+    /no coincide con la factura, proveedor y fecha/,
+  );
+  const preserved = await posStore.getRecord('compras', 'PURCHASE-ID-MISMATCH', { id: 'admin-purchase-delete-test', rol: 'administrador' });
+  assert.equal(preserved.numeroFactura, 'FAC-REAL');
+});
+
 test('una compra con cantidad negativa se rechaza antes de alterar inventario o historial', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T14:50:00.000Z';
