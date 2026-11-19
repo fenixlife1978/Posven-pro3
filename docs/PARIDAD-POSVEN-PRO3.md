@@ -169,6 +169,11 @@ La misma ruta genérica ya no permite eliminar clientes, ni siquiera con perfil 
 - Pruebas nuevas cubren creación con saldo manipulado, reversión y reintento idempotente.
 
 
+### CxC: reversión segura cuando existen clientes duplicados
+
+La revisión de reversión de abonos detectó que la búsqueda de ficha por cédula o nombre usaba `LIMIT 1`, lo que podía actualizar una ficha arbitraria si existían duplicados. La reversión ahora consulta hasta dos coincidencias y aborta toda la transacción si encuentra cédulas duplicadas o más de un cliente con el mismo nombre. No modifica la deuda, el resumen del cliente ni el asiento contable en caso de ambigüedad. La prueba de regresión verifica expresamente el rollback con dos homónimos.
+
+
 ### CxP: reversión de pagos subcentavo
 
 La reversión de un abono CxP conserva seis decimales en el equivalente USD, igual que el alta del pago en Bs. No se redondea a dos decimales ni se marca como pagada una deuda que aún conserva un saldo inferior a un centavo. La prueba "reversar un pago CxP subcentavo conserva precisión de seis decimales" cubre el caso de USD 0,001 con abono de USD 0,0006.
