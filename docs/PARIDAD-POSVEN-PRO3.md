@@ -158,3 +158,5 @@ La ruta `recordsSync` permite a cajeros sincronizar fichas de clientes, pero la 
 **Corrección aplicada en Pro3:** para `clientes`, `syncRecords` ahora conserva el saldo `debt` existente en SQLite al actualizar datos personales y asigna cero a un cliente nuevo. Los aumentos/disminuciones del saldo siguen perteneciendo exclusivamente a las transacciones de creación/cobro/reversión/eliminación de CxC. La operación sigue siendo atómica y devuelve al cliente el registro canónico persistido.
 
 **Prueba de regresión:** `tests/sqlite-transaction.test.cjs` intenta elevar una deuda existente a 999999 y crear un cliente con deuda inicial 5000 mediante sincronización genérica; verifica que el saldo existente se conserve y el nuevo comience en cero, sin impedir la actualización de los datos de contacto.
+
+La misma ruta genérica ya no permite eliminar clientes, ni siquiera con perfil administrador: exige `deleteCustomerAndDebtsTransaction`, que valida las deudas pendientes y elimina cliente e historial en una única transacción. Se añadió una prueba que intenta borrar un cliente con CxC por sincronización genérica y verifica que ambos registros permanezcan intactos.
