@@ -511,12 +511,12 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                         <div className="min-w-0">
                           <p className="text-sm font-black uppercase text-ink truncate">{g.proveedor}</p>
                           <p className="text-[9px] font-black uppercase text-ink/50 tracking-widest">
-                            {g.pendientes.length} factura(s) pendiente(s) · Tot. {Utils.fmtUSD(g.saldoTotal)}
+                            {g.pendientes.length} factura(s) pendiente(s) · Tot. {fmtSaldoCxP(g.saldoTotal)}
                           </p>
                         </div>
                       </button>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-sm font-black text-status-danger mono">{Utils.fmtUSD(g.saldoTotal)}</span>
+                        <span className="text-sm font-black text-status-danger mono">{fmtSaldoCxP(g.saldoTotal)}</span>
                         <button
                           onClick={() => handleOpenGlobalPayment(g.proveedor)}
                           disabled={g.saldoTotal <= 0}
