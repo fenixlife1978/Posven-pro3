@@ -124,3 +124,23 @@ Esta matriz es una comparación estructural y funcional inicial de los módulos 
 - Contabilidad, reportes, PDF/80 mm, roles, permisos y operación LAN.
 
 Cada diferencia se clasificará como **presente en ambos**, **ausente en Pro3**, **adaptada por arquitectura**, **no aplicable** o **requiere decisión**. No fusionar una transferencia sin pruebas del comportamiento afectado.
+
+
+## Auditoría de autenticación, sesiones y administración de usuarios (19-11-2026)
+
+| Área | Hallazgo | Estado / acción |
+|---|---|---|
+| Contraseñas y sesiones | Pro3 conserva hash scrypt, comparación de hash en tiempo constante, token de sesión aleatorio de 256 bits, expiración de siete días, revocación y verificación del usuario bloqueado en cada lectura de sesión. | **Más controles locales presentes**; conservar. |
+| Intentos de acceso | Pro3 limita intentos por identificador y dirección de origen, persiste únicamente hashes de ambos valores y aplica el contador dentro de una transacción SQLite serializada. La IP se inyecta desde el socket LAN, no desde una cabecera aportada por el cliente. | **Mejora propia de Pro3**; mantener y probar concurrencia. |
+| Perímetro LAN | El proceso Electron termina TLS (mínimo TLS 1.2), valida Host contra localhost/IP LAN y puerto configurado, restringe clientes a direcciones privadas y exige Origin HTTPS coincidente en mutaciones API. El proceso Next interno escucha solo en 127.0.0.1. | **Adaptación local presente**; conservar pruebas de TLS y origen. |
+| Administración de usuarios | La implementación heredada separaba bloqueo y edición de rol/nombre. Un PATCH inválido podía dejar aplicado el bloqueo y la comprobación del último administrador no cubría degradación ni eliminación; además, las lecturas previas fuera de transacción permitían carreras. | **Corregido en Pro3**: actualización y revocación de sesiones dentro de una sola transacción SQLite; protege al último administrador activo frente a bloqueo, degradación y eliminación. |
+| Alta del primer administrador | createFirstAdministrator usa BEGIN IMMEDIATE y comprueba dentro de la transacción que todavía no exista administrador. | **Control presente**; conserva creación única sin cuenta semilla con contraseña predeterminada. |
+| Referencia POSVEN-Pro | Pro comparte la lógica anterior de PATCH y protección de bloqueo; por tanto, la corrección se implementa como mejora de integridad específica en Pro3, no como copia literal. | **Mejora adicional de Pro3**; la arquitectura de referencia no justifica conservar el defecto. |
+
+### Pruebas añadidas
+
+- tests/sqlite-transaction.test.cjs: intenta degradar o eliminar al único administrador activo y comprueba el rechazo.
+- La misma prueba combina edición inválida y bloqueo, verifica que no quede un cambio parcial y confirma que una actualización válida revoca el acceso de forma coherente.
+- Las comprobaciones se ejecutan contra SQLite real temporal y las transacciones reales del módulo de autenticación.
+
+La autenticación y el perímetro se han revisado a nivel de código. La matriz no marca todavía seguridad LAN completa como verificada en equipos físicos; se requiere ejecutar el instalador en Windows y probar conexiones reales de varios clientes.
