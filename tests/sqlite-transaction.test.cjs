@@ -392,7 +392,7 @@ test('devoluciones limitan reintegros al dinero cobrado y excluyen notas de cré
 
   const failedProduct = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: [product.id] });
   assert.equal(JSON.parse(failedProduct.rows[0].data_json).stock, 0);
-  assert.equal(Number((await sqliteExecute({ sql: 'SELECT COUNT(*) AS n FROM devoluciones' })).rows[0].n), 0);
+  assert.equal(Number((await sqliteExecute({ sql: 'SELECT COUNT(*) AS n FROM devoluciones WHERE id=?', args: ['DEV-OVERPAID'] })).rows[0].n), 0);
 
   const first = await posStore.processReturnOrCancellationTransaction({
     operationId: 'REFUND-VALID',
@@ -428,6 +428,9 @@ test('devoluciones limitan reintegros al dinero cobrado y excluyen notas de cré
   assert.equal((await posStore.getRecord('cxc', debt.id, user)).saldoUSD, 4);
   const journalRows = await sqliteExecute({ sql: 'SELECT data_json FROM libro_diario WHERE id=?', args: ['REFUND-JOURNAL'] });
   assert.equal(JSON.parse(journalRows.rows[0].data_json).montoUSD, 6);
+  // Esta deuda es un fixture de la prueba; no debe contaminar la prueba
+  // posterior que verifica el alcance global de la cartera CxC.
+  await sqliteExecute({ sql: 'DELETE FROM cxc WHERE id=?', args: [debt.id], wantRows: false });
 });
 
 
