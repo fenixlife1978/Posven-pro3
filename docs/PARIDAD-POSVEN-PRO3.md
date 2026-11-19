@@ -312,6 +312,7 @@ También se detectó que `applyInventoryMovementsTransaction` sumaba salidas sin
 - La transacción rechaza cantidades no numéricas, cero y movimientos que dejen stock negativo.
 - El rechazo ocurre antes de persistir movimientos, productos o la marca idempotente de operación.
 - El dato temporal de comparación no se guarda dentro del movimiento histórico.
-- Pruebas de regresión cubren salida superior a existencia, conteo obsoleto por venta concurrente y conteo vigente exitoso.
+- La reconciliación de stock desde Kardex usa `rowid` como desempate cuando varios movimientos tienen exactamente la misma fecha/hora; evita que un ID aleatorio seleccione un movimiento anterior.
+- Pruebas de regresión cubren salida superior a existencia, conteo obsoleto por venta concurrente, conteo vigente exitoso y movimientos con timestamp idéntico.
 
-Pendiente: terminar validación en Windows, revisar los movimientos derivados de kits y las compras/recepciones con múltiples líneas del mismo producto, y confirmar que los filtros y reportes del Kardex usan el mismo criterio de cronología. No se publica Release ni se usa Vercel.
+Pendiente: terminar validación en Windows y revisar los movimientos derivados de kits y las compras/recepciones con múltiples líneas del mismo producto. No se publica Release ni se usa Vercel.
