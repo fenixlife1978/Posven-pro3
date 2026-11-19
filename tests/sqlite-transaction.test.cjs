@@ -927,3 +927,72 @@ test('un lote genérico de clientes inválido revierte todas sus modificaciones'
   assert.equal(unchanged.name, 'Nombre original');
   assert.equal(unchanged.debt, 10);
 });
+
+
+test('crear una deuda CxC nueva deriva el saldo del monto real y no del resumen enviado', async () => {
+  await schema.ensureSqliteSchema();
+  const result = await posStore.createCustomerDebtTransaction({
+    operationId: 'CXC-CUSTOMER-DEBT-CANONICAL',
+    debt: {
+      id: 'CXC-CUSTOMER-DEBT-CANONICAL',
+      cliente: 'Cliente Nuevo Canonico [V-600]',
+      montoUSD: 40,
+      abonadoUSD: 0,
+      saldoUSD: 40,
+      estado: 'pendiente',
+      fecha: '2026-11-19T13:10:00.000Z',
+      historialPagos: [],
+    },
+    customer: {
+      id: 'CLIENT-CUSTOMER-DEBT-CANONICAL',
+      name: 'Cliente Nuevo Canonico',
+      cedula: 'V-600',
+      debt: 999999,
+    },
+  });
+  assert.equal(result.customer.debt, 40);
+  const saved = await posStore.getRecord('clientes', 'CLIENT-CUSTOMER-DEBT-CANONICAL', { id: 'admin-cxc-test', rol: 'administrador' });
+  assert.equal(saved.debt, 40);
+});
+
+
+test('reversar un abono CxC restaura también el saldo resumen del cliente y es idempotente', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T13:20:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CLIENT-REVERSE-CXC', JSON.stringify({
+      id: 'CLIENT-REVERSE-CXC', name: 'Cliente Reversión', cedula: 'V-700', debt: 50,
+    }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-REVERSE-CXC', JSON.stringify({
+      id: 'CXC-REVERSE-CXC', cliente: 'Cliente Reversión [V-700]',
+      montoUSD: 100, abonadoUSD: 50, saldoUSD: 50, estado: 'parcial',
+      historialPagos: [{ id: 'PAYMENT-REVERSE-CXC', montoUSD: 50, montoBS: 2500 }],
+    }), at],
+    wantRows: false,
+  });
+
+  const first = await posStore.reverseDebtPaymentTransaction({
+    operationId: 'REVERSE-CXC-ATOMIC-001',
+    collection: 'cxc',
+    debtId: 'CXC-REVERSE-CXC',
+    paymentId: 'PAYMENT-REVERSE-CXC',
+  });
+  assert.equal(first.saldoUSD, 100);
+  assert.equal(first.customer.debt, 100);
+
+  const retry = await posStore.reverseDebtPaymentTransaction({
+    operationId: 'REVERSE-CXC-ATOMIC-001',
+    collection: 'cxc',
+    debtId: 'CXC-REVERSE-CXC',
+    paymentId: 'PAYMENT-REVERSE-CXC',
+  });
+  assert.equal(retry.recovered, true);
+  assert.equal(retry.customer.debt, 100);
+  const savedCustomer = await posStore.getRecord('clientes', 'CLIENT-REVERSE-CXC', { id: 'admin-cxc-test', rol: 'administrador' });
+  assert.equal(savedCustomer.debt, 100);
+});
