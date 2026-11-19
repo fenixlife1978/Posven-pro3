@@ -272,11 +272,11 @@ Esta conclusión se limita al POS/Ventas y a los componentes enumerados. No equi
 
 La comparación directa del flujo `ejecutarAbono` de POSVEN-Pro con POSVEN-Pro3 detectó una omisión en Pro3: el flujo calculaba el total USD de los pagos, pero no sumaba ni enviaba el total real en Bs a `applyDebtPaymentTransaction`. El registro podía terminar usando el equivalente teórico `totalUSD × tasa`, aunque el cobro mixto hubiera recibido una cantidad distinta de bolívares.
 
-**Corrección en curso en esta rama:** Pro3 suma `montoBS` de cada medio recibido y lo pasa explícitamente como `amountBS` a la transacción SQLite. Se conserva el equivalente de factura y la tasa en el documento de cobro, mientras el campo aplicado Bs refleja el importe real distribuido entre métodos. También se incorpora `processingRef` para impedir doble ejecución mientras React actualiza el estado de procesamiento.
+**Corrección integrada en `main` mediante PR #42:** Pro3 suma `montoBS` de cada medio recibido y lo pasa explícitamente como `amountBS` a la transacción SQLite. Se conserva el equivalente de factura y la tasa en el documento de cobro, mientras el campo aplicado Bs refleja el importe real distribuido entre métodos. También se incorpora `processingRef` para impedir doble ejecución mientras React actualiza el estado de procesamiento.
 
 **Regresión añadida:** pago CxC mixto con USD 10 de equivalente y Bs 3.000 efectivamente recibidos, aunque la conversión teórica del total USD sea Bs 8.740. La prueba exige que SQLite conserve exactamente Bs 3.000 en el abono y en el resultado aplicado.
 
-Esta corrección se considera pendiente de aprobación hasta que terminen las pruebas SQLite, TypeScript y el instalador Windows.
+La corrección quedó fusionada en `main` mediante PR #42 tras pasar pruebas SQLite, TypeScript y compilación del instalador Windows.
 
 
 ## Auditoría de devoluciones y anulaciones: límite de reembolso y reversión única (19-11-2026)
@@ -287,7 +287,7 @@ La revisión transaccional detectó riesgos que no podían resolverse solo en la
 - El egreso contable sumaba también los importes de `nota_credito`, aunque no representan dinero entregado al cliente.
 - El límite de reintegro no descontaba los reembolsos anteriores de la misma venta. Una venta parcialmente pagada podía recibir devoluciones en efectivo por encima de los pagos reales.
 
-**Corrección en curso en Pro3 (SQLite):**
+**Corrección integrada en `main` mediante PR #43 (SQLite):**
 
 - Una factura anulada queda bloqueada para nuevas devoluciones y anulaciones, con validación dentro de la transacción.
 - El servidor calcula el dinero originalmente recibido a partir de los métodos reales de pago y descuenta devoluciones/reintegros previos de devoluciones y anulaciones.
@@ -297,4 +297,21 @@ La revisión transaccional detectó riesgos que no podían resolverse solo en la
 
 **Regresiones añadidas:** devolución posterior a anulación rechazada sin alterar stock; venta a crédito parcialmente abonada con reintegro en efectivo superior al pago real rechazada con rollback; devolución válida distribuida entre dinero real y nota de crédito, verificando que solo el dinero real llega al libro diario; segundo reembolso en efectivo bloqueado después de agotar el pago original.
 
-La auditoría continúa con la compatibilidad de anulaciones posteriores a devoluciones parciales y la experiencia de captura de importes en la interfaz. No se publica Release ni se usa Vercel.
+La PR #43 quedó fusionada el 19-11-2026 (commit `e7d3410`) después de pasar TypeScript y el instalador Windows. La revisión de anulaciones posteriores a devoluciones parciales y la experiencia de captura de importes continúa como seguimiento. No se publica Release ni se usa Vercel.
+
+## Inventario / Kardex: integridad del conteo físico y stock no negativo (19-11-2026)
+
+Comparación de `src/components/modules/InventoryModule.tsx` de Pro3 con el módulo de inventario de referencia. Pro3 conserva un módulo mucho más amplio: Kardex por producto, ajustes y consumos, inventario físico por departamento, historial de ajustes, reportes exportables y operaciones transaccionales SQLite. No corresponde reemplazarlo por el módulo simplificado de referencia.
+
+La revisión del flujo de conteo físico encontró un riesgo de concurrencia: la interfaz calculaba la diferencia usando el stock cargado al abrir el conteo, pero la transacción SQLite recalculaba el saldo desde la existencia vigente. Si otra terminal vendía unidades durante el conteo, se aplicaba una diferencia obsoleta al nuevo saldo y el stock final dejaba de coincidir con el conteo físico.
+
+También se detectó que `applyInventoryMovementsTransaction` sumaba salidas sin impedir que el resultado quedara negativo.
+
+**Corrección en curso en `fix/inventory-kardex-count-integrity`:**
+- El conteo físico envía a SQLite el stock observado al abrir el formulario; dentro de `BEGIN IMMEDIATE` se compara con el saldo real y se rechaza el conteo si cambió, para que el operador actualice el conteo.
+- La transacción rechaza cantidades no numéricas, cero y movimientos que dejen stock negativo.
+- El rechazo ocurre antes de persistir movimientos, productos o la marca idempotente de operación.
+- El dato temporal de comparación no se guarda dentro del movimiento histórico.
+- Pruebas de regresión cubren salida superior a existencia, conteo obsoleto por venta concurrente y conteo vigente exitoso.
+
+Pendiente: terminar validación en Windows, revisar los movimientos derivados de kits y las compras/recepciones con múltiples líneas del mismo producto, y confirmar que los filtros y reportes del Kardex usan el mismo criterio de cronología. No se publica Release ni se usa Vercel.
