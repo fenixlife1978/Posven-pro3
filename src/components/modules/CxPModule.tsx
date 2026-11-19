@@ -68,8 +68,8 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
   // pagar. Un saldo $0.00 (o despreciable) la convierte en PAGADA, aunque por un
   // residuo/redondeo no haya quedado marcada como 'pagada'.
   const esDeudaActiva = (x: Debt) =>
-    (x.montoUSD || 0) > 0.001 &&
-    (x.saldoUSD || 0) > 0.001 &&
+    (x.montoUSD || 0) > 0.0000005 &&
+    (x.saldoUSD || 0) > 0.0000005 &&
     x.estado !== 'pagada';
 
   const pendientes = (state.cxp || []).filter(esDeudaActiva);
@@ -325,7 +325,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
 
       toast({
         title: "Pago global registrado",
-        description: `${Utils.fmtUSD(totalAplicado)}${esMetodoBS ? ' (' + Utils.fmtBS(aplicadoBS) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}${pagoAtrasado ? ' · Pago atrasado registrado' : ''}`
+        description: `${Utils.fmtUSD(totalAplicado)}${esMetodoBS ? ' (' + Utils.fmtBS(aplicadoBS) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.0000005 ? ' (excedente sin aplicar)' : ''}${pagoAtrasado ? ' · Pago atrasado registrado' : ''}`
       });
 
       setGlobalProvider(null);
