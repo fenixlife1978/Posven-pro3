@@ -1584,8 +1584,23 @@ export async function applyInventoryMovementsTransaction(params: {
       let running = Number(products.get(pid)?.stock) || 0;
       for (const movement of params.movements.filter(m => String(m.productoId) === pid)) {
         const before = running;
-        running += Number(movement.cantidad) || 0;
-        let historicalSnapshot = movement;
+        const delta = Number(movement.cantidad);
+        if (!Number.isFinite(delta) || Math.abs(delta) < 1e-12) {
+          throw new Error('El movimiento de inventario para ' + (products.get(pid)?.nombre || pid) + ' debe tener una cantidad válida distinta de cero.');
+        }
+        if (movement.stockEsperadoAntes !== undefined && movement.stockEsperadoAntes !== null) {
+          const expected = Number(movement.stockEsperadoAntes);
+          if (!Number.isFinite(expected) || Math.abs(before - expected) > 1e-9) {
+            throw new Error('El stock de ' + (products.get(pid)?.nombre || pid) + ' cambió desde que se abrió el conteo físico (esperado ' + expected + ', actual ' + before + '). Actualice el conteo e intente de nuevo.');
+          }
+        }
+        const nextStock = before + delta;
+        if (nextStock < -1e-9) {
+          throw new Error('El ajuste dejaría el producto ' + (products.get(pid)?.nombre || pid) + ' con stock negativo. Existencia actual: ' + before + '; salida solicitada: ' + Math.abs(delta) + '.');
+        }
+        running = Math.abs(nextStock) < 1e-9 ? 0 : nextStock;
+        const { stockEsperadoAntes: _stockEsperadoAntes, ...movementSnapshot } = movement;
+        let historicalSnapshot = movementSnapshot;
         if (Number(movement.cantidad) < 0) {
           const product = products.get(pid);
           const rawCost = movement.costoUnitarioUSD ?? product?.costoUSD;
