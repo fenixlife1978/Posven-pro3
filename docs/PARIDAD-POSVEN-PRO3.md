@@ -53,6 +53,24 @@ Se compararon los árboles completos de archivos de ambas ramas: POSVEN-Pro `mai
 - Los módulos de inventario comparten catálogo, valorización, ajustes, Kardex, ventas, devoluciones y consumo/colaboraciones. Pro3 añade sincronización de stock desde Kardex, normalización de etiquetas, etiquetas imprimibles y reporte de salidas periódicas. Los ajustes deben seguir validándose con pruebas funcionales y no solo por coincidencia de componentes.
 - El panel de control global conserva creación/eliminación de terminales y asignación de usuarios en ambos repositorios; en Pro3 las operaciones persisten en SQLite local en lugar de Turso.
 
+## Auditoría ampliada de Compras, CxP, Reportes y Configuración (18-11-2026)
+
+### Diferencias verificadas
+
+| Módulo | Diferencia comprobada | Estado |
+|---|---|---|
+| Compras | POSVEN-Pro concatena compras reconstruidas desde movimientos históricos y compras registradas, sin deduplicación entre ambas fuentes. POSVEN-Pro3 usa una clave compuesta por fecha + número de factura + proveedor (o ID si faltan datos) y da prioridad al registro canónico de SQLite sobre la reconstrucción de Kardex. | **Mejora ya integrada en Pro3**. Evita duplicar compras en el historial y conserva el registro canónico. |
+| Compras / filtros | POSVEN-Pro ofrece proveedores del historial. POSVEN-Pro3 combina el catálogo real de proveedores con los proveedores históricos, normaliza la búsqueda y admite rangos de fecha vacíos; al cambiar rango reinicia la paginación. | **Mejora ya integrada en Pro3**. |
+| CxP / pago individual | POSVEN-Pro convierte directamente Bs a USD y compara con una tolerancia fija de USD 0,001. POSVEN-Pro3 valida tasa positiva, conserva monto Bs a dos decimales, calcula USD con seis decimales para pagos Bs, compara el saldo en Bs redondeado a céntimos y el saldo USD a centavos para pagos USD. | **Mejora ya integrada en Pro3**. Protege pagos pequeños en Bs cuyo equivalente USD es inferior a un centavo. |
+| Reportes | POSVEN-Pro presenta historial de Cortes Z con datos resumidos. POSVEN-Pro3 añade restricción del historial a administrador, reimpresión del consolidado en impresora térmica de 80 mm y una visualización de equivalencia Bs que evita inventar conversión cuando no existe dato histórico suficiente. | **Mejora propia de Pro3**. Conservar. |
+| Usuarios | Los módulos revisados mantienen las mismas operaciones de alta, edición, bloqueo y eliminación; las rutas de API de Pro3 están respaldadas por la autenticación/SQLite local. | **Equivalente**; mantener pruebas de autorización en servidor. |
+| Proveedores | Los formularios revisados coinciden en validación de RIF, prevención de duplicados, actualización de nombre en productos y confirmación de eliminación. | **Equivalente**; no requiere copiar. |
+| Configuración | Pro3 adapta respaldo/restauración, importación exclusiva de catálogos y formateo a SQLite local; agrega configuración de red LAN y selector de archivo mediante Electron. Las referencias de reparación/importación de datos migrados y los metadatos Turso en respaldos se conservan únicamente para compatibilidad histórica, con endpoints locales `/api/pos/*`. | **Adaptación local ya presente**. Auditar nombres heredados por claridad, sin romper importación de respaldos antiguos. |
+
+### Observación de alcance
+
+La revisión confirma que no se debe asumir que una diferencia de código equivale a una mejora pendiente. En estos módulos, POSVEN-Pro3 ya incluye adaptaciones o funciones adicionales. No se copió código cloud del repositorio de referencia. Los flujos indicados se han comparado a nivel de implementación; todavía deben verificarse con pruebas funcionales de integración y datos límite antes de marcar paridad global.
+
 ## Mejoras propias de Pro3 que deben preservarse
 
 - SQLite local como única fuente de verdad operativa; nada de escrituras POS en nube ni fallback a datos demo.
