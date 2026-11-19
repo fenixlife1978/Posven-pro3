@@ -2161,12 +2161,20 @@ export async function applyDebtPaymentTransaction(params: {
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
   if (collection === 'cxp' && params.user?.rol !== 'administrador') throw new Error('El pago a proveedores requiere administrador.');
   if (collection === 'cxc' && params.user?.rol === 'cajero' && !terminalForOperation) throw new Error('El cobro de CxC del cajero requiere su terminal asignada.');
+  const metodoPagoBs = (method: unknown) => ['efectivo_bs', 'pagomovil', 'tarjeta', 'biopago', 'punto_venta'].includes(String(method || '').toLowerCase());
+  const paymentParts = Array.isArray(payment?.paymentParts) ? payment.paymentParts : [];
   const esPagoBsCxp = collection === 'cxp'
     && ['efectivo_bs', 'pagomovil'].includes(String(payment?.metodo || '').toLowerCase())
     && Number(amountBS) > 0
     && Number(payment?.tasaAplicada) > 0;
-  // En CxP pagada en Bs, el equivalente USD puede ser inferior a un centavo.
-  if (esPagoBsCxp ? !(Number(amountBS) > 0) : !(Number(amountUSD) > 0)) return null;
+  // En CxC, el POS recibe pagos en Bs (o mixtos) y conserva equivalentes USD de seis decimales.
+  const esPagoBsCxc = collection === 'cxc'
+    && Number(amountBS) > 0
+    && Number(payment?.tasaAplicada) > 0
+    && (paymentParts.some((part:any) => metodoPagoBs(part?.metodo || part?.method))
+      || metodoPagoBs(payment?.metodo) || String(payment?.metodo || '').toLowerCase() === 'mixto');
+  const esPagoBs = esPagoBsCxp || esPagoBsCxc;
+  if (esPagoBs ? !(Number(amountBS) > 0) : !(Number(amountUSD) > 0)) return null;
   return sqliteInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
     const check = await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
@@ -2231,14 +2239,16 @@ export async function applyDebtPaymentTransaction(params: {
       : saldoCalculado;
     const saldoCents = Math.round(saldo * 100);
     const amountCents = Math.round(Number(amountUSD) * 100);
+    const saldoMicros = Math.round(saldo * 1000000);
+    const amountMicros = Math.round(Number(amountUSD) * 1000000);
     const tasaPago = Number(payment?.tasaAplicada) || 0;
-    const saldoBSExacto = esPagoBsCxp
+    const saldoBSExacto = esPagoBs
       ? Math.round((saldo * tasaPago + Number.EPSILON) * 100) / 100
       : 0;
-    if (esPagoBsCxp ? saldoBSExacto <= 0 : saldoCents <= 0) throw new Error('La deuda ya está pagada.');
+    if (esPagoBsCxp ? saldoBSExacto <= 0 : (esPagoBsCxc ? saldoMicros <= 0 : saldoCents <= 0)) throw new Error('La deuda ya está pagada.');
     if (esPagoBsCxp
       ? Number(amountBS) > saldoBSExacto + 0.005
-      : amountCents > saldoCents) {
+      : (esPagoBsCxc ? amountMicros > saldoMicros : amountCents > saldoCents)) {
       throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
     }
 
@@ -2256,14 +2266,22 @@ export async function applyDebtPaymentTransaction(params: {
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalForOperation),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
+    const applied = esPagoBsCxp
+      ? (Math.min(Math.round((Number(amountBS) + Number.EPSILON) * 100) / 100, saldoBSExacto) >= saldoBSExacto - 0.005
+        ? saldo
+        : Math.min(saldo, Math.round((Math.min(Number(amountBS), saldoBSExacto) / tasaPago + Number.EPSILON) * 1000000) / 1000000))
+      : esPagoBsCxc
+        ? Math.min(saldoMicros, amountMicros) / 1000000
+        : Math.min(amountCents, saldoCents) / 100;
     const appliedBS = esPagoBsCxp
       ? Math.min(Math.round((Number(amountBS) + Number.EPSILON) * 100) / 100, saldoBSExacto)
-      : (Number(amountBS) > 0
-        ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS))
-        : (Number(payment?.montoBS) || (Math.min(amountCents, saldoCents) / 100) * tasaPago));
-    const applied = esPagoBsCxp
-      ? (appliedBS >= saldoBSExacto - 0.005 ? saldo : Math.min(saldo, Math.round((appliedBS / tasaPago + Number.EPSILON) * 1000000) / 1000000))
-      : Math.min(amountCents, saldoCents) / 100;
+      : esPagoBsCxc
+        ? (applied >= saldo - 0.0000005
+          ? saldoBSExacto
+          : Math.min(saldoBSExacto, Math.round((Number(amountBS) + Number.EPSILON) * 100) / 100))
+        : (Number(amountBS) > 0
+          ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS))
+          : (Number(payment?.montoBS) || (Math.min(amountCents, saldoCents) / 100) * tasaPago));
 
     const paymentWithTerminal = collection === 'cxc'
       ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''}
@@ -2272,7 +2290,11 @@ export async function applyDebtPaymentTransaction(params: {
 
     const saldoFinal = esPagoBsCxp && appliedBS >= saldoBSExacto - 0.005
       ? 0
-      : Math.max(0, saldo - applied);
+      : (esPagoBsCxc && applied >= saldo - 0.0000005
+        ? 0
+        : (esPagoBs
+          ? Math.max(0, Math.round((saldo - applied + Number.EPSILON) * 1000000) / 1000000)
+          : Math.max(0, saldo - applied)));
     const updated={
       ...debt,
       abonadoUSD: esPagoBsCxp
@@ -2311,7 +2333,12 @@ export async function applyDebtPaymentTransaction(params: {
       }
       const customer=customerRows[0];
       if(customer) {
-        statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-applied)}));
+        statements.push(rowStatement('clientes',{
+          ...customer,
+          debt: esPagoBsCxc
+            ? Math.max(0, Math.round(((Number(customer.debt)||0) - applied + Number.EPSILON) * 1000000) / 1000000)
+            : Math.max(0, (Number(customer.debt)||0) - applied),
+        }));
       }
     }
     const journals=Array.isArray(journal)?journal:(journal?[journal]:[]);
