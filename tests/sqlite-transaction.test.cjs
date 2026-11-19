@@ -903,3 +903,27 @@ test('la sincronización genérica no elimina clientes ni deja CxC huérfanas', 
   assert.ok(await posStore.getRecord('clientes', 'CLIENT-DELETE-GUARD', { id: 'admin-delete-test', rol: 'administrador' }));
   assert.ok(await posStore.getRecord('cxc', 'CXC-DELETE-GUARD', { id: 'admin-delete-test', rol: 'administrador' }));
 });
+
+
+test('un lote genérico de clientes inválido revierte todas sus modificaciones', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T13:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CLIENT-BATCH-ROLLBACK', JSON.stringify({ id: 'CLIENT-BATCH-ROLLBACK', name: 'Nombre original', cedula: 'V-300', debt: 10 }), at],
+    wantRows: false,
+  });
+  await assert.rejects(
+    posStore.syncRecords({
+      table: 'clientes',
+      records: [
+        { id: 'CLIENT-BATCH-ROLLBACK', name: 'Cambio que debe revertirse', cedula: 'V-300', debt: 0 },
+        { name: 'Registro sin ID', cedula: 'V-301' },
+      ],
+    }),
+    /no tiene identificador/,
+  );
+  const unchanged = await posStore.getRecord('clientes', 'CLIENT-BATCH-ROLLBACK', { id: 'admin-batch-test', rol: 'administrador' });
+  assert.equal(unchanged.name, 'Nombre original');
+  assert.equal(unchanged.debt, 10);
+});
