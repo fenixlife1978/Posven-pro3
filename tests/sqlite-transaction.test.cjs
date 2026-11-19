@@ -998,6 +998,56 @@ test('reversar un abono CxC restaura también el saldo resumen del cliente y es 
 });
 
 
+test('reversar un abono CxC rechaza homónimos y revierte toda la operación', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T13:25:00.000Z';
+  for (const [id, cedula] of [['CLIENT-HOMONYM-1', 'V-701'], ['CLIENT-HOMONYM-2', 'V-702']]) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+      args: [id, JSON.stringify({ id, name: 'Cliente Homónimo', cedula, debt: 25 }), at],
+      wantRows: false,
+    });
+  }
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-REVERSE-HOMONYM', JSON.stringify({
+      id: 'CXC-REVERSE-HOMONYM', cliente: 'Cliente Homónimo',
+      montoUSD: 50, abonadoUSD: 25, saldoUSD: 25, estado: 'parcial',
+      historialPagos: [{ id: 'PAYMENT-REVERSE-HOMONYM', montoUSD: 25, montoBS: 0 }],
+    }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO libro_diario(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['JOURNAL-REVERSE-HOMONYM', JSON.stringify({
+      id: 'JOURNAL-REVERSE-HOMONYM', montoUSD: 25, montoBS: 0, concepto: 'Abono CxC',
+    }), at],
+    wantRows: false,
+  });
+
+  await assert.rejects(
+    posStore.reverseDebtPaymentTransaction({
+      operationId: 'REVERSE-CXC-HOMONYM-001',
+      collection: 'cxc',
+      debtId: 'CXC-REVERSE-HOMONYM',
+      paymentId: 'PAYMENT-REVERSE-HOMONYM',
+      journalId: 'JOURNAL-REVERSE-HOMONYM',
+    }),
+    /homónimos/,
+  );
+
+  const debt = await posStore.getRecord('cxc', 'CXC-REVERSE-HOMONYM', { id: 'admin-cxc-homonym', rol: 'administrador' });
+  const first = await posStore.getRecord('clientes', 'CLIENT-HOMONYM-1', { id: 'admin-cxc-homonym', rol: 'administrador' });
+  const second = await posStore.getRecord('clientes', 'CLIENT-HOMONYM-2', { id: 'admin-cxc-homonym', rol: 'administrador' });
+  const journal = await posStore.getRecord('libroDiario', 'JOURNAL-REVERSE-HOMONYM', { id: 'admin-cxc-homonym', rol: 'administrador' });
+  assert.equal(debt.saldoUSD, 25);
+  assert.equal(debt.historialPagos.length, 1);
+  assert.equal(first.debt, 25);
+  assert.equal(second.debt, 25);
+  assert.equal(journal.montoUSD, 25);
+});
+
+
 test('reversar un abono CxP no modifica saldos de clientes', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T13:30:00.000Z';
