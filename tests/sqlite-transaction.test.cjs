@@ -1708,3 +1708,224 @@ test('un pago individual CxC actualiza el cliente por nombre y rechaza homónimo
     assert.equal(duplicate.debt, 25);
   }
 });
+
+
+test('un ajuste de inventario no puede dejar existencias negativas ni persistir cambios parciales', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:30:00.000Z';
+  const productId = 'INV-NEGATIVE-STOCK-GUARD';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({ id: productId, nombre: 'Producto Stock Protegido', stock: 2, costoUSD: 4 }), at],
+    wantRows: false,
+  });
+
+  await assert.rejects(
+    posStore.applyInventoryMovementsTransaction({
+      operationId: 'INV-NEGATIVE-STOCK-OP',
+      operationType: 'AJUSTE_INVENTARIO',
+      movements: [{
+        id: 'INV-NEGATIVE-STOCK-MOV', productoId: productId, tipo: 'ajuste_salida',
+        cantidad: -3, fecha: at, referencia: 'PRUEBA SALIDA MAYOR AL STOCK',
+      }],
+      productPatches: {},
+    }),
+    /stock negativo/i,
+  );
+
+  const product = await posStore.getRecord('productos', productId, { id: 'admin-inventory-test', rol: 'administrador' });
+  assert.equal(product.stock, 2);
+  const movements = await sqliteExecute({
+    sql: 'SELECT COUNT(*) AS total FROM movimientos WHERE id=?',
+    args: ['INV-NEGATIVE-STOCK-MOV'],
+  });
+  assert.equal(Number(movements.rows[0].total), 0);
+  const operation = await sqliteExecute({
+    sql: 'SELECT COUNT(*) AS total FROM operaciones WHERE prefijo=? AND operation_id=?',
+    args: ['INVENTARIO', 'INV-NEGATIVE-STOCK-OP'],
+  });
+  assert.equal(Number(operation.rows[0].total), 0);
+});
+
+test('un conteo físico obsoleto se rechaza si el stock cambió antes de confirmar en SQLite', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:35:00.000Z';
+  const productId = 'INV-STALE-PHYSICAL-COUNT';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({ id: productId, nombre: 'Producto Conteo Concurrente', stock: 5, costoUSD: 3 }), at],
+    wantRows: false,
+  });
+
+  // El operador abrió el conteo cuando había 5 unidades; mientras contaba,
+  // otra terminal registró una venta y SQLite quedó con 3.
+  await sqliteExecute({
+    sql: "UPDATE productos SET data_json=json_set(data_json,'$.stock',3), updated_at=? WHERE id=?",
+    args: [at, productId],
+    wantRows: false,
+  });
+
+  await assert.rejects(
+    posStore.applyInventoryMovementsTransaction({
+      operationId: 'INV-STALE-PHYSICAL-COUNT-OP',
+      operationType: 'AJUSTE_INVENTARIO',
+      movements: [{
+        id: 'INV-STALE-PHYSICAL-COUNT-MOV', productoId: productId, tipo: 'ajuste_salida',
+        cantidad: -1, stockEsperadoAntes: 5, fecha: at, referencia: 'CONTEO FISICO',
+      }],
+      productPatches: {},
+    }),
+    /cambió desde que se abrió el conteo físico/i,
+  );
+
+  const product = await posStore.getRecord('productos', productId, { id: 'admin-inventory-test', rol: 'administrador' });
+  assert.equal(product.stock, 3);
+  const movements = await sqliteExecute({
+    sql: 'SELECT COUNT(*) AS total FROM movimientos WHERE id=?',
+    args: ['INV-STALE-PHYSICAL-COUNT-MOV'],
+  });
+  assert.equal(Number(movements.rows[0].total), 0);
+});
+
+test('un conteo físico vigente aplica el stock contado y no persiste el campo temporal de validación', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:40:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO app_config(id,data_json,updated_at) VALUES(?,?,?)',
+    args: ['general', JSON.stringify({ tasa: 100 }), at],
+    wantRows: false,
+  });
+  const productId = 'INV-CURRENT-PHYSICAL-COUNT';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({ id: productId, nombre: 'Producto Conteo Vigente', stock: 5, costoUSD: 3 }), at],
+    wantRows: false,
+  });
+
+  const result = await posStore.applyInventoryMovementsTransaction({
+    operationId: 'INV-CURRENT-PHYSICAL-COUNT-OP',
+    operationType: 'AJUSTE_INVENTARIO',
+    movements: [{
+      id: 'INV-CURRENT-PHYSICAL-COUNT-MOV', productoId: productId, tipo: 'ajuste_salida',
+      cantidad: -1, stockEsperadoAntes: 5, fecha: at, referencia: 'CONTEO FISICO',
+    }],
+    productPatches: {},
+  });
+
+  assert.equal(result.products[0].stock, 4);
+  assert.equal(result.movements[0].stockAntes, 5);
+  assert.equal(result.movements[0].stockDespues, 4);
+  const persistedMovement = await sqliteExecute({
+    sql: 'SELECT data_json FROM movimientos WHERE id=?',
+    args: ['INV-CURRENT-PHYSICAL-COUNT-MOV'],
+  });
+  const savedMovement = JSON.parse(String(persistedMovement.rows[0].data_json));
+  assert.equal(Object.hasOwn(savedMovement, 'stockEsperadoAntes'), false);
+});
+
+
+test('la reconciliación Kardex respeta el orden de inserción cuando dos movimientos comparten fecha y hora', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:45:00.000Z';
+  const productId = 'INV-KARDEX-SAME-TIMESTAMP';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({ id: productId, nombre: 'Producto Movimientos Simultáneos', stock: 999 }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha,updated_at) VALUES(?,?,?,?)',
+    args: ['ZZZ-FIRST-MOVEMENT', JSON.stringify({
+      id: 'ZZZ-FIRST-MOVEMENT', productoId: productId, fecha: at, cantidad: 2, stockAntes: 0, stockDespues: 2,
+    }), at, at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha,updated_at) VALUES(?,?,?,?)',
+    args: ['AAA-SECOND-MOVEMENT', JSON.stringify({
+      id: 'AAA-SECOND-MOVEMENT', productoId: productId, fecha: at, cantidad: 3, stockAntes: 2, stockDespues: 5,
+    }), at, at],
+    wantRows: false,
+  });
+
+  const result = await posStore.syncProductsStockFromKardex();
+  const product = await posStore.getRecord('productos', productId, { id: 'admin-inventory-test', rol: 'administrador' });
+  assert.equal(product.stock, 5);
+  assert.equal(result.source, 'kardex');
+});
+
+
+test('el botón Ajustes del POS registra consumo, colaboración, entradas y salidas en SQLite con trazabilidad de caja', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:55:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO app_config(id,data_json,updated_at) VALUES(?,?,?)',
+    args: ['general', JSON.stringify({ tasa: 100 }), at],
+    wantRows: false,
+  });
+
+  const cases = [
+    { type: 'consumo', delta: -2, expected: 8, suffix: 'CONSUMO' },
+    { type: 'colaboracion', delta: -1, expected: 9, suffix: 'COLABORACION' },
+    { type: 'ajuste_salida', delta: -3, expected: 7, suffix: 'SALIDA' },
+    { type: 'ajuste_entrada', delta: 4, expected: 14, suffix: 'ENTRADA' },
+  ];
+
+  for (const item of cases) {
+    const productId = 'POS-AJUSTE-' + item.suffix;
+    const movementId = 'POS-AJUSTE-MOV-' + item.suffix;
+    const operationId = 'POS-AJUSTE-OP-' + item.suffix;
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+      args: [productId, JSON.stringify({
+        id: productId, nombre: 'Producto ' + item.suffix, stock: 10, costoUSD: 4, activo: true,
+      }), at],
+      wantRows: false,
+    });
+
+    const payload = {
+      operationId,
+      operationType: 'AJUSTE-INVENTARIO-POS',
+      movements: [{
+        id: movementId, productoId: productId, tipo: item.type,
+        cantidad: item.delta, fecha: at, referencia: item.suffix + ' | PRUEBA POS',
+        terminalId: 'CAJA-POS-01',
+      }],
+      productPatches: {},
+    };
+    const result = await posStore.applyInventoryMovementsTransaction(payload);
+    assert.equal(result.products[0].stock, item.expected, item.type + ' stock final');
+    assert.equal(result.movements[0].cantidad, item.delta, item.type + ' signo del movimiento');
+    assert.equal(result.movements[0].terminalId, 'CAJA-POS-01', item.type + ' terminal');
+    assert.equal(result.movements[0].stockAntes, 10, item.type + ' stock inicial');
+    assert.equal(result.movements[0].stockDespues, item.expected, item.type + ' stock posterior');
+
+    if (item.delta < 0) {
+      assert.equal(result.movements[0].costoUnitarioUSD, 4, item.type + ' snapshot costo');
+      assert.equal(result.movements[0].tasaBCV, 100, item.type + ' snapshot tasa');
+    }
+
+    const persistedProduct = await posStore.getRecord('productos', productId, { id: 'admin-pos-adjustment', rol: 'administrador' });
+    assert.equal(persistedProduct.stock, item.expected);
+    const persistedMovement = await sqliteExecute({
+      sql: 'SELECT data_json FROM movimientos WHERE id=?',
+      args: [movementId],
+    });
+    assert.equal(persistedMovement.rows.length, 1);
+    const savedMovement = JSON.parse(String(persistedMovement.rows[0].data_json));
+    assert.equal(savedMovement.terminalId, 'CAJA-POS-01');
+    assert.equal(savedMovement.referencia, item.suffix + ' | PRUEBA POS');
+
+    // Reintentar la misma operación debe recuperar el resultado idempotente,
+    // nunca volver a aplicar la variación de existencias.
+    const retry = await posStore.applyInventoryMovementsTransaction(payload);
+    assert.equal(retry.recovered, true, item.type + ' idempotencia');
+    const afterRetry = await posStore.getRecord('productos', productId, { id: 'admin-pos-adjustment', rol: 'administrador' });
+    assert.equal(afterRetry.stock, item.expected, item.type + ' no duplica el ajuste');
+    const movementCount = await sqliteExecute({
+      sql: 'SELECT COUNT(*) AS total FROM movimientos WHERE id=?',
+      args: [movementId],
+    });
+    assert.equal(Number(movementCount.rows[0].total), 1, item.type + ' no duplica el Kardex');
+  }
+});
