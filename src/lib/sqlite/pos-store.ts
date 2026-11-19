@@ -2157,7 +2157,7 @@ export async function applyDebtPaymentTransaction(params: {
     && Number(amountBS) > 0
     && Number(payment?.tasaAplicada) > 0
     && (paymentParts.some((part:any) => metodoPagoBs(part?.metodo || part?.method))
-      || metodoPagoBs(payment?.metodo));
+      || metodoPagoBs(payment?.metodo) || String(payment?.metodo || '').toLowerCase() === 'mixto');
   const esPagoBs = esPagoBsCxp || esPagoBsCxc;
   if (esPagoBs ? !(Number(amountBS) > 0) : !(Number(amountUSD) > 0)) return null;
   return sqliteInteractiveTransaction(async tx => {
@@ -2339,7 +2339,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     && Number(amountBS)>0 && tasaInicial>0;
   const esPagoBsCxcInicial=collection==='cxc'
     && Number(amountBS)>0 && tasaInicial>0
-    && (partesPago.some((part:any)=>metodoBs(part?.metodo||part?.method))||metodoBs(payment?.metodo));
+    && (partesPago.some((part:any)=>metodoBs(part?.metodo||part?.method))||metodoBs(payment?.metodo)||String(payment?.metodo||'').toLowerCase()==='mixto');
   if((esPagoBsCxpInicial||esPagoBsCxcInicial) ? !(Number(amountBS)>0) : !(Number(amountUSD)>0))
     return {appliedUSD:0,appliedBS:0,debts:[]};
   // Los pagos globales a proveedores se originan en Administración → CxP
