@@ -1107,6 +1107,28 @@ test('la restauración recupera catálogos personalizados y rechaza IDs duplicad
   const preserved = await posStore.getRecord('productos', 'BACKUP-RESTORE-PRESERVE', user);
   assert.equal(preserved.stock, 9, 'un respaldo inválido no debe borrar ni alterar SQLite');
 
+  const duplicateUsersBackup = {
+    app: 'posven-pro', version: 3,
+    data: {
+      ...baseData,
+      productos: [{ id: 'RESTORE-ROLLBACK-PRODUCT', nombre: 'No debe quedar', stock: 1 }],
+      users: [
+        { id: 'restore-user-one', username: 'duplicate-import-user', nombre: 'Uno', rol: 'cajero' },
+        { id: 'restore-user-two', username: 'duplicate-import-user', nombre: 'Dos', rol: 'cajero' },
+      ],
+    },
+    meta: {
+      source: 'sqlite-local', complete: true,
+      sqliteTables: { productos: 1, users: 2 },
+      catalogs: catalogCounts,
+    },
+  };
+  await assert.rejects(
+    posStore.restoreBackupTransaction({ user, backup: duplicateUsersBackup }),
+  );
+  const afterRollback = await posStore.getRecord('productos', 'BACKUP-RESTORE-PRESERVE', user);
+  assert.equal(afterRollback.stock, 9, 'un fallo SQL dentro de la restauración debe revertir el borrado y las inserciones');
+
   const validBackup = {
     app: 'posven-pro', version: 3,
     data: {
