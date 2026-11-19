@@ -298,3 +298,17 @@ La revisión transaccional detectó riesgos que no podían resolverse solo en la
 **Regresiones añadidas:** devolución posterior a anulación rechazada sin alterar stock; venta a crédito parcialmente abonada con reintegro en efectivo superior al pago real rechazada con rollback; devolución válida distribuida entre dinero real y nota de crédito, verificando que solo el dinero real llega al libro diario; segundo reembolso en efectivo bloqueado después de agotar el pago original.
 
 La auditoría continúa con la compatibilidad de anulaciones posteriores a devoluciones parciales y la experiencia de captura de importes en la interfaz. No se publica Release ni se usa Vercel.
+
+### CxC y CxP: precisión monetaria decimal y pagos en bolívares
+
+Se trasladó y adaptó a SQLite local la lógica de precisión monetaria de POSVEN2, conservando el tratamiento ya incorporado en Pro3 para CxP y extendiéndolo a CxC:
+- Los pagos de CxP en Bs. mantienen el monto recibido con dos decimales y su equivalente en USD con hasta seis decimales.
+- Los cobros de CxC individuales y globales en Bs. ahora también conservan equivalentes USD de seis decimales. Un cobro de Bs. 0,01 no se pierde aunque represente menos de USD 0,01.
+- Los pagos mixtos conservan el desglose de cada medio de pago, su equivalente monetario y la tasa aplicada; el monto Bs. del abono es la suma real de las partes, no una reconstrucción desde el total USD.
+- Las transacciones SQLite comparan el saldo contra su equivalente en Bs., aplican el importe exacto hasta el saldo disponible y solo marcan la deuda como pagada cuando realmente se cubre.
+- Los residuos inferiores a un centavo USD siguen activos, entran en los totales y se muestran con su equivalente en Bs. para que no desaparezcan de las carteras.
+- Los pagos globales distribuyen correctamente abonos inferiores a un centavo USD entre las deudas, sin descartarlos por redondeo a centavos USD.
+
+Se añadieron pruebas transaccionales SQLite para CxC individual, CxC global y CxP individual con tasa 400 Bs/USD: Bs. 0,01 equivale a USD 0,000025; el saldo parcial y el cierre de la deuda se verifican con precisión de seis decimales. También se mantienen las pruebas existentes de CxP global.
+
+La persistencia continúa siendo exclusivamente SQLite local. No se incorporan Turso, Firebase, Firestore ni Vercel.
