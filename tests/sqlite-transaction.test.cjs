@@ -996,3 +996,33 @@ test('reversar un abono CxC restaura también el saldo resumen del cliente y es 
   const savedCustomer = await posStore.getRecord('clientes', 'CLIENT-REVERSE-CXC', { id: 'admin-cxc-test', rol: 'administrador' });
   assert.equal(savedCustomer.debt, 100);
 });
+
+
+test('reversar un abono CxP no modifica saldos de clientes', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T13:30:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CLIENT-UNCHANGED-CXP', JSON.stringify({ id: 'CLIENT-UNCHANGED-CXP', name: 'Cliente ajeno', cedula: 'V-800', debt: 17 }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxp(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXP-REVERSE-CXP', JSON.stringify({
+      id: 'CXP-REVERSE-CXP', proveedor: 'Proveedor Prueba',
+      montoUSD: 80, abonadoUSD: 30, saldoUSD: 50, estado: 'parcial',
+      historialPagos: [{ id: 'PAYMENT-REVERSE-CXP', montoUSD: 30, montoBS: 0 }],
+    }), at],
+    wantRows: false,
+  });
+  const result = await posStore.reverseDebtPaymentTransaction({
+    operationId: 'REVERSE-CXP-ATOMIC-001',
+    collection: 'cxp',
+    debtId: 'CXP-REVERSE-CXP',
+    paymentId: 'PAYMENT-REVERSE-CXP',
+  });
+  assert.equal(result.saldoUSD, 80);
+  assert.equal(result.customer, null);
+  const customer = await posStore.getRecord('clientes', 'CLIENT-UNCHANGED-CXP', { id: 'admin-cxp-test', rol: 'administrador' });
+  assert.equal(customer.debt, 17);
+});
