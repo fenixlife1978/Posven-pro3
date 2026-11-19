@@ -147,3 +147,5 @@ La autenticación y el perímetro se han revisado a nivel de código. La matriz 
 
 
 **Ajuste adicional de login:** la API local ahora exige explícitamente el perfil administrador/cajero, igual que la referencia, y solo limpia el contador de intentos después de validar contraseña y perfil. Esto evita aceptar solicitudes incompletas desde clientes no UI y evita borrar intentos ante un perfil incorrecto.
+
+La prueba de regresión también ejecuta dos degradaciones de administradores en paralelo: solo una puede completarse y siempre queda al menos un administrador activo, gracias a BEGIN IMMEDIATE y la validación dentro de la misma transacción.
