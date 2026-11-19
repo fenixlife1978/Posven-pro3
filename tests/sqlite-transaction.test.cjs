@@ -1815,7 +1815,12 @@ test('un conteo físico vigente aplica el stock contado y no persiste el campo t
   assert.equal(result.products[0].stock, 4);
   assert.equal(result.movements[0].stockAntes, 5);
   assert.equal(result.movements[0].stockDespues, 4);
-  assert.equal(Object.hasOwn(result.movements[0], 'stockEsperadoAntes'), false);
+  const persistedMovement = await sqliteExecute({
+    sql: 'SELECT data_json FROM movimientos WHERE id=?',
+    args: ['INV-CURRENT-PHYSICAL-COUNT-MOV'],
+  });
+  const savedMovement = JSON.parse(String(persistedMovement.rows[0].data_json));
+  assert.equal(Object.hasOwn(savedMovement, 'stockEsperadoAntes'), false);
 });
 
 
