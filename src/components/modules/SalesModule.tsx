@@ -293,6 +293,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   // Borrador de carrito duradero por caja: sobrevive recargas, cierres inesperados
   // y cortes eléctricos. Cada terminal conserva su propio borrador.
+  const processingRef = useRef(false);
   const cartDraftTerminalRef = useRef<string | null>(null);
   useEffect(() => {
     const terminalId = String(currentTerminal?.id || '').trim();
