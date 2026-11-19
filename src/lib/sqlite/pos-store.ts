@@ -1614,7 +1614,7 @@ export async function applyInventoryMovementsTransaction(params: {
             throw new Error('No se puede registrar la salida de ' + (product?.nombre || pid) + ': no hay una tasa BCV válida para guardar el histórico.');
           }
           historicalSnapshot = {
-            ...movement,
+            ...movementSnapshot,
             costoUnitarioUSD: costUSD,
             costoUnitarioBs: Math.round(costUSD * rate * 1000000) / 1000000,
             tasaBCV: rate,
