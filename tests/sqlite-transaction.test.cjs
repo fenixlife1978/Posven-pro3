@@ -1150,3 +1150,78 @@ test('la restauración recupera catálogos personalizados y rechaza IDs duplicad
   const product = await posStore.getRecord('productos', 'RESTORED-PRODUCT', user);
   assert.equal(product.stock, 4);
 });
+
+
+test('un cobro global CxC actualiza el saldo del cliente cuando la deuda histórica solo tiene nombre', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T14:10:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CLIENT-GLOBAL-CXC-NAME', JSON.stringify({
+      id: 'CLIENT-GLOBAL-CXC-NAME', name: 'Cliente Cobro por Nombre',
+      cedula: 'V-910', debt: 80,
+    }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-GLOBAL-NAME-ONLY', JSON.stringify({
+      id: 'CXC-GLOBAL-NAME-ONLY', cliente: 'Cliente Cobro por Nombre',
+      montoUSD: 80, abonadoUSD: 0, saldoUSD: 80, estado: 'pendiente',
+      fecha: at, historialPagos: [],
+    }), at],
+    wantRows: false,
+  });
+
+  const result = await posStore.applyGlobalCustomerPaymentTransaction({
+    operationId: 'GLOBAL-CXC-NAME-ONLY-001',
+    customerName: 'Cliente Cobro por Nombre',
+    amountUSD: 20,
+    amountBS: 7400,
+    payment: { id: 'PAY-GLOBAL-CXC-NAME-ONLY', fecha: at, metodo: 'efectivo_usd', tasaAplicada: 370 },
+  });
+  assert.equal(result.appliedUSD, 20);
+  const customer = await posStore.getRecord('clientes', 'CLIENT-GLOBAL-CXC-NAME', { id: 'admin-global-cxc-test', rol: 'administrador' });
+  assert.equal(customer.debt, 60);
+  const debt = await posStore.getRecord('cxc', 'CXC-GLOBAL-NAME-ONLY', { id: 'admin-global-cxc-test', rol: 'administrador' });
+  assert.equal(debt.saldoUSD, 60);
+});
+
+
+test('un cobro global CxC con clientes homónimos se revierte sin modificar saldos', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T14:20:00.000Z';
+  for (const id of ['CLIENT-GLOBAL-DUP-1', 'CLIENT-GLOBAL-DUP-2']) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+      args: [id, JSON.stringify({ id, name: 'Cliente Homónimo', debt: 50 }), at],
+      wantRows: false,
+    });
+  }
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-GLOBAL-DUP-NAME', JSON.stringify({
+      id: 'CXC-GLOBAL-DUP-NAME', cliente: 'Cliente Homónimo',
+      montoUSD: 50, abonadoUSD: 0, saldoUSD: 50, estado: 'pendiente',
+      fecha: at, historialPagos: [],
+    }), at],
+    wantRows: false,
+  });
+
+  await assert.rejects(
+    posStore.applyGlobalCustomerPaymentTransaction({
+      operationId: 'GLOBAL-CXC-DUP-NAME-001',
+      customerName: 'Cliente Homónimo',
+      amountUSD: 10,
+      amountBS: 3700,
+      payment: { id: 'PAY-GLOBAL-CXC-DUP-NAME', fecha: at, metodo: 'efectivo_usd', tasaAplicada: 370 },
+    }),
+    /más de un cliente/,
+  );
+  const debt = await posStore.getRecord('cxc', 'CXC-GLOBAL-DUP-NAME', { id: 'admin-global-cxc-test', rol: 'administrador' });
+  assert.equal(debt.saldoUSD, 50);
+  for (const id of ['CLIENT-GLOBAL-DUP-1', 'CLIENT-GLOBAL-DUP-2']) {
+    const customer = await posStore.getRecord('clientes', id, { id: 'admin-global-cxc-test', rol: 'administrador' });
+    assert.equal(customer.debt, 50);
+  }
+});
