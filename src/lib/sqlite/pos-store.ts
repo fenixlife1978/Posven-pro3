@@ -1089,6 +1089,9 @@ export async function syncRecords(params: {
   const records = Array.isArray(params.records) ? params.records : [];
   const deletedIds = Array.isArray(params.deletedIds) ? params.deletedIds.map(String) : [];
   if (records.length + deletedIds.length > 450) throw new Error('El lote supera el límite seguro de 450 registros.');
+  if (table === 'clientes' && deletedIds.length) {
+    throw new Error('Los clientes deben eliminarse mediante la operación transaccional de eliminación de cliente y su historial CxC.');
+  }
 
   return sqliteInteractiveTransaction(async tx => {
     for (const id of deletedIds) {
