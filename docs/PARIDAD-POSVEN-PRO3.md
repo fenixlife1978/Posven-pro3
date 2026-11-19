@@ -16,7 +16,7 @@ POSVEN-Pro sirve como referencia para descubrir reglas de negocio y mejoras. POS
 | Pagos CxP | Se detectó validación y redondeo que podía perder pagos pequeños en Bs al convertirlos a USD. | PR #40 conserva monto Bs, tasa y equivalente USD con precisión subcentavo y valida mínimo Bs 0,01. |
 | Corte X/Z | Había diferencias en ventana de sesión, desglose por método y conciliación entre esperado y contado. | PR #40 adapta reportes inclusivos, arqueo X temporal, arqueo Z confirmado en SQLite, métodos mixtos y estado de conciliación. |
 | Devoluciones / anulaciones | Pro3 ya tiene distribución de reintegros por método y tratamiento de ventas a crédito. | Conservar esa implementación; el arqueo solo descuenta efectivo cuando existe asiento real de reintegro. |
-| CxC | Pro3 ya incluye búsqueda por cliente y modal de detalle de crédito, no presentes de igual forma en Pro. | Conservar las mejoras de Pro3; deduplicar cobros históricos del libro diario por referencia. |
+| CxC | Pro3 ya incluye búsqueda por cliente y el componente `CreditDetailModal`, que muestra la venta original y la cronología de abonos; la pantalla CxC lo invoca desde el historial del cliente. | **Equivalente mediante otra implementación** respecto al detalle de deuda de Pro. Conservar la búsqueda adicional de Pro3 y deduplicar cobros históricos del libro diario por referencia. |
 | Compras | Pro3 incluye deduplicación entre compras canónicas e históricas, selector de proveedores completo y filtros de rango. | Conservar; no reemplazar por la versión menos robusta de Pro. |
 | Inventario | Pro3 conserva inventario local, conteo, Kardex, etiquetas y reporte de salidas periódicas. Faltaba normalización de etiquetas y recuperar filtros desde productos reales. | PR #40 normaliza acentos, mayúsculas, espacios y caracteres invisibles; agrega categorías/departamentos usados por productos reales sin sembrar datos demo. |
 | Reportes e impresión | Pro3 ya tiene vista Z de 80 mm y mejoras de consolidado. | Conservar; PR #40 corrige ventana de datos y separación esperado/contado. |
@@ -44,6 +44,7 @@ Se compararon los árboles completos de archivos de ambas ramas: POSVEN-Pro `mai
 - `src/components/modules/CreditDetailModal.tsx`: detalle de crédito.
 - `src/components/inventory/PriceLabelsModal.tsx`: etiquetas de precios.
 - `src/components/modules/PeriodicInventoryExitsReport.tsx`: reporte de salidas periódicas.
+- `src/components/modules/CxCModule.tsx` + `CreditDetailModal`: búsqueda de cartera y consulta del documento original/cronología de abonos; no se considera una omisión aunque el modal esté separado en otro archivo.
 - `src/lib/sqlite/*`, servidor LAN y pruebas de transacciones/instalador: infraestructura propia que no debe reemplazarse por la del repositorio de referencia.
 
 ### Diferencias de comportamiento observadas en POS / inventario
@@ -72,7 +73,7 @@ Se compararon los árboles completos de archivos de ambas ramas: POSVEN-Pro `mai
 
 ## Pendiente de auditoría profunda
 
-Esta matriz es una primera comparación de los módulos y archivos comunes, no una declaración de paridad total. Antes de cerrar la tarea global se deben completar verificaciones funcionales y de regresión, módulo por módulo, sobre:
+Esta matriz es una comparación estructural y funcional inicial de los módulos revisados, no una declaración de paridad total. Antes de cerrar la tarea global se deben completar verificaciones funcionales y de regresión, módulo por módulo, sobre:
 
 - Flujo completo de venta, pagos mixtos, ventas a crédito, abonos y reimpresión.
 - Compras, recepción, costo, CxP y reversos.
