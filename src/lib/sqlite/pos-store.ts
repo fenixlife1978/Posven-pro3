@@ -2470,7 +2470,9 @@ export async function createCustomerDebtTransaction(params:any){
     } else if(params.customer?.id) {
       customer = {
         ...params.customer,
-        debt: Number(params.customer.debt) || Number(debt.montoUSD) || 0,
+        // El saldo inicial del cliente se deriva de esta deuda registrada;
+        // nunca se acepta el resumen financiero que envíe el navegador.
+        debt: Math.max(0, Number(debt.montoUSD) || 0),
       };
       statements.push(rowStatement('clientes',customer));
     }
@@ -3181,6 +3183,7 @@ export async function createCashMovementTransaction(params: {
 export async function reverseDebtPaymentTransaction(params:any){
   assertSQLiteReady();
   const {operationId,collection,debtId,paymentId,journalId}=params;
+  if (!['cxc','cxp'].includes(String(collection))) throw new Error('Tipo de cartera no válido.');
   return sqliteInteractiveTransaction(async tx=>{
     const opId=String(operationId||collection+'|'+debtId+'|'+paymentId+'|REVERSE');
     const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['REVERSAR-PAGO',opId]});
@@ -3190,30 +3193,53 @@ export async function reverseDebtPaymentTransaction(params:any){
       if(!debt)throw new Error('El abono fue reversado, pero la deuda ya no existe para recuperar el resultado.');
       if(!saved.reversedPayment)throw new Error('El abono ya fue reversado. Consulte el historial de auditoría; el registro anterior no conserva una copia del comprobante.');
       const journal=journalId?rowFromDb((await tx.execute(txSelect('libroDiario',String(journalId)))).rows[0]):null;
-      return {...debt,reversedPayment:saved.reversedPayment,journal,recovered:true};
+      const customer=saved.customerId?rowFromDb((await tx.execute(txSelect('clientes',String(saved.customerId)))).rows[0]):null;
+      return {...debt,reversedPayment:saved.reversedPayment,customer,journal,recovered:true};
     }
-    const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]); if(!debt) throw new Error('La deuda ya no existe.');
-    const historial=Array.isArray(debt.historialPagos)?debt.historialPagos:[]; const idx=historial.findIndex((p:any)=>String(p?.id||'')===String(paymentId));
+    const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
+    if(!debt) throw new Error('La deuda ya no existe.');
+    const historial=Array.isArray(debt.historialPagos)?debt.historialPagos:[];
+    const idx=historial.findIndex((p:any)=>String(p?.id||'')===String(paymentId));
     if(idx<0) throw new Error('El abono ya fue eliminado o no existe en la deuda.');
     const pago=historial[idx], restantes=historial.filter((_:any,i:number)=>i!==idx);
     const abonado=Math.max(0,Math.round((restantes.reduce((s:number,p:any)=>s+(Number(p?.montoUSD)||0),0)+Number.EPSILON)*100)/100);
     const saldo=Math.max(0,Math.round(((Number(debt.montoUSD)||0)-abonado+Number.EPSILON)*100)/100);
     const updated={...debt,abonadoUSD:abonado,saldoUSD:saldo,estado:saldo<=.001?'pagada':abonado>0?'parcial':'pendiente',historialPagos:restantes};
     const statements:SQLiteStatement[]=[rowStatement(collection,updated)];
+    let updatedCustomer:any=null;
+    if(collection==='cxc'){
+      const rawClient=String(debt.cliente||'');
+      const cedula=rawClient.match(/\\[([^\\]]+)\\]\\s*$/)?.[1]||'';
+      const name=rawClient.replace(/\\s*\\[[^\\]]+\\]\\s*$/,'').trim();
+      let customerResult:any=null;
+      if(cedula){
+        customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[cedula]});
+      }
+      if(!customerResult?.rows?.length&&name){
+        customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$.name'),json_extract(data_json,'$.nombre'),'')))=LOWER(TRIM(?)) LIMIT 1",args:[name]});
+      }
+      const customer=rowFromDb(customerResult?.rows?.[0]);
+      if(customer){
+        updatedCustomer={...customer,debt:Math.max(0,(Number(customer.debt)||0)+(Number(pago?.montoUSD)||0))};
+        statements.push(rowStatement('clientes',updatedCustomer));
+      }
+    }
     if(journalId){
-      const jr=await tx.execute(txSelect('libroDiario',journalId)); const journal=rowFromDb(jr.rows[0]);
+      const jr=await tx.execute(txSelect('libroDiario',journalId));
+      const journal=rowFromDb(jr.rows[0]);
       if(journal){
         const monto=Math.max(0,Math.round(((Number(journal.montoUSD)||0)-(Number(pago?.montoUSD)||0)+Number.EPSILON)*100)/100);
         const montoBS=Math.max(0,Math.round(((Number(journal.montoBS)||0)-(Number(pago?.montoBS)||0)+Number.EPSILON)*100)/100);
         if(monto<=.001) await tx.execute({sql:'DELETE FROM libro_diario WHERE id=?',args:[journalId],wantRows:false});
-        else statements.push(rowStatement('libroDiario',{...journal,montoUSD:monto,montoBS:montoBS,concepto:String(journal.concepto||'').replace(/ \(abono revertido\)$/i,'')+' (abono revertido)'}));
+        else statements.push(rowStatement('libroDiario',{...journal,montoUSD:monto,montoBS:montoBS,concepto:String(journal.concepto||'').replace(/ \\(abono revertido\\)$/i,'')+' (abono revertido)'}));
       }
     }
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['REVERSAR-PAGO-'+opId,'REVERSAR-PAGO',opId,JSON.stringify({tipo:'REVERSAR-PAGO',operationId:opId,referencia:paymentId,collection,debtId,reversedPayment:pago,journalId:journalId||null})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['REVERSAR-PAGO-'+opId,'REVERSAR-PAGO',opId,JSON.stringify({tipo:'REVERSAR-PAGO',operationId:opId,referencia:paymentId,collection,debtId,reversedPayment:pago,journalId:journalId||null,customerId:updatedCustomer?.id||null})],wantRows:false});
     for(const s of statements) await tx.execute(s);
-    return {...updated,reversedPayment:pago};
+    return {...updated,reversedPayment:pago,customer:updatedCustomer};
   });
 }
+
 export async function deleteCustomerAndDebtsTransaction(params:any){
   assertSQLiteReady();
   return sqliteInteractiveTransaction(async tx=>{
