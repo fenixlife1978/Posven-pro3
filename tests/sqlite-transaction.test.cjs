@@ -768,3 +768,52 @@ test('importación exclusiva de catálogos fusiona sin tocar productos ni invent
   });
   assert.equal(JSON.parse(product.rows[0].data_json).stock, 17);
 });
+
+
+test('la administración de usuarios es atómica y protege al último administrador activo', async () => {
+  await schema.ensureSqliteSchema();
+  const seedResult = await sqliteExecute({
+    sql: "SELECT id FROM users WHERE is_seed_admin=1 AND rol='administrador' LIMIT 1",
+  });
+  assert.ok(seedResult.rows[0], 'la prueba previa debe haber creado el administrador semilla');
+  const seedId = String(seedResult.rows[0].id);
+  const regular = await auth.createUser({
+    username: 'admin-atomic-regression',
+    email: 'admin-atomic-regression@example.test',
+    nombre: 'Administrador Atómico',
+    password: 'ClaveSegura123',
+    rol: 'administrador',
+  });
+
+  // Con otro administrador activo, bloquear el seed admin es válido.
+  await auth.setUserBlocked(seedId, true);
+  await assert.rejects(
+    auth.updateUser({ id: regular.id, rol: 'cajero' }),
+    /último administrador activo/,
+  );
+  await assert.rejects(
+    auth.deleteUser(regular.id),
+    /último administrador activo/,
+  );
+
+  // Una edición inválida no puede dejar aplicado el bloqueo enviado junto a ella.
+  await assert.rejects(
+    auth.updateUser({ id: regular.id, nombre: '   ', accesoBloqueado: true }),
+    /Datos de usuario inválidos/,
+  );
+  const unchanged = await auth.findUser(regular.username);
+  assert.equal(unchanged.rol, 'administrador');
+  assert.equal(unchanged.accesoBloqueado, false);
+
+  // Restaurar el seed admin y comprobar que la operación combinada sí se aplica.
+  await auth.setUserBlocked(seedId, false);
+  await auth.updateUser({
+    id: regular.id,
+    nombre: 'Administrador Actualizado',
+    accesoBloqueado: true,
+  });
+  const updated = await auth.findUser(regular.username);
+  assert.equal(updated.nombre, 'Administrador Actualizado');
+  assert.equal(updated.accesoBloqueado, true);
+  await auth.deleteUser(regular.id);
+});
