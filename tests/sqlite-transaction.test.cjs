@@ -1225,3 +1225,149 @@ test('un cobro global CxC con clientes homónimos se revierte sin modificar sald
     assert.equal(customer.debt, 50);
   }
 });
+
+
+test('registrar compra devuelve productos actualizados y calcula costo ponderado de líneas repetidas', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T14:40:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['PURCHASE-WEIGHTED-PRODUCT', JSON.stringify({
+      id: 'PURCHASE-WEIGHTED-PRODUCT', nombre: 'Producto Compra Ponderada',
+      stock: 5, costoUSD: 8,
+    }), at],
+    wantRows: false,
+  });
+  const purchase = {
+    id: 'PURCHASE-WEIGHTED-001', fecha: '2026-11-19', fechaHora: at,
+    proveedor: 'Proveedor Ponderado', numeroFactura: 'FAC-POND-001',
+    montoUSD: 35, pagadoUSD: 35, saldoUSD: 0, items: [],
+  };
+  const params = {
+    operationId: 'PURCHASE-WEIGHTED-OP-001',
+    purchase,
+    items: [
+      { productoId: 'PURCHASE-WEIGHTED-PRODUCT', nombre: 'Producto Compra Ponderada', cantidad: 2, costoUnitarioUSD: 10, subtotalUSD: 20 },
+      { productoId: 'PURCHASE-WEIGHTED-PRODUCT', nombre: 'Producto Compra Ponderada', cantidad: 1, costoUnitarioUSD: 15, subtotalUSD: 15 },
+    ],
+    purchaseDate: '2026-11-19',
+    purchaseDateTime: at,
+    supplier: 'Proveedor Ponderado',
+    invoiceNumber: 'FAC-POND-001',
+    exchangeRate: 370,
+  };
+  const result = await posStore.createPurchaseTransaction(params);
+  assert.equal(result.products.length, 1);
+  assert.equal(result.products[0].stock, 8);
+  assert.equal(result.products[0].costoUSD, 9.375);
+  const savedProduct = await posStore.getRecord('productos', 'PURCHASE-WEIGHTED-PRODUCT', { id: 'admin-purchase-test', rol: 'administrador' });
+  assert.equal(savedProduct.stock, 8);
+  const movementRows = await sqliteExecute({
+    sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia')=?",
+    args: ['COMPRA FACT: FAC-POND-001 - PROV: Proveedor Ponderado'],
+  });
+  assert.equal(movementRows.rows.length, 1);
+  const movement = JSON.parse(movementRows.rows[0].data_json);
+  assert.equal(movement.cantidad, 3);
+  assert.equal(movement.costoUnitarioUSD, 35 / 3);
+
+  const retry = await posStore.createPurchaseTransaction(params);
+  assert.equal(retry.recovered, true);
+  assert.equal(retry.products.length, 1);
+  assert.equal(retry.products[0].stock, 8);
+});
+
+
+test('una compra con cantidad negativa se rechaza antes de alterar inventario o historial', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T14:50:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['PURCHASE-INVALID-QUANTITY', JSON.stringify({
+      id: 'PURCHASE-INVALID-QUANTITY', nombre: 'Producto Cantidad Inválida',
+      stock: 3, costoUSD: 4,
+    }), at],
+    wantRows: false,
+  });
+  await assert.rejects(
+    posStore.createPurchaseTransaction({
+      operationId: 'PURCHASE-INVALID-OP-001',
+      purchase: { id: 'PURCHASE-INVALID-001', fecha: '2026-11-19', proveedor: 'Proveedor', numeroFactura: 'FAC-INVALID-001' },
+      items: [{ productoId: 'PURCHASE-INVALID-QUANTITY', cantidad: -2, costoUnitarioUSD: 4, subtotalUSD: -8 }],
+      purchaseDate: '2026-11-19', purchaseDateTime: at,
+      supplier: 'Proveedor', invoiceNumber: 'FAC-INVALID-001', exchangeRate: 370,
+    }),
+    /cantidad.*mayor que cero/,
+  );
+  const product = await posStore.getRecord('productos', 'PURCHASE-INVALID-QUANTITY', { id: 'admin-purchase-test', rol: 'administrador' });
+  assert.equal(product.stock, 3);
+  const purchases = await sqliteExecute({
+    sql: "SELECT COUNT(*) AS total FROM compras WHERE id='PURCHASE-INVALID-001'",
+  });
+  assert.equal(Number(purchases.rows[0].total), 0);
+});
+
+
+test('un pago individual CxC actualiza el cliente por nombre y rechaza homónimos con rollback', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T15:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CLIENT-INDIVIDUAL-CXC-NAME', JSON.stringify({
+      id: 'CLIENT-INDIVIDUAL-CXC-NAME', name: 'Cliente Pago Individual', debt: 30,
+    }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-INDIVIDUAL-CXC-NAME', JSON.stringify({
+      id: 'CXC-INDIVIDUAL-CXC-NAME', cliente: 'Cliente Pago Individual',
+      montoUSD: 30, abonadoUSD: 0, saldoUSD: 30, estado: 'pendiente',
+      historialPagos: [],
+    }), at],
+    wantRows: false,
+  });
+  const paid = await posStore.applyDebtPaymentTransaction({
+    operationId: 'INDIVIDUAL-CXC-NAME-001',
+    collection: 'cxc', debtId: 'CXC-INDIVIDUAL-CXC-NAME',
+    amountUSD: 10, amountBS: 3700,
+    payment: { id: 'PAY-INDIVIDUAL-CXC-NAME', fecha: at, metodo: 'efectivo_usd', tasaAplicada: 370 },
+    user: { id: 'admin-individual-cxc', rol: 'administrador' },
+  });
+  assert.equal(paid.saldoUSD, 20);
+  const customer = await posStore.getRecord('clientes', 'CLIENT-INDIVIDUAL-CXC-NAME', { id: 'admin-individual-cxc', rol: 'administrador' });
+  assert.equal(customer.debt, 20);
+
+  for (const id of ['CLIENT-INDIVIDUAL-DUP-1', 'CLIENT-INDIVIDUAL-DUP-2']) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+      args: [id, JSON.stringify({ id, name: 'Cliente Individual Homónimo', debt: 25 }), at],
+      wantRows: false,
+    });
+  }
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-INDIVIDUAL-DUP-NAME', JSON.stringify({
+      id: 'CXC-INDIVIDUAL-DUP-NAME', cliente: 'Cliente Individual Homónimo',
+      montoUSD: 25, abonadoUSD: 0, saldoUSD: 25, estado: 'pendiente',
+      historialPagos: [],
+    }), at],
+    wantRows: false,
+  });
+  await assert.rejects(
+    posStore.applyDebtPaymentTransaction({
+      operationId: 'INDIVIDUAL-CXC-DUP-001',
+      collection: 'cxc', debtId: 'CXC-INDIVIDUAL-DUP-NAME',
+      amountUSD: 5, amountBS: 1850,
+      payment: { id: 'PAY-INDIVIDUAL-CXC-DUP', fecha: at, metodo: 'efectivo_usd', tasaAplicada: 370 },
+      user: { id: 'admin-individual-cxc', rol: 'administrador' },
+    }),
+    /más de un cliente/,
+  );
+  const unchangedDebt = await posStore.getRecord('cxc', 'CXC-INDIVIDUAL-DUP-NAME', { id: 'admin-individual-cxc', rol: 'administrador' });
+  assert.equal(unchangedDebt.saldoUSD, 25);
+  for (const id of ['CLIENT-INDIVIDUAL-DUP-1', 'CLIENT-INDIVIDUAL-DUP-2']) {
+    const duplicate = await posStore.getRecord('clientes', id, { id: 'admin-individual-cxc', rol: 'administrador' });
+    assert.equal(duplicate.debt, 25);
+  }
+});
