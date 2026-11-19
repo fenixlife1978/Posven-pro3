@@ -277,3 +277,24 @@ La comparación directa del flujo `ejecutarAbono` de POSVEN-Pro con POSVEN-Pro3 
 **Regresión añadida:** pago CxC mixto con USD 10 de equivalente y Bs 3.000 efectivamente recibidos, aunque la conversión teórica del total USD sea Bs 8.740. La prueba exige que SQLite conserve exactamente Bs 3.000 en el abono y en el resultado aplicado.
 
 Esta corrección se considera pendiente de aprobación hasta que terminen las pruebas SQLite, TypeScript y el instalador Windows.
+
+
+## Auditoría de devoluciones y anulaciones: límite de reembolso y reversión única (19-11-2026)
+
+La revisión transaccional detectó riesgos que no podían resolverse solo en la interfaz:
+
+- El servidor permitía intentar una devolución después de anular totalmente la factura. La anulación ya había repuesto el inventario, por lo que una devolución posterior podía reponerlo por segunda vez.
+- El egreso contable sumaba también los importes de `nota_credito`, aunque no representan dinero entregado al cliente.
+- El límite de reintegro no descontaba los reembolsos anteriores de la misma venta. Una venta parcialmente pagada podía recibir devoluciones en efectivo por encima de los pagos reales.
+
+**Corrección en curso en Pro3 (SQLite):**
+
+- Una factura anulada queda bloqueada para nuevas devoluciones y anulaciones, con validación dentro de la transacción.
+- El servidor calcula el dinero originalmente recibido a partir de los métodos reales de pago y descuenta devoluciones/reintegros previos de devoluciones y anulaciones.
+- El efectivo/tarjeta/transferencia reintegrado no puede superar ni el valor de la mercancía que todavía puede revertirse ni el dinero neto efectivamente recibido.
+- `nota_credito`, `credito` y el marcador agregado `mixto` no se contabilizan como egresos de caja. La nota de crédito puede permanecer en el comprobante y la reducción de CxC sigue siendo independiente del reembolso físico.
+- Los importes inválidos o las operaciones que excedan los límites abortan la transacción completa, sin modificar inventario, CxC, caja ni asientos.
+
+**Regresiones añadidas:** devolución posterior a anulación rechazada sin alterar stock; venta a crédito parcialmente abonada con reintegro en efectivo superior al pago real rechazada con rollback; devolución válida distribuida entre dinero real y nota de crédito, verificando que solo el dinero real llega al libro diario; segundo reembolso en efectivo bloqueado después de agotar el pago original.
+
+La auditoría continúa con la compatibilidad de anulaciones posteriores a devoluciones parciales y la experiencia de captura de importes en la interfaz. No se publica Release ni se usa Vercel.

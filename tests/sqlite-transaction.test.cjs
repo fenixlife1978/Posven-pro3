@@ -326,6 +326,111 @@ test('devolver y anular un kit repone sus componentes, no el artículo padre', a
   });
   assert.equal(deltas.reduce((sum, delta) => sum + delta, 0), 0);
   assert.equal(deltas.length, 3);
+
+  await assert.rejects(
+    posStore.processReturnOrCancellationTransaction({
+      operationId: 'KIT-RETURN-AFTER-CANCEL',
+      operationType: 'DEVOLUCION',
+      saleId: saleResult.sale.id,
+      operationDoc: { id: 'DEV-AFTER-CANCEL', fecha: '2026-11-14T11:30:00.000Z', items: [returnedItem] },
+      movements: [],
+      refundItems: [returnedItem],
+      terminalId: 'KITBOX',
+      user,
+    }),
+    /ya fue anulada/i,
+  );
+  component = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-COMP'] });
+  assert.equal(JSON.parse(component.rows[0].data_json).stock, 10);
+});
+
+
+test('devoluciones limitan reintegros al dinero cobrado y excluyen notas de crédito de caja', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T18:00:00.000Z';
+  const terminal = {
+    id: 'REFUND-BOX', nombre: 'Caja Reembolsos', prefijoCaja: 'REFUND',
+    isCashOpen: true, cashData: { openDate: at, openedBy: 'Prueba' },
+    proximaDevolucion: 1, proximaAnulacion: 1, cashHistory: [],
+  };
+  const product = { id: 'REFUND-PRODUCT', nombre: 'Producto devolución', stock: 0, costoUSD: 2 };
+  const sale = {
+    id: 'REFUND-SALE', fecha: at, estado: 'completada', terminalId: terminal.id,
+    totalUSD: 20, metodoPago: 'mixto', type: 'VENTA',
+    items: [{ productoId: product.id, nombre: product.nombre, cantidad: 2, precioUnitUSD: 10, subtotalUSD: 20 }],
+    payments: [
+      { metodo: 'efectivo_usd', montoUSD: 6, montoBS: 0 },
+      { metodo: 'credito', montoUSD: 14, montoBS: 0 },
+    ],
+  };
+  const debt = { id: 'REFUND-DEBT', ventaId: sale.id, montoUSD: 14, saldoUSD: 14, abonadoUSD: 0, estado: 'parcial' };
+  for (const [table, row] of [['terminales', terminal], ['productos', product], ['ventas', sale], ['cxc', debt]]) {
+    await sqliteExecute({
+      sql: table === 'productos'
+        ? 'INSERT INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)'
+        : `INSERT INTO ${table}(id,data_json,fecha) VALUES(?,?,?)`,
+      args: table === 'productos' ? [row.id, JSON.stringify(row)] : [row.id, JSON.stringify(row), at],
+      wantRows: false,
+    });
+  }
+  const user = { id: 'refund-admin', rol: 'administrador', nombre: 'Prueba' };
+  const firstItem = { productoId: product.id, nombre: product.nombre, cantidad: 1, precioUnitUSD: 10, subtotalUSD: 10, estadoProducto: 'REINTEGRADO_STOCK' };
+
+  await assert.rejects(
+    posStore.processReturnOrCancellationTransaction({
+      operationId: 'REFUND-OVERPAID',
+      operationType: 'DEVOLUCION',
+      saleId: sale.id,
+      operationDoc: { id: 'DEV-OVERPAID', fecha: at, items: [firstItem], refundPayments: [
+        { metodo: 'efectivo_usd', montoUSD: 7, montoBS: 0 },
+        { metodo: 'nota_credito', montoUSD: 3, montoBS: 0 },
+      ] },
+      refundItems: [firstItem], movements: [], terminalId: terminal.id, user,
+    }),
+    /supera lo realmente cobrado/i,
+  );
+
+  const failedProduct = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: [product.id] });
+  assert.equal(JSON.parse(failedProduct.rows[0].data_json).stock, 0);
+  assert.equal(Number((await sqliteExecute({ sql: 'SELECT COUNT(*) AS n FROM devoluciones WHERE id=?', args: ['DEV-OVERPAID'] })).rows[0].n), 0);
+
+  const first = await posStore.processReturnOrCancellationTransaction({
+    operationId: 'REFUND-VALID',
+    operationType: 'DEVOLUCION',
+    saleId: sale.id,
+    operationDoc: { id: 'DEV-VALID', fecha: at, items: [firstItem], refundPayments: [
+      { metodo: 'efectivo_usd', montoUSD: 6, montoBS: 0 },
+      { metodo: 'nota_credito', montoUSD: 4, montoBS: 0 },
+    ] },
+    journal: { id: 'REFUND-JOURNAL', tipo: 'egreso', categoria: 'DEVOLUCION', montoUSD: 10, referencia: 'DEV-VALID' },
+    refundItems: [firstItem], movements: [], terminalId: terminal.id, user,
+  });
+  assert.equal(first.journal.montoUSD, 6);
+  assert.equal(first.debt.saldoUSD, 4);
+  assert.equal(first.operationDoc.refundPayments.length, 2);
+
+  const secondItem = { ...firstItem, cantidad: 1 };
+  await assert.rejects(
+    posStore.processReturnOrCancellationTransaction({
+      operationId: 'REFUND-SECOND-CASH',
+      operationType: 'DEVOLUCION',
+      saleId: sale.id,
+      operationDoc: { id: 'DEV-SECOND-CASH', fecha: '2026-11-19T18:30:00.000Z', items: [secondItem], refundPayments: [
+        { metodo: 'efectivo_usd', montoUSD: 1, montoBS: 0 },
+        { metodo: 'nota_credito', montoUSD: 9, montoBS: 0 },
+      ] },
+      refundItems: [secondItem], movements: [], terminalId: terminal.id, user,
+    }),
+    /descontando reintegros anteriores/i,
+  );
+  const finalProduct = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: [product.id] });
+  assert.equal(JSON.parse(finalProduct.rows[0].data_json).stock, 1);
+  assert.equal((await posStore.getRecord('cxc', debt.id, user)).saldoUSD, 4);
+  const journalRows = await sqliteExecute({ sql: 'SELECT data_json FROM libro_diario WHERE id=?', args: ['REFUND-JOURNAL'] });
+  assert.equal(JSON.parse(journalRows.rows[0].data_json).montoUSD, 6);
+  // Esta deuda es un fixture de la prueba; no debe contaminar la prueba
+  // posterior que verifica el alcance global de la cartera CxC.
+  await sqliteExecute({ sql: 'DELETE FROM cxc WHERE id=?', args: [debt.id], wantRows: false });
 });
 
 
