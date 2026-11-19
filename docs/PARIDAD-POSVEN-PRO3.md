@@ -144,3 +144,6 @@ Cada diferencia se clasificará como **presente en ambos**, **ausente en Pro3**,
 - Las comprobaciones se ejecutan contra SQLite real temporal y las transacciones reales del módulo de autenticación.
 
 La autenticación y el perímetro se han revisado a nivel de código. La matriz no marca todavía seguridad LAN completa como verificada en equipos físicos; se requiere ejecutar el instalador en Windows y probar conexiones reales de varios clientes.
+
+
+**Ajuste adicional de login:** la API local ahora exige explícitamente el perfil administrador/cajero, igual que la referencia, y solo limpia el contador de intentos después de validar contraseña y perfil. Esto evita aceptar solicitudes incompletas desde clientes no UI y evita borrar intentos ante un perfil incorrecto.
