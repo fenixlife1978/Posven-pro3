@@ -1231,7 +1231,7 @@ test('registrar compra devuelve productos actualizados y calcula costo ponderado
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T14:40:00.000Z';
   await sqliteExecute({
-    sql: 'INSERT OR REPLACE INTO productos(id,data_json,fecha) VALUES(?,?,?)',
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
     args: ['PURCHASE-WEIGHTED-PRODUCT', JSON.stringify({
       id: 'PURCHASE-WEIGHTED-PRODUCT', nombre: 'Producto Compra Ponderada',
       stock: 5, costoUSD: 8,
@@ -1282,7 +1282,7 @@ test('una compra con cantidad negativa se rechaza antes de alterar inventario o 
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T14:50:00.000Z';
   await sqliteExecute({
-    sql: 'INSERT OR REPLACE INTO productos(id,data_json,fecha) VALUES(?,?,?)',
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
     args: ['PURCHASE-INVALID-QUANTITY', JSON.stringify({
       id: 'PURCHASE-INVALID-QUANTITY', nombre: 'Producto Cantidad Inválida',
       stock: 3, costoUSD: 4,
