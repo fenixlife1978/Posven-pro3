@@ -316,3 +316,20 @@ También se detectó que `applyInventoryMovementsTransaction` sumaba salidas sin
 - Pruebas de regresión cubren salida superior a existencia, conteo obsoleto por venta concurrente, conteo vigente exitoso y movimientos con timestamp idéntico.
 
 Pendiente: terminar validación en Windows y revisar los movimientos derivados de kits y las compras/recepciones con múltiples líneas del mismo producto. No se publica Release ni se usa Vercel.
+
+### POS: botón «Ajustes» de caja (paridad funcional confirmada)
+
+El botón **Ajustes** del POS de referencia (`posven-pro/src/components/modules/SalesModule.tsx`) también está integrado en Pro3 (`Posven-pro3/src/components/modules/SalesModule.tsx`). Se conserva visible al entrar en la vista POS/caja y abre el formulario de ajuste de inventario.
+
+Funciones incluidas:
+- Buscar productos activos por nombre, código interno, código de barras, código alternativo y código de proveedor.
+- Seleccionar el tipo: consumo propio, colaboración, salida de inventario o entrada de inventario.
+- Capturar cantidad decimal y detalle obligatorio del motivo.
+- Exigir terminal/caja asignada y sesión de caja abierta.
+- Registrar el terminal, el tipo y el motivo en el movimiento del Kardex.
+- Guardar stock y movimiento dentro de una transacción SQLite; el stock final se calcula desde la existencia real en SQLite, no desde una caché local.
+- Impedir salidas superiores al stock disponible, exigir snapshot de costo y tasa para salidas y evitar dobles aplicaciones mediante identificador idempotente.
+
+La UI de Pro3 se reforzó para mantener el botón visible en barras estrechas, buscar también por códigos de barras/alternativos/de proveedor, informar cuando no hay coincidencias y evitar cerrar el formulario mientras se está guardando.
+
+Se añadieron pruebas SQLite para los cuatro tipos de ajuste, trazabilidad de caja, stock antes/después, snapshot de costo/tasa en salidas e idempotencia ante reintentos. Esta integración es nativa de SQLite local; no usa Turso, Firebase, Firestore ni Vercel.
