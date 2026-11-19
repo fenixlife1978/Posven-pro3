@@ -2275,20 +2275,25 @@ export async function applyDebtPaymentTransaction(params: {
       const cedulaDeuda = String(customerCedula || (clienteRaw.match(/\[([^\]]+)\]\s*$/)?.[1] || '')).trim();
       const nombreDeuda = clienteRaw.replace(/\s*\[[^\]]+\]\s*$/, '').trim();
 
-      let found;
+      let customerRows:any[]=[];
       if (cedulaDeuda) {
-        found = await tx.execute({
-          sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",
+        const byCedula = await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 2",
           args:[cedulaDeuda]
         });
+        customerRows=byCedula.rows.map(rowFromDb).filter(Boolean);
       }
-      if ((!found || !found.rows.length) && nombreDeuda) {
-        found = await tx.execute({
-          sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(json_extract(data_json,'$.name'))) = LOWER(TRIM(?)) LIMIT 1",
+      if (!customerRows.length && nombreDeuda) {
+        const byName = await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$.name'),json_extract(data_json,'$.nombre'),'')))=LOWER(TRIM(?)) ORDER BY id LIMIT 2",
           args:[nombreDeuda]
         });
+        customerRows=byName.rows.map(rowFromDb).filter(Boolean);
       }
-      const customer=rowFromDb(found?.rows?.[0]);
+      if (customerRows.length > 1) {
+        throw new Error('Hay más de un cliente con esa identificación o nombre. No se puede actualizar el saldo resumen de forma segura; revise la ficha del cliente.');
+      }
+      const customer=customerRows[0];
       if(customer) {
         statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-applied)}));
       }
@@ -3332,7 +3337,18 @@ export async function deleteCustomerAndDebtsTransaction(params:any){
 
 export async function createPurchaseTransaction(params:any){
   assertSQLiteReady(); const {operationId,purchase,items,purchaseDate,purchaseDateTime,supplier,invoiceNumber,exchangeRate,journal,debt}=params;
-  if(!items?.length) throw new Error('La compra no contiene productos.'); if(!invoiceNumber||!supplier) throw new Error('La compra no tiene factura/proveedor.'); if(!(Number(exchangeRate)>0)) throw new Error('La tasa de la compra no es válida.'); if(!purchase?.id) throw new Error('La compra no tiene id.');
+  if(!Array.isArray(items)||!items.length) throw new Error('La compra no contiene productos.');
+  if(!String(invoiceNumber||'').trim()||!String(supplier||'').trim()) throw new Error('La compra no tiene factura/proveedor.');
+  if(!(Number(exchangeRate)>0)||!Number.isFinite(Number(exchangeRate))) throw new Error('La tasa de la compra no es válida.');
+  if(!purchase?.id) throw new Error('La compra no tiene id.');
+  for(let index=0;index<items.length;index++){
+    const item=items[index], productId=String(item?.productoId||'').trim();
+    const quantity=Number(item?.cantidad), cost=Number(item?.costoUnitarioUSD), subtotal=Number(item?.subtotalUSD);
+    if(!productId) throw new Error('El producto de la línea '+(index+1)+' no tiene identificador.');
+    if(!Number.isFinite(quantity)||quantity<=0) throw new Error('La cantidad de la línea '+(index+1)+' debe ser mayor que cero.');
+    if(!Number.isFinite(cost)||cost<0) throw new Error('El costo unitario de la línea '+(index+1)+' no es válido.');
+    if(!Number.isFinite(subtotal)||subtotal<0) throw new Error('El subtotal de la línea '+(index+1)+' no es válido.');
+  }
   const opId=String(operationId||purchase.id||(invoiceNumber+'|'+supplier+'|'+purchaseDate));
   return sqliteInteractiveTransaction(async tx=>{
     const prior=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['COMPRA',opId]});
@@ -3353,11 +3369,19 @@ export async function createPurchaseTransaction(params:any){
     if(existing.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una compra con la misma factura, proveedor y fecha.');
     const debtRows=await tx.execute({sql:"SELECT id,data_json FROM cxp WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]});
     if(debtRows.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una cuenta por pagar para esta factura y proveedor.');
-    const ids: string[] = Array.from(new Set<string>(items.map((i:any)=>String(i.productoId||'')).filter((id:string)=>Boolean(id)))), itemBy=new Map<string,any>(); for(const i of items){const pid=String(i.productoId),p=itemBy.get(pid);itemBy.set(pid,p?{...p,cantidad:(Number(p.cantidad)||0)+(Number(i.cantidad)||0),subtotalUSD:(Number(p.subtotalUSD)||0)+(Number(i.subtotalUSD)||0)}:{...i});}
+    const ids: string[] = Array.from(new Set<string>(items.map((i:any)=>String(i.productoId).trim())));
+    const itemBy=new Map<string,any>();
+    for(const item of items){
+      const pid=String(item.productoId).trim(), current=itemBy.get(pid);
+      const quantity=Number(item.cantidad), cost=Number(item.costoUnitarioUSD);
+      itemBy.set(pid,current
+        ? {...current,cantidad:current.cantidad+quantity,subtotalUSD:current.subtotalUSD+Number(item.subtotalUSD),costoTotalUSD:current.costoTotalUSD+(quantity*cost)}
+        : {...item,productoId:pid,cantidad:quantity,subtotalUSD:Number(item.subtotalUSD),costoTotalUSD:quantity*cost});
+    }
     const statements:SQLiteStatement[]=[rowStatement('compras',purchase)];
     const updatedProducts:any[]=[];
-    for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en SQLite local.');const i=itemBy.get(pid),qty=Number(i.cantidad)||0,cost=Number(i.costoUnitarioUSD)||0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
-      const latestRow=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha DESC,id DESC LIMIT 1",args:[pid]})).rows[0]; const latest=latestRow?rowFromDb(latestRow):null; const mv={id:String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID())),productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')}; const latestFecha=String(latest?.fecha||''); const compraEsCronologicamenteUltima=!latestFecha||String(purchaseDateTime||'')>=latestFecha; if(compraEsCronologicamenteUltima){mv.stockAntes=oldStock;mv.stockDespues=newStock;statements.push(rowStatement('movimientos',mv));}else{const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb); const combined=[...rows.map((d:any)=>({id:d.id,data:d})),{id:mv.id,data:mv}].sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))); let running=rows.length?Number(rows[0].stockAntes)||0:0; for(const e of combined){const before=running;running=before+(Number(e.data.cantidad)||0);statements.push(rowStatement('movimientos',{...e.data,id:e.id,stockAntes:before,stockDespues:running}));}} statements.push(rowStatement('productos',{...p,id:pid,stock:newStock,costoUSD:newCost}));}
+    for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en SQLite local.');const i=itemBy.get(pid),qty=Number(i.cantidad),cost=qty>0?Number(i.costoTotalUSD)/qty:0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
+      const latestRow=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha DESC,id DESC LIMIT 1",args:[pid]})).rows[0]; const latest=latestRow?rowFromDb(latestRow):null; const movementId=String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID())); if((await tx.execute(txSelect('movimientos',movementId))).rows.length) throw new Error('El identificador del movimiento '+movementId+' ya existe en el Kardex.'); const mv={id:movementId,productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')}; const latestFecha=String(latest?.fecha||''); const compraEsCronologicamenteUltima=!latestFecha||String(purchaseDateTime||'')>=latestFecha; if(compraEsCronologicamenteUltima){mv.stockAntes=oldStock;mv.stockDespues=newStock;statements.push(rowStatement('movimientos',mv));}else{const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb); const combined=[...rows.map((d:any)=>({id:d.id,data:d})),{id:mv.id,data:mv}].sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))); let running=rows.length?Number(rows[0].stockAntes)||0:0; for(const e of combined){const before=running;running=before+(Number(e.data.cantidad)||0);statements.push(rowStatement('movimientos',{...e.data,id:e.id,stockAntes:before,stockDespues:running}));}} const persistedProduct={...p,id:pid,stock:newStock,costoUSD:newCost}; statements.push(rowStatement('productos',persistedProduct)); updatedProducts.push(persistedProduct);}
     if(debt?.id) statements.push(rowStatement('cxp',debt)); if(journal?.id) statements.push(rowStatement('libroDiario',journal)); statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['COMPRA-'+opId,'COMPRA',opId,JSON.stringify({tipo:'COMPRA',operationId:opId,referencia:purchase.id})],wantRows:false}); if(statements.length>450)throw new Error('La compra tiene demasiados movimientos históricos para una sola transacción.'); for(const s of statements)await tx.execute(s); return {purchase,journal:journal||null,debt:debt||null,products:updatedProducts};
   });
 }
