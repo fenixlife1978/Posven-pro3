@@ -469,8 +469,19 @@ export async function exportBackupSnapshot() {
       } catch {
         throw new Error('No se puede exportar el catálogo ' + String(row.nombre || '') + ': contenido JSON inválido.');
       }
-      const name = String(row.nombre || '');
-      if (!name) continue;
+      const name = String(row.nombre || '').trim();
+      if (!name) throw new Error('No se puede exportar un catálogo sin nombre.');
+      const reservedBackupKeys = new Set([
+        'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+        'devoluciones','anulaciones','terminales','libroDiario','reportesZ',
+        'cashHistory','caja','compras','users','config','tasa','pinDevolucion',
+        'isInitialized','empresa','proximoRecibo','proximaDevolucion',
+        'proximaAnulacion','ultimoZ','fechaUltimoZ','acumuladoHistorico',
+        'fondoCajaHoyUSD','fondoCajaHoyBS','isCashOpen','cashData',
+      ]);
+      if (reservedBackupKeys.has(name)) {
+        throw new Error('El catálogo ' + name + ' usa un nombre reservado del formato de respaldo.');
+      }
       data[name] = list;
       catalogs[name] = list.length;
     }
@@ -697,8 +708,25 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     }
   }
   if (backup.meta?.catalogs) {
+    if (typeof backup.meta.catalogs !== 'object' || Array.isArray(backup.meta.catalogs)) {
+      throw new Error('El manifiesto de catálogos no es válido.');
+    }
+    const reservedBackupKeys = new Set([
+      'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+      'devoluciones','anulaciones','terminales','libroDiario','reportesZ',
+      'cashHistory','caja','compras','users','config','tasa','pinDevolucion',
+      'isInitialized','empresa','proximoRecibo','proximaDevolucion',
+      'proximaAnulacion','ultimoZ','fechaUltimoZ','acumuladoHistorico',
+      'fondoCajaHoyUSD','fondoCajaHoyBS','isCashOpen','cashData',
+    ]);
     for (const [name, count] of Object.entries(backup.meta.catalogs)) {
-      if (Array.isArray(data[name]) && Number(count) !== data[name].length) {
+      if (!name.trim() || name.length > 120 || reservedBackupKeys.has(name)) {
+        throw new Error('El manifiesto contiene un nombre de catálogo reservado o inválido: ' + name);
+      }
+      if (!Array.isArray(data[name])) {
+        throw new Error('El catálogo ' + name + ' declarado en el manifiesto no está presente en el respaldo.');
+      }
+      if (!Number.isSafeInteger(Number(count)) || Number(count) < 0 || Number(count) !== data[name].length) {
         throw new Error('El conteo del catálogo ' + name + ' no coincide con el manifiesto.');
       }
     }
@@ -721,11 +749,12 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     { key: 'caja', table: 'caja' },
     { key: 'compras', table: 'compras' },
   ];
-  const catalogNames = [
+  const catalogNames = [...new Set([
     'categorias','departamentos','categoriasPorDepartamento','marcas','presentaciones',
     'productCategories','productUnits','productColors','productSizes',
     'brands','groups','subgroups','lines','suppliers',
-  ];
+    ...Object.keys(backup.meta?.catalogs || {}),
+  ])];
   const configKeys = [
     'tasa','pinDevolucion','isInitialized','empresa','proximoRecibo',
     'proximaDevolucion','proximaAnulacion','ultimoZ','fechaUltimoZ',
@@ -733,9 +762,20 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     'cashData','config',
   ];
   let totalRows = 0;
+  const seenIdsByTable = new Map<string, Set<string>>();
   for (const entry of tableKeys) {
+    // cashHistory es el nombre canónico del respaldo; caja solo es alias heredado.
+    if (entry.key === 'caja' && Array.isArray(data.cashHistory)) continue;
     const rows = Array.isArray(data[entry.key]) ? data[entry.key] : [];
     totalRows += rows.length;
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const id = String(row?.id || '').trim();
+      if (!id) throw new Error('El respaldo contiene un registro sin identificador en ' + entry.key + '.');
+      if (seen.has(id)) throw new Error('El respaldo contiene identificadores duplicados en ' + entry.key + ': ' + id + '. No se modificó SQLite local.');
+      seen.add(id);
+    }
+    seenIdsByTable.set(entry.table, seen);
   }
   for (const name of catalogNames) {
     if (Array.isArray(data[name])) totalRows += data[name].length;
