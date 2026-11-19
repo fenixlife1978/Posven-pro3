@@ -167,3 +167,23 @@ La misma ruta genérica ya no permite eliminar clientes, ni siquiera con perfil 
 - Al reversar un abono CxC, la misma transacción SQLite restaura el saldo resumen del cliente, además de recalcular la deuda y ajustar el asiento contable. El ID del cliente actualizado se guarda en la operación para que los reintentos idempotentes recuperen el mismo resultado sin sumar dos veces.
 - Se valida el tipo de cartera (`cxc`/`cxp`) antes de operar.
 - Pruebas nuevas cubren creación con saldo manipulado, reversión y reintento idempotente.
+
+
+### CxP: reversión de pagos subcentavo
+
+La reversión de un abono CxP conserva seis decimales en el equivalente USD, igual que el alta del pago en Bs. No se redondea a dos decimales ni se marca como pagada una deuda que aún conserva un saldo inferior a un centavo. La prueba "reversar un pago CxP subcentavo conserva precisión de seis decimales" cubre el caso de USD 0,001 con abono de USD 0,0006.
+
+## Auditoría adicional de respaldo y restauración SQLite (19-11-2026)
+
+Se detectó que exportBackupSnapshot exporta todos los registros de catalogos y los declara en meta.catalogs, pero la restauración reconstruía únicamente una lista fija de catálogos. Los catálogos personalizados guardados en SQLite podían quedar fuera de la restauración aunque estuvieran presentes en el archivo.
+
+**Corrección aplicada en Pro3:**
+- La restauración incorpora también los nombres declarados en backup.meta.catalogs, además de los catálogos estándar.
+- Cada catálogo declarado en el manifiesto debe existir como lista y su conteo debe coincidir exactamente; un manifiesto incompleto o inconsistente se rechaza antes de modificar SQLite.
+- Se rechazan nombres de catálogo reservados por el formato de respaldo para impedir que un catálogo sobrescriba tablas, usuarios o configuración.
+- La restauración valida identificadores no vacíos y rechaza IDs duplicados dentro de cada tabla antes de iniciar el reemplazo de datos. Así se evita que un UPSERT silencioso convierta dos filas del respaldo en una sola.
+- El conteo informativo totalRows no suma dos veces el alias histórico caja cuando el respaldo ya contiene cashHistory.
+
+**Prueba añadida:** crea un respaldo con un catálogo personalizado, verifica que un respaldo con IDs duplicados sea rechazado sin borrar un producto local y después restaura el archivo válido comprobando la recuperación del catálogo personalizado y del producto. La prueba corre sobre SQLite temporal real; el resultado final debe confirmarse con los workflows de TypeScript y compilación Windows.
+
+**Pendiente de auditoría:** comprobar también la coherencia de catálogos con nombres reservados en respaldos históricos, la recuperación de usuarios con colisiones y los escenarios de fallo durante la restauración transaccional.
