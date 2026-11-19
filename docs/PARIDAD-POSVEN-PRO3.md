@@ -71,6 +71,18 @@ Se compararon los árboles completos de archivos de ambas ramas: POSVEN-Pro `mai
 
 La revisión confirma que no se debe asumir que una diferencia de código equivale a una mejora pendiente. En estos módulos, POSVEN-Pro3 ya incluye adaptaciones o funciones adicionales. No se copió código cloud del repositorio de referencia. Los flujos indicados se han comparado a nivel de implementación; todavía deben verificarse con pruebas funcionales de integración y datos límite antes de marcar paridad global.
 
+## Auditoría ampliada de Devoluciones, CxC e Inventario (18-11-2026)
+
+| Módulo | Diferencia comprobada | Estado |
+|---|---|---|
+| Devoluciones | POSVEN-Pro ofrece selección de un método general de reembolso (efectivo, mismo método o vale/crédito). POSVEN-Pro3 permite distribuir el reintegro entre varios métodos reales (USD, Bs, punto, pago móvil, Biopago, transferencia, Zelle, otros), valida que la suma coincida con el importe devuelto y conserva el desglose en el documento. Si la venta fue a crédito y no tuvo pagos efectivos, no genera reintegro ficticio. | **Mejora propia de Pro3**, conservar y cubrir con pruebas por método y pagos mixtos. |
+| Anulación total | Pro3 conserva la autorización y confirmación de anulación, y maneja el reintegro por separado de la reversión de stock. La operación se ejecuta por la transacción SQLite `processReturnOrCancellationTransaction`; la UI actualiza productos, movimientos, CxC y libro diario con el resultado devuelto por el servidor. | **Adaptación SQLite presente**. Validar atomicidad e idempotencia con pruebas de integración. |
+| CxC / detalle de deuda | POSVEN-Pro consulta la venta original desde el historial del módulo. POSVEN-Pro3 encapsula el detalle en `CreditDetailModal`: consulta primero la deuda autoritativa en `/api/pos/store`, resuelve la venta por `ventaId/facturaId`, y si no existe reconstruye el detalle desde los ítems persistidos en CxC. Muestra cronología de abonos. | **Equivalente y reforzado en Pro3**. La diferencia de ubicación en un componente separado no es una omisión. |
+| CxC / búsqueda | POSVEN-Pro agrupa cartera por cliente; Pro3 añade búsqueda normalizada sin acentos por nombre, palabra, cédula, teléfono y dirección, sin depender de coincidencia exacta. | **Mejora propia de Pro3**. |
+| Inventario / filtros | POSVEN-Pro contiene listas predeterminadas de departamentos y categorías específicas de licorería (ron, vodka, whisky, cerveza, etc.). Pro3 obtiene opciones de productos y catálogos reales, elimina caracteres invisibles, normaliza acentos y espacios y evita sembrar listas demo o datos específicos de otro comercio. | **Decisión correcta por arquitectura/producto**; no copiar catálogos rígidos del proyecto de referencia. |
+| Inventario / stock y reportes | Pro3 incorpora reconciliación de stock desde Kardex, etiquetas de precios y reporte de salidas periódicas, ausentes como funciones equivalentes en el módulo revisado de Pro. | **Mejoras propias de Pro3**; conservar y probar contra SQLite. |
+| Reportes X/Z | La pantalla de referencia llama al historial «Cortes Z». Pro3 lo presenta como «Consolidados de Ventas», restringe el historial a administrador y añade reimpresión en 80 mm. La lógica utiliza los registros `reportesZ`; es una diferencia de etiqueta y de presentación, no evidencia de ausencia del historial. | **Equivalente con mejoras propias**. Mantener clara la identificación del documento Z en el comprobante y en auditoría. |
+
 ## Mejoras propias de Pro3 que deben preservarse
 
 - SQLite local como única fuente de verdad operativa; nada de escrituras POS en nube ni fallback a datos demo.
