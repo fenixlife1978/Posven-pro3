@@ -1599,7 +1599,8 @@ export async function applyInventoryMovementsTransaction(params: {
           throw new Error('El ajuste dejaría el producto ' + (products.get(pid)?.nombre || pid) + ' con stock negativo. Existencia actual: ' + before + '; salida solicitada: ' + Math.abs(delta) + '.');
         }
         running = Math.abs(nextStock) < 1e-9 ? 0 : nextStock;
-        const { stockEsperadoAntes: _stockEsperadoAntes, ...movementSnapshot } = movement;
+        const movementSnapshot = { ...movement };
+        delete movementSnapshot.stockEsperadoAntes;
         let historicalSnapshot = movementSnapshot;
         if (Number(movement.cantidad) < 0) {
           const product = products.get(pid);
