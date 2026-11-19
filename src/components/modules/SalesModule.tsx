@@ -1248,11 +1248,13 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   };
 
   const ejecutarAbono = async (pagosAbono: PagoRealizado[]) => {
-    if (!showAbonoModal || isProcessing) return;
+    if (!showAbonoModal || isProcessing || processingRef.current) return;
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
-      if (totalAbonado <= 0) return;
+      const totalAbonadoBS = pagosAbono.reduce((s, p) => s + (Number(p.montoBS) || 0), 0);
+      if (totalAbonado <= 0 || totalAbonadoBS <= 0) return;
 
       // La deuda histórica puede conservar un nombre antiguo. La identidad
       // operativa se resuelve por la cédula embebida en "cliente" y se contrasta
@@ -1290,6 +1292,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         collection: 'cxc',
         debtId: showAbonoModal.id,
         amountUSD: totalAbonado,
+        amountBS: totalAbonadoBS,
         payment: pagoAtomic,
         journal: nuevasEntradasDiario,
         sale: saleAbono,
@@ -1310,6 +1313,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       // Refrescar desde SQLite local: saldo pendiente, estado y abonos de la factura.
       await refreshCreditDebts();
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
   };
