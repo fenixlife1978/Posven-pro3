@@ -796,7 +796,14 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
     while (true) {
       const serverItems = await tryLocalServerRead(name, { limit: 1000, offset, terminalId, fechaDesde: cutoff });
       if (serverItems === null) break;
-      const items = serverItems.filter((item: any) => String(item?.fecha || '') > cutoff);
+      const cutoffMs = Date.parse(cutoff);
+      const items = serverItems.filter((item: any) => {
+        const value = String(item?.fecha || '').trim();
+        if (!value) return false;
+        const itemMs = Date.parse(value);
+        if (Number.isFinite(itemMs) && Number.isFinite(cutoffMs)) return itemMs >= cutoffMs;
+        return value >= cutoff;
+      });
       if (items.length) applyPatch({ [name]: mergeById((cache as any)[name], items) });
       totalLoaded += items.length;
       if (serverItems.length < 1000) {
@@ -809,7 +816,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
 
     // Fallback únicamente cuando SQLite local no está configurado (503).
     if (!db || !COLLECTIONS[name]) return;
-    const filters: any[] = [where('fecha', '>', cutoff)];
+    const filters: any[] = [where('fecha', '>=', cutoff)];
     if (name === 'ventas' || name === 'libroDiario') {
       filters.push(where('terminalId', '==', terminalId));
     }
@@ -824,7 +831,7 @@ async function loadReportWindow(name: string, terminalId: string, cutoff: string
         snap = await getDocs(pageQuery);
       } catch (e: any) {
         if (e?.code !== 'failed-precondition' || name === 'devoluciones') throw e;
-        const fallbackFilters: any[] = [where('fecha', '>', cutoff)];
+        const fallbackFilters: any[] = [where('fecha', '>=', cutoff)];
         const fallbackQuery = cursor
           ? query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), startAfter(cursor), limit(1000))
           : query(collection(db, COLLECTIONS[name]), ...fallbackFilters, orderBy('fecha', 'asc'), limit(1000));
@@ -856,6 +863,7 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
     await Promise.all([
       ensureLoaded('ventas'),
       ensureLoaded('devoluciones'),
+      ensureLoaded('anulaciones'),
       ensureLoaded('libroDiario'),
     ]);
     return;
@@ -864,6 +872,7 @@ async function ensureReportData(terminalId?: string, cutoff?: string): Promise<v
   await Promise.all([
     loadReportWindow('ventas', termId, desde),
     loadReportWindow('devoluciones', termId, desde),
+    loadReportWindow('anulaciones', termId, desde),
     loadReportWindow('libroDiario', termId, desde),
   ]);
 }

@@ -3,7 +3,7 @@ name: TypeScript validation
 on:
   push:
     branches:
-      - feature/resumen-salidas-periodicas
+      - feat/posven-pro3-parity-unlimited-backups
   pull_request:
     branches:
       - main
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   typecheck:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,8 +26,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      # electron-builder's postinstall prepares better-sqlite3 for Electron.
-      # Rebuild this native addon for the Node.js ABI used by node:test.
-      - run: npm rebuild better-sqlite3 --build-from-source --runtime=node --target=20.20.2 --dist-url=https://nodejs.org/download/release
+      # Rebuild the native SQLite addon for the Node.js ABI used by node:test.
+      - run: npm rebuild better-sqlite3 --runtime=node --target=20.20.2 --dist-url=https://nodejs.org/download/release
       - run: npm test
       - run: npx tsc --noEmit --pretty false

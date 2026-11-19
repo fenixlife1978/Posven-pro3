@@ -259,7 +259,16 @@ export default function ZReportPreview80mm({ data, onClose }: Props) {
             <div className="flex justify-between"><span>Diferencia USD</span><b>{money('USD', Number(data?.differenceUSD || 0))}</b></div>
 
             <div className="border-t border-dashed border-black my-2" />
-            <div className="text-center font-black">FIN DEL CONSOLIDADO DE VENTAS</div>
+            <div className="text-center font-black">
+              {data?.differenceBs == null || data?.differenceUSD == null
+                ? "ARQUEO REAL NO REGISTRADO"
+                : Math.abs(Number(data.differenceBs)) < 0.01 && Math.abs(Number(data.differenceUSD)) < 0.01
+                  ? "ARQUEO CONCILIADO"
+                  : Number(data.differenceBs) < -0.01 || Number(data.differenceUSD) < -0.01
+                    ? "CIERRE CON FALTANTE"
+                    : "CIERRE CON SOBRANTE"}
+            </div>
+            <div className="text-center font-black mt-1">FIN DEL CONSOLIDADO DE VENTAS</div>
             <div className="text-center text-[8px] mt-1">Documento operativo de control de caja</div>
           </div>
         </div>

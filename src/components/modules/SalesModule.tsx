@@ -154,6 +154,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
   const [reportSnapshot, setReportSnapshot] = useState<any>(null);
   const [reportLoadingType, setReportLoadingType] = useState<'REPORT_X' | 'REPORT_Z' | null>(null);
   const [showZArqueo, setShowZArqueo] = useState(false);
+  const [arqueoMode, setArqueoMode] = useState<'X' | 'Z'>('Z');
+  const [isClosingZ, setIsClosingZ] = useState(false);
   const [globalCreditCustomer, setGlobalCreditCustomer] = useState<{ name: string; cedula?: string; totalUSD: number; totalBS: number } | null>(null);
   const [cliente, setCliente] = useState('Consumidor final');
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -365,12 +367,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     let bs = 0;
     pays.forEach((p:any) => {
       const method = String(p?.metodo || p?.method || '').toLowerCase();
-      const pUsd = Number(p?.montoUSD) || Number(p?.usdAmount) || (
+      const pUsd = Number(p?.montoUSD ?? p?.montoUsd ?? p?.usdAmount ?? p?.amountUSD) || (
         ['efectivo_bs','pagomovil','punto_venta','biopago','transferencia'].includes(method)
-          ? (Number(p?.amount) || Number(p?.totalBS) || 0) / rate
+          ? (Number(p?.amount) || Number(p?.totalBS ?? p?.totalBs) || 0) / rate
           : 0
       );
-      const pBs = Number(p?.montoBS) || Number(p?.totalBS) || (
+      const pBs = Number(p?.montoBS ?? p?.montoBs ?? p?.amountBS ?? p?.amountBs ?? p?.totalBS ?? p?.totalBs) || (
         Number(p?.amount) || (
           ['efectivo_usd','zelle'].includes(method) ? pUsd * rate : 0
         )
@@ -404,13 +406,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         ? String(sessionUser?.nombre || sessionUser?.name || sessionUser?.displayName || sessionUser?.email || 'Cajero')
         : String(sessionUser?.nombre || sessionUser?.name || sessionUser?.displayName || sessionUser?.email || 'Cajero');
     const tc = Utils.getTerminalCash(resolvedTerminal);
-    const corteTimestamp = tc.fechaUltimoZ || freshState.fechaUltimoZ || '';
+    const reportCutoffs = [tc.fechaUltimoZ, tc.cashData?.openDate].filter(Boolean).map(String).sort();
+    const corteTimestamp = reportCutoffs[reportCutoffs.length - 1] || freshState.fechaUltimoZ || '';
 
     const allVentas = freshState.ventas || [];
     const allDevoluciones = freshState.devoluciones || [];
     const allAnulaciones = freshState.anulaciones || [];
     const allLibroDiario = freshState.libroDiario || [];
-    const inWindow = (fecha:string) => fecha > corteTimestamp;
+    const inWindow = (fecha:string) => {
+      const value = String(fecha || '').trim();
+      if (!value) return false;
+      const dateMs = Date.parse(value);
+      const cutoffMs = Date.parse(corteTimestamp);
+      if (Number.isFinite(dateMs) && Number.isFinite(cutoffMs)) return dateMs >= cutoffMs;
+      return value >= corteTimestamp;
+    };
 
     const esCobroDeuda = (v:any) => {
       const tipo = String(v?.type || '').trim().toUpperCase();
@@ -449,35 +459,39 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const base=String(m||'otros').trim().toLowerCase()
         .normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_');
       if (['punto_venta','punto_de_venta','punto_pago','punto_de_pago','tarjeta_debito','tarjeta_credito'].includes(base)) return 'tarjeta';
-      if (base==='pago_movil') return 'pagomovil';
+      if (['pago_movil','pago_movil_bs'].includes(base)) return 'pagomovil';
+      if (['efectivo','efectivo_bs','efectivo_bolivares','bs','bolivares'].includes(base)) return 'efectivo_bs';
+      if (['efectivo_usd','efectivo_usd_dolares','usd','dolar','dolares','efectivo_dolares'].includes(base)) return 'efectivo_usd';
+      if (['transferencia','transferencia_bs','transferencia_bolivares'].includes(base)) return 'transferencia_bs';
+      if (['transferencia_usd','transferencia_dolares'].includes(base)) return 'transferencia_usd';
+      if (base==='mixto') return 'mixto';
       return base;
     };
-    const esMetodoUSD=(m:string)=>['efectivo_usd','zelle','usd','dolar','dolares'].includes(normalizarMetodo(m));
-    const esMetodoBS=(m:string)=>['efectivo_bs','efectivo','bs','bolivares','tarjeta','pagomovil','biopago','transferencia'].includes(normalizarMetodo(m));
+    const esMetodoUSD=(m:string)=>['efectivo_usd','zelle','transferencia_usd','nota_credito'].includes(normalizarMetodo(m));
     const addPaymentTo=(p:any,factor=1)=>{
       const metodo=normalizarMetodo(p?.metodo||p?.method||'otros');
-      const usd=Number(p?.montoUSD??p?.usdAmount??0)||0;
-      const bs=Number(p?.montoBS??p?.amountBS??p?.totalBS??0)||(
-        esMetodoBS(metodo) ? (Number(p?.amount)||0) :
-        esMetodoUSD(metodo) ? 0 : 0
-      );
+      const usd=Number(p?.montoUSD??p?.montoUsd??p?.usdAmount??p?.amountUSD??0)||0;
+      const explicitBs=p?.montoBS??p?.montoBs??p?.amountBS??p?.amountBs??p?.totalBS??p?.totalBs;
+      const bs=Number(explicitBs??0)||(!esMetodoUSD(metodo) ? (Number(p?.amount)||0) : 0);
       return {metodo,usd:usd*factor,bs:bs*factor};
     };
     const relevantDiario=allLibroDiario.filter(e=>inWindow(e.fecha)&&String(e.terminalId||'')===termId);
-    const totalSalidasCaja=relevantDiario.filter(e=>e.tipo==='egreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-    const totalEntradasCaja=relevantDiario.filter(e=>e.tipo==='ingreso'&&e.categoria!=='VENTA'&&e.categoria!=='COBRO_DEUDA').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-    const esMovimientoCaja=(e:any)=>{
-      const categoria=String(e?.categoria||'').trim().toUpperCase().replace(/Á/g,'A');
-      return categoria==='MOVIMIENTO_CAJA' || categoria==='MOVIMIENTO DE CAJA' || String(e?.type||'').toUpperCase()==='MOVIMIENTO CAJA';
-    };
-    const movimientosCaja=relevantDiario.filter((e:any)=>
-      esMovimientoCaja(e) &&
-      (e.tipo==='ingreso'||e.tipo==='egreso')
-    );
-    const totalSalidasCajaBS=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
-    const totalSalidasCajaUSD=movimientosCaja.filter(e=>e.tipo==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
-    const totalEntradasCajaBS=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS)||0),0);
-    const totalEntradasCajaUSD=movimientosCaja.filter(e=>e.tipo==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const excludedJournalCategories=new Set(['VENTA','COBRO_DEUDA','DEVOLUCION','ANULACION']);
+    const manualMovements=relevantDiario.filter((entry:any)=>{
+      const category=String(entry.categoria||'').trim().toUpperCase().replace(/Á/g,'A');
+      return !excludedJournalCategories.has(category);
+    });
+    const totalSalidasCaja=manualMovements.filter(e=>String(e.tipo||'').trim().toLowerCase()==='egreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const totalEntradasCaja=manualMovements.filter(e=>String(e.tipo||'').trim().toLowerCase()==='ingreso').reduce((s,e)=>s+(Number(e.montoUSD)||0),0);
+    const movimientosCaja=relevantDiario.filter((entry:any)=>{
+      const category=String(entry.categoria||'').trim().toUpperCase().replace(/Á/g,'A');
+      const movementType=String(entry.tipo||'').trim().toLowerCase();
+      return !excludedJournalCategories.has(category) && (movementType==='ingreso'||movementType==='egreso');
+    });
+    const totalSalidasCajaBS=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS??(e as any).montoBs)||0),0);
+    const totalSalidasCajaUSD=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='egreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD??(e as any).montoUsd)||0),0);
+    const totalEntradasCajaBS=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_bs').reduce((s,e)=>s+(Number(e.montoBS??(e as any).montoBs)||0),0);
+    const totalEntradasCajaUSD=movimientosCaja.filter(e=>String(e.tipo||'').trim().toLowerCase()==='ingreso'&&normalizarMetodo(e.metodo)==='efectivo_usd').reduce((s,e)=>s+(Number(e.montoUSD??(e as any).montoUsd)||0),0);
 
     const arqueoMap:Record<string,any>={};
     const ensureArqueo=(metodo:string)=>{
@@ -487,67 +501,92 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     vActivas.forEach(v=>{
       const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
-      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(x.metodo==='credito')return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.ventasUSD+=x.usd;else row.ventasBS+=x.bs;});
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(['credito','nota_credito','mixto'].includes(x.metodo))return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.ventasUSD+=x.usd;else row.ventasBS+=x.bs;});
     });
 
     const cobroDeudaVentas=allVentas.filter(v=>inWindow(v.fecha)&&String(v.terminalId||'')===termId&&esCobroDeuda(v));
+    const debtJournal=relevantDiario.filter((entry:any)=>String(entry.categoria||'').trim().toUpperCase()==='COBRO_DEUDA');
+    const uniqueDebtJournal=debtJournal.filter((entry:any)=>{
+      const reference=String(entry.referencia||'');
+      return !reference || !cobroDeudaVentas.some((sale:any)=>reference===String(sale.id)||reference.includes(String(sale.id)));
+    });
+    const debtJournalParts=(entry:any)=>Array.isArray(entry.paymentParts)&&entry.paymentParts.length?entry.paymentParts:[entry];
     cobroDeudaVentas.forEach(v=>{
       const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
-      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;});
+      pays.forEach((p:any)=>{const x=addPaymentTo(p);if(['credito','nota_credito','mixto'].includes(x.metodo))return;const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;});
     });
+    uniqueDebtJournal.forEach((entry:any)=>debtJournalParts(entry).forEach((part:any)=>{
+      const x=addPaymentTo(part);
+      if(['credito','nota_credito','mixto'].includes(x.metodo))return;
+      const row=ensureArqueo(x.metodo);
+      if(esMetodoUSD(x.metodo))row.cobrosUSD+=x.usd;else row.cobrosBS+=x.bs;
+    }));
 
-    // Las anulaciones/devoluciones descuentan del método REAL utilizado para el reintegro.
-    // Se prioriza refundPayments (nuevo formato); los documentos históricos usan el método de venta como fallback.
-    aHoy.forEach((a:any)=>{
-      const sale:any=allVentas.find(v=>v.id===a.ventaId);
-      const pays=Array.isArray(a.refundPayments)&&a.refundPayments.length
-        ? a.refundPayments
-        : (sale&&Array.isArray(sale.payments)&&sale.payments.length
-          ? sale.payments
-          : [{metodo:sale?.metodoPago||'otros',montoUSD:a.totalUSD,montoBS:sale?.totalBS,tasaAplicada:sale?.tasaAplicada}]);
-      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
-    });
-
-    // Evita duplicar anulaciones históricas que todavía no tienen documento en anulaciones.
-    const anulacionIds=new Set(aHoy.map((a:any)=>String(a.ventaId||'')));
-    vAnuladas.filter(v=>!anulacionIds.has(String(v.id))).forEach(v=>{
-      const pays=Array.isArray(v.payments)&&v.payments.length?v.payments:[{metodo:v.metodoPago||'otros',montoUSD:v.totalUSD,montoBS:v.totalBS,tasaAplicada:v.tasaAplicada}];
-      pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
-    });
-
-    dHoy.forEach(d=>{
-      const sale:any=allVentas.find(v=>v.id===d.ventaId);
-      const pays=Array.isArray(d.refundPayments)&&d.refundPayments.length
-        ? d.refundPayments
-        : (sale&&Array.isArray(sale.payments)&&sale.payments.length
-          ? sale.payments
-          : [{metodo:sale?.metodoPago||'otros',montoUSD:d.totalUSD,montoBS:(Number(d.totalUSD)||0)*(Number(freshState.tasa)||1),tasaAplicada:sale?.tasaAplicada}]);
-      if (Array.isArray(d.refundPayments)&&d.refundPayments.length) {
-        pays.forEach((p:any)=>{const x=addPaymentTo(p);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
-      } else {
-        const saleTotal=Math.max(Number(sale?.totalUSD)||0.000001,0.000001);
-        pays.forEach((p:any)=>{const x=addPaymentTo(p,(Number(d.totalUSD)||0)/saleTotal);const row=ensureArqueo(x.metodo);if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;else row.devBS+=x.bs;});
+    // Un reintegro solo modifica el arqueo si existe un asiento que acredita
+    // la salida y permite identificar el medio realmente utilizado.
+    const applyRefund=(document:any,kind:'devolucion'|'anulacion')=>{
+      const sale:any=allVentas.find(v=>String(v.id)===String(document.ventaId));
+      const category=kind==='devolucion'?'DEVOLUCION':'ANULACION';
+      const journal=relevantDiario.find((entry:any)=>
+        String(entry.categoria||'').trim().toUpperCase().replace(/Á/g,'A')===category &&
+        String(entry.referencia||'')===String(document.id)
+      );
+      if(!journal)return;
+      const journalMethod=normalizarMetodo(journal.metodo||'otros');
+      if(journalMethod==='nota_credito'){
+        ensureArqueo('nota_credito');
+        return;
       }
-    });
+      const explicit=Array.isArray(document.refundPayments)&&document.refundPayments.length?document.refundPayments:null;
+      const sameOriginalMethod=kind==='devolucion'&&String(document.metodoReembolso||'').toUpperCase()==='MISMO_METODO';
+      const mixedCancellation=kind==='anulacion'&&journalMethod==='mixto';
+      if(explicit||sameOriginalMethod||mixedCancellation){
+        const pays=explicit|| (Array.isArray(sale?.payments)&&sale.payments.length?sale.payments:[{metodo:sale?.metodoPago||'otros',montoUSD:sale?.totalUSD,montoBS:sale?.totalBS,tasaAplicada:sale?.tasaAplicada}]);
+        const saleTotal=Math.max(Number(sale?.totalUSD)||0.000001,0.000001);
+        const factor=explicit?1:(Number(document.totalUSD)||0)/saleTotal;
+        pays.forEach((p:any)=>{
+          const x=addPaymentTo(p,factor);
+          if(['credito','nota_credito','mixto'].includes(x.metodo))return;
+          const row=ensureArqueo(x.metodo);
+          if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;
+          else row.devBS+=x.bs;
+        });
+        return;
+      }
+      const x=addPaymentTo({metodo:journal.metodo,montoUSD:journal.montoUSD,montoBS:journal.montoBS});
+      if(['credito','nota_credito','mixto'].includes(x.metodo))return;
+      const row=ensureArqueo(x.metodo);
+      if(esMetodoUSD(x.metodo))row.devUSD+=x.usd;
+      else row.devBS+=x.bs;
+    };
+    aHoy.forEach((a:any)=>applyRefund(a,'anulacion'));
+    dHoy.forEach((d:any)=>applyRefund(d,'devolucion'));
 
     movimientosCaja.forEach((e:any)=>{
       const metodo=normalizarMetodo(e?.metodo||'otros');
       const row=ensureArqueo(metodo);
-      const montoUSD=Number(e?.montoUSD)||0;
-      const montoBS=Number(e?.montoBS)||0;
-      if(e.tipo==='ingreso'){
+      const montoUSD=Number(e?.montoUSD??e?.montoUsd)||0;
+      const montoBS=Number(e?.montoBS??e?.montoBs)||0;
+      const movementType=String(e.tipo||'').trim().toLowerCase();
+      if(movementType==='ingreso'){
         if(esMetodoUSD(metodo)) row.movPlusUSD+=montoUSD;
-        else if(esMetodoBS(metodo)) row.movPlusBS+=montoBS;
-      } else if(e.tipo==='egreso'){
+        else row.movPlusBS+=montoBS;
+      } else if(movementType==='egreso'){
         if(esMetodoUSD(metodo)) row.movMinusUSD+=montoUSD;
-        else if(esMetodoBS(metodo)) row.movMinusBS+=montoBS;
+        else row.movMinusBS+=montoBS;
       }
     });
 
-    const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':esMetodoBS(metodo)?'BS':'USD'}));
+    ['efectivo_bs','efectivo_usd','zelle','pagomovil','biopago','transferencia_bs','transferencia_usd','tarjeta','nota_credito'].forEach(ensureArqueo);
+    const metodosArqueo=Object.entries(arqueoMap).map(([metodo,val]:any)=>({metodo,...val,moneda:esMetodoUSD(metodo)?'USD':'BS'}));
+    const arqueoWarnings = allVentas
+      .filter((sale:any) => inWindow(sale.fecha) && String(sale.terminalId || '') === termId
+        && normalizarMetodo(sale.metodoPago) === 'mixto'
+        && !(Array.isArray(sale.payments) && sale.payments.length))
+      .map((sale:any) => String(sale.id));
     const ventasCreditoUSD=vActivas.filter(v=>String(v.metodoPago||'').toLowerCase()==='credito'||(Array.isArray(v.payments)&&v.payments.some((p:any)=>p.metodo==='credito'))).reduce((s,v)=>s+(Number(v.totalUSD)||0),0);
-    const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0);
-    const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0);
+    const cobrosDeudaUSD=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).usd,0)+uniqueDebtJournal.reduce((s:number,e:any)=>s+debtJournalParts(e).reduce((t:number,p:any)=>t+(Number(p.montoUSD??p.montoUsd??p.usdAmount??p.amountUSD)||0),0),0);
+    const cobrosDeudaBS=cobroDeudaVentas.reduce((s,v)=>s+getSaleCurrencyTotals(v).bs,0)+uniqueDebtJournal.reduce((s:number,e:any)=>s+debtJournalParts(e).reduce((t:number,p:any)=>t+(Number(p.montoBS??p.montoBs??p.amountBS??p.amountBs)||0),0),0);
     const cobrosDeudaPorMetodoMap: Record<string, { metodo:string; montoBS:number; montoUSD:number }> = {};
     cobroDeudaVentas.forEach((v:any) => {
       const pays = Array.isArray(v.payments) && v.payments.length
@@ -562,6 +601,12 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         cobrosDeudaPorMetodoMap[key].montoUSD += x.usd;
       });
     });
+    uniqueDebtJournal.forEach((entry:any)=>debtJournalParts(entry).forEach((part:any)=>{
+      const metodo=normalizarMetodo(part?.metodo||part?.method||'otros');
+      if(!cobrosDeudaPorMetodoMap[metodo])cobrosDeudaPorMetodoMap[metodo]={metodo,montoBS:0,montoUSD:0};
+      cobrosDeudaPorMetodoMap[metodo].montoBS+=Number(part.montoBS??part.montoBs??part.amountBS??part.amountBs)||0;
+      cobrosDeudaPorMetodoMap[metodo].montoUSD+=Number(part.montoUSD??part.montoUsd??part.usdAmount??part.amountUSD)||0;
+    }));
     const cobrosDeudaPorMetodo = Object.values(cobrosDeudaPorMetodoMap);
 
     // Neto físico: solo efectivo físico de la moneda original. No se convierte
@@ -576,15 +621,21 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
     const terminalName=resolvedTerminal?.nombre||'CAJA NO IDENTIFICADA';
 
-    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,cobrosDeudaPorMetodo,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,cajeroId:assignedUserId || sessionUser?.uid || sessionUser?.id || '',cajeroNombre,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,devEfectivoBS:Number(efectivoBS.devBS||0),devEfectivoUSD:Number(efectivoUSD.devUSD||0),totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
+    return {brUSD,devUSD,descUSD,netUSD,igtfUSD,ivaUSD,baseImponibleUSD,exentoUSD,paymentMethods:paymentMethodsMap,arqueoWarnings,cobrosDeudaPorMetodo,manualSalidas:totalSalidasCaja,manualEntradas:totalEntradasCaja,manualSalidasBS:totalSalidasCajaBS,manualSalidasUSD:totalSalidasCajaUSD,manualEntradasBS:totalEntradasCajaBS,manualEntradasUSD:totalEntradasCajaUSD,cobrosDeudaUSD,cobrosDeudaBS,fondoAperturaUSD:fondoUSD,fondoAperturaBS:fondoBS,desdeFactura,hastaFactura,desdeNC,hastaNC,stats:{facturas:vActivas.length,devoluciones:dHoy.length,anulaciones:vAnuladas.length,ticketPromedio:vActivas.length?(netUSD/vActivas.length):0},fecha:Utils.ahora(),terminalName,terminalId:termId,cajeroId:assignedUserId || sessionUser?.uid || sessionUser?.id || '',cajeroNombre,numeroZ:(tc.ultimoZ||0)+1,acumuladoHistoricoUSD:(tc.acumuladoHistorico||0)+netUSD,totalVentasUSD:brUSD,metodosArqueo,ventasCreditoUSD,devEfectivoBS:Number(efectivoBS.devBS||0),devEfectivoUSD:Number(efectivoUSD.devUSD||0),totalNetoEfectivoBS,totalNetoEfectivoUSD,estimadoEfectivoBS:{entradas:totalEntradasCajaBS,egresos:totalSalidasCajaBS,total:totalNetoEfectivoBS},estimadoEfectivoUSD:{entradas:totalEntradasCajaUSD,egresos:totalSalidasCajaUSD,total:totalNetoEfectivoUSD},tasaBCV:freshState.tasa||0};
   };
 
   const handleOpenReport = async (type: 'REPORT_X' | 'REPORT_Z') => {
-    if (showReportType || reportLoadingType) return;
+    if (showReportType || showZArqueo || reportLoadingType) return;
     setReportLoadingType(type);
     try {
-      // antes de calcular el reporte. Evita el bug de reporte en $0 tras reinicio.
-      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', Utils.getTerminalCash(currentTerminal).fechaUltimoZ || new Date().toISOString().split('T')[0]);
+      const openingState = Utils.getTerminalCash(currentTerminal);
+      if (type === 'REPORT_Z' && (!currentTerminal?.id || !openingState.isCashOpen || !openingState.cashData?.openDate || openingState.cashData?.closeDate)) {
+        throw new Error('No existe una apertura de caja vigente. Abra la caja antes de ejecutar un nuevo Corte Z.');
+      }
+      const reportCutoffs = [openingState.fechaUltimoZ, openingState.cashData?.openDate].filter(Boolean).map(String).sort();
+      const reportSince = reportCutoffs[reportCutoffs.length - 1] || Utils.hoy();
+      // Evita mezclar operaciones anteriores a la apertura actual con la jornada que se va a cerrar.
+      await Store.ensureReportData(currentTerminal?.id || 'GLOBAL', reportSince);
       
       // ✅ Verificar que los datos se cargaron correctamente
       const state = Store.get();
@@ -602,11 +653,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       
       const data = getFreshReportData();
       setReportSnapshot(data);
-      if (type === 'REPORT_Z') {
-        setShowZArqueo(true);
-      } else {
-        setShowReportType(type);
-      }
+      setArqueoMode(type === 'REPORT_Z' ? 'Z' : 'X');
+      setShowZArqueo(true);
     } catch (e) {
       console.error('Error abriendo reporte X/Z:', e);
       toast({ variant: 'destructive', title: 'Error', description: 'No se pudieron cargar los datos del reporte. Reintenta.' });
@@ -617,17 +665,50 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const ejecutarCierreZ = async (real: Record<string, string> = {}, diffOverride?: { bs: number; usd: number }) => {
     const data = reportSnapshot;
-    if (!data) return;
+    if (!data || isClosingZ) return;
+    const liveState = Store.get();
+    const terminalEnVivo = (liveState.terminales || []).find((t:any) => String(t.id) === String(currentTerminal?.id));
+    const tc = Utils.getTerminalCash(terminalEnVivo || currentTerminal);
+    if (!terminalEnVivo?.id || !tc.isCashOpen || !tc.cashData?.openDate || tc.cashData?.closeDate) {
+      toast({ variant: 'destructive', title: 'Corte Z rechazado', description: 'La caja no tiene una apertura vigente. No se generó ningún cierre.' });
+      return;
+    }
+    if (Array.isArray(data.arqueoWarnings) && data.arqueoWarnings.length) {
+      toast({ variant: 'destructive', title: 'Arqueo no confiable', description: 'Hay ventas mixtas sin desglose de pagos. Corrija esos documentos antes de cerrar la caja.' });
+      return;
+    }
+    const rows = Array.isArray(data.metodosArqueo) ? data.metodosArqueo : [];
+    const missing = rows.some((row:any) => {
+      const raw = String(real[row.metodo] ?? '').trim().replace(',', '.');
+      return raw === '' || !Number.isFinite(Number(raw)) || Number(raw) < 0;
+    });
+    if (missing) {
+      toast({ variant: 'destructive', title: 'Arqueo incompleto', description: 'Registre el monto real de cada método de pago, incluso cuando sea cero.' });
+      return;
+    }
     const ahora = Utils.ahora();
-    const tc = Utils.getTerminalCash(currentTerminal);
-    const numeroZ = tc.ultimoZ + 1;
-    const termId = currentTerminal?.id || 'GLOBAL';
+    const numeroZ = Number(tc.ultimoZ || 0) + 1;
+    const termId = terminalEnVivo.id;
     const diff = diffOverride || { bs: 0, usd: 0 };
 
     // El arqueo previo sigue la misma regla de tienda-pos: cada medio de pago
     // se concilia en su moneda original y el cierre físico usa efectivo Bs/USD.
     const realBs = Number(String(real.efectivo_bs || '').replace(',', '.')) || 0;
     const realUSD = Number(String(real.efectivo_usd || '').replace(',', '.')) || 0;
+
+    const metodosArqueo = rows.map((row:any) => {
+      const method = String(row.metodo);
+      const currency = ['efectivo_usd','zelle','transferencia_usd'].includes(method) ? 'USD' : 'BS';
+      const opening = method === 'efectivo_bs' ? Number(data.fondoAperturaBS || 0) : method === 'efectivo_usd' ? Number(data.fondoAperturaUSD || 0) : 0;
+      const sales = currency === 'BS' ? Number(row.ventasBS || 0) : Number(row.ventasUSD || 0);
+      const cxc = currency === 'BS' ? Number(row.cobrosBS || 0) : Number(row.cobrosUSD || 0);
+      const returns = currency === 'BS' ? Number(row.devBS || 0) : Number(row.devUSD || 0);
+      const plus = currency === 'BS' ? Number(row.movPlusBS || 0) : Number(row.movPlusUSD || 0);
+      const minus = currency === 'BS' ? Number(row.movMinusBS || 0) : Number(row.movMinusUSD || 0);
+      const system = Number((opening + sales + cxc - returns + plus - minus).toFixed(2));
+      const amountReal = Number(String(real[method]).replace(',', '.'));
+      return { ...row, montoSistema: system, montoReal: amountReal, diferencia: Number((amountReal - system).toFixed(2)), moneda: currency };
+    });
 
     const nuevoZ: ReportZ = {
       id: 'Z-' + String(numeroZ).padStart(6, '0'),
@@ -649,7 +730,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       exentoUSD: data.exentoUSD,
       igtfUSD: data.igtfUSD,
       metodosPago: { ...data.paymentMethods },
-      metodosArqueo: Array.isArray(data.metodosArqueo) ? data.metodosArqueo.map((m:any) => ({ ...m })) : [],
+      metodosArqueo,
       cobrosDeudaUSD: Number(data.cobrosDeudaUSD) || 0,
       cobrosDeudaBS: Number(data.cobrosDeudaBS) || 0,
       cobrosDeudaPorMetodo: Array.isArray(data.cobrosDeudaPorMetodo) ? data.cobrosDeudaPorMetodo.map((m:any) => ({ ...m })) : [],
@@ -669,8 +750,6 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       acumuladoHistoricoUSD: data.acumuladoHistoricoUSD,
       stats: { ...data.stats }
     };
-
-    if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
 
     const terminalActual = state.terminales.find(t => String(t.id) === String(termId));
     if (!terminalActual) {
@@ -696,6 +775,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     // No mostramos éxito ni cerramos el modal hasta recibir confirmación real
     // del endpoint transaccional de SQLite local.
     let zPersistido: any;
+    setIsClosingZ(true);
     try {
       zPersistido = await Store.createZClosure({ terminalId: termId, report: nuevoZ, terminalPatch });
     } catch (error: any) {
@@ -706,8 +786,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         description: String(error?.message || 'SQLite local no confirmó el cierre. La caja no se marcará como cerrada.'),
       });
       return;
+    } finally {
+      setIsClosingZ(false);
     }
     const zConfirmado = zPersistido.report;
+    if (typeof localStorage !== 'undefined') localStorage.removeItem('posven_apertura_done');
 
     toast({ title: `Corte Z ${zConfirmado.id} confirmado en SQLite local`, description: `Diferencia Bs. ${Utils.fmtBS(zConfirmado.differenceBs)} · USD ${Utils.fmtUSD(zConfirmado.differenceUSD)}` });
 
@@ -1366,8 +1449,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
         <button onClick={() => setView('pos')} className={`btn btn-sm ${view === 'pos' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ShoppingCart className="w-3.5 h-3.5"/> Punto de Venta</button>
         <button onClick={() => setView('history')} className={`btn btn-sm ${view === 'history' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><History className="w-3.5 h-3.5"/> Historial</button>
         <button onClick={() => setView('credits')} className={`btn btn-sm ${view === 'credits' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><ClipboardList className="w-3.5 h-3.5"/> Consultar Créditos</button>
-        <button onClick={() => handleOpenReport('REPORT_X')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_X' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
-        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_Z' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
+        <button onClick={() => handleOpenReport('REPORT_X')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_X' || (showZArqueo && arqueoMode === 'X') ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><FileText className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_X' ? 'Cargando…' : 'Reporte X'}</button>
+        <button onClick={() => handleOpenReport('REPORT_Z')} disabled={!!reportLoadingType} className={`btn btn-sm font-bold border-line border disabled:opacity-50 ${showReportType === 'REPORT_Z' || (showZArqueo && arqueoMode === 'Z') ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-ink'}`}><Receipt className="w-3.5 h-3.5"/> {reportLoadingType === 'REPORT_Z' ? 'Cargando…' : 'Reporte Z'}</button>
         <button onClick={() => setView('returns')} className={`btn btn-sm ${view === 'returns' ? 'btn-primary shadow-md' : 'bg-white text-ink font-bold border-line border'}`}><RotateCcw className="w-3.5 h-3.5"/> Devoluciones y Anulaciones</button>
         
         {view === 'pos' && (
@@ -1717,7 +1800,9 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       {showZArqueo && reportSnapshot && (
         <CashZArqueoModal
           open={showZArqueo}
+          mode={arqueoMode}
           report={reportSnapshot}
+          busy={isClosingZ}
           onCancel={() => {
             setShowZArqueo(false);
             setShowReportType(null);

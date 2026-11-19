@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
-import { sqliteExecute, sqliteTransaction, sqliteInteractiveTransaction } from '@/lib/sqlite/client';
+import { sqliteExecute, sqliteInteractiveTransaction } from '@/lib/sqlite/client';
 import { ensureSqliteSchema } from '@/lib/sqlite/schema-init';
 
 export type AppRole = 'administrador' | 'cajero';
@@ -322,56 +322,92 @@ export async function listUsers() {
   return result.rows.map(mapUser);
 }
 
-export async function setUserBlocked(id: string, blocked: boolean) {
+export async function updateUser(input: {
+  id: string;
+  nombre?: string;
+  rol?: AppRole;
+  accesoBloqueado?: boolean;
+}) {
   await ensureSqliteSchema();
-  const target = await sqliteExecute({
-    sql: `SELECT rol, is_seed_admin, acceso_bloqueado FROM users WHERE id=? LIMIT 1`,
-    args: [id],
-  });
-  if (!target.rows[0]) throw new Error('Usuario no encontrado.');
-
-  const wasBlocked = Number(target.rows[0].acceso_bloqueado || 0) === 1;
-  if (wasBlocked === blocked) return;
-
-  if (blocked && String(target.rows[0].rol) === 'administrador') {
-    const activeAdmins = await sqliteExecute({
-      sql: `SELECT COUNT(*) AS total FROM users
-        WHERE rol='administrador' AND acceso_bloqueado=0 AND id<>?`,
-      args: [id],
+  return sqliteInteractiveTransaction(async tx => {
+    const found = await tx.execute({
+      sql: 'SELECT id, nombre, rol, is_seed_admin, acceso_bloqueado FROM users WHERE id=? LIMIT 1',
+      args: [input.id],
     });
-    const total = Number(activeAdmins.rows[0]?.total || 0);
-    if (total < 1) {
-      if (Number(target.rows[0].is_seed_admin || 0) === 1) {
-        throw new Error('Primero debe crear y activar otro administrador antes de desactivar el administrador semilla.');
-      }
-      throw new Error('No se puede desactivar al último administrador activo del sistema.');
-    }
-  }
+    const target = found.rows[0];
+    if (!target) throw new Error('Usuario no encontrado.');
 
-  await sqliteTransaction([
-    {
-      sql: `UPDATE users SET acceso_bloqueado=? WHERE id=?`,
-      args: [blocked ? 1 : 0, id],
+    const nombre = input.nombre === undefined ? String(target.nombre || '') : String(input.nombre).trim();
+    const rol = input.rol === undefined ? String(target.rol || '') : String(input.rol);
+    const blocked = input.accesoBloqueado === undefined
+      ? Number(target.acceso_bloqueado || 0) === 1
+      : input.accesoBloqueado;
+
+    if (!nombre || nombre.length > 80 || !['administrador', 'cajero'].includes(rol)) {
+      throw new Error('Datos de usuario inválidos.');
+    }
+    if (Number(target.is_seed_admin || 0) === 1 && rol !== 'administrador') {
+      throw new Error('El administrador semilla debe conservar el rol administrador.');
+    }
+
+    const wasActiveAdmin = String(target.rol) === 'administrador' && Number(target.acceso_bloqueado || 0) === 0;
+    const remainsActiveAdmin = rol === 'administrador' && !blocked;
+    if (wasActiveAdmin && !remainsActiveAdmin) {
+      const activeAdmins = await tx.execute({
+        sql: "SELECT COUNT(*) AS total FROM users WHERE rol='administrador' AND acceso_bloqueado=0 AND id<>?",
+        args: [input.id],
+      });
+      if (Number(activeAdmins.rows[0]?.total || 0) < 1) {
+        if (Number(target.is_seed_admin || 0) === 1) {
+          throw new Error('Primero debe crear y activar otro administrador antes de desactivar el administrador semilla.');
+        }
+        throw new Error('No se puede desactivar, degradar ni eliminar al último administrador activo del sistema.');
+      }
+    }
+
+    await tx.execute({
+      sql: 'UPDATE users SET nombre=?, rol=?, acceso_bloqueado=? WHERE id=?',
+      args: [nombre, rol, blocked ? 1 : 0, input.id],
       wantRows: false,
-    },
-    ...(blocked
-      ? [{ sql: `UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL`, args: [nowIso(), id], wantRows: false }]
-      : []),
-  ]);
+    });
+    if (blocked && Number(target.acceso_bloqueado || 0) === 0) {
+      await tx.execute({
+        sql: 'UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',
+        args: [nowIso(), input.id],
+        wantRows: false,
+      });
+    }
+    return { id: input.id, nombre, rol, accesoBloqueado: blocked };
+  });
+}
+
+export async function setUserBlocked(id: string, blocked: boolean) {
+  return updateUser({ id, accesoBloqueado: blocked });
 }
 
 export async function deleteUser(id: string) {
   await ensureSqliteSchema();
-  const target = await sqliteExecute({
-    sql: `SELECT is_seed_admin FROM users WHERE id=? LIMIT 1`,
-    args: [id],
+  return sqliteInteractiveTransaction(async tx => {
+    const found = await tx.execute({
+      sql: 'SELECT rol, is_seed_admin, acceso_bloqueado FROM users WHERE id=? LIMIT 1',
+      args: [id],
+    });
+    const target = found.rows[0];
+    if (!target) throw new Error('Usuario no encontrado.');
+    if (Number(target.is_seed_admin) === 1) {
+      throw new Error('El administrador semilla no puede eliminarse.');
+    }
+    if (String(target.rol) === 'administrador' && Number(target.acceso_bloqueado || 0) === 0) {
+      const activeAdmins = await tx.execute({
+        sql: "SELECT COUNT(*) AS total FROM users WHERE rol='administrador' AND acceso_bloqueado=0 AND id<>?",
+        args: [id],
+      });
+      if (Number(activeAdmins.rows[0]?.total || 0) < 1) {
+        throw new Error('No se puede eliminar al último administrador activo del sistema.');
+      }
+    }
+    await tx.execute({ sql: 'DELETE FROM sessions WHERE user_id=?', args: [id], wantRows: false });
+    await tx.execute({ sql: 'DELETE FROM users WHERE id=?', args: [id], wantRows: false });
+    return { id };
   });
-  if (!target.rows[0]) throw new Error('Usuario no encontrado.');
-  if (Number(target.rows[0].is_seed_admin) === 1) {
-    throw new Error('El administrador semilla no puede eliminarse.');
-  }
-  await sqliteTransaction([
-    { sql: `DELETE FROM sessions WHERE user_id=?`, args: [id], wantRows: false },
-    { sql: `DELETE FROM users WHERE id=?`, args: [id], wantRows: false },
-  ]);
 }

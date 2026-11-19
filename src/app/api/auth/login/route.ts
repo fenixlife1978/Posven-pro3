@@ -13,8 +13,8 @@ export async function POST(request: Request) {
     const password = String(body?.password || '');
     const role = String(body?.role || '');
 
-    if (!identifier || !password) {
-      return NextResponse.json({ error: 'Usuario/correo y contraseña son obligatorios.' }, { status: 400 });
+    if (!identifier || !password || !['administrador', 'cajero'].includes(role)) {
+      return NextResponse.json({ error: 'Usuario/correo, contraseña y un perfil válido son obligatorios.' }, { status: 400 });
     }
 
     const row = await getUserWithSecret(identifier);
@@ -36,11 +36,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Usuario o contraseña incorrectos.' }, { status: 401 });
     }
 
-    await clearLoginAttempts(rateLimitIdentifier, sourceOrigin);
-
-    if (role && role !== String(row.rol)) {
+    if (role !== String(row.rol)) {
       return NextResponse.json({ error: `Usted está registrado como ${String(row.rol).toUpperCase()}.` }, { status: 403 });
     }
+
+    await clearLoginAttempts(rateLimitIdentifier, sourceOrigin);
 
     const session = await createSession(String(row.id));
     const response = NextResponse.json({

@@ -14,6 +14,7 @@ on:
       - 'next.config.ts'
       - 'tsconfig.json'
       - 'tests/**'
+      - 'scripts/**'
   pull_request:
     branches:
       - main
@@ -27,10 +28,11 @@ on:
       - 'next.config.ts'
       - 'tsconfig.json'
       - 'tests/**'
+      - 'scripts/**'
   workflow_dispatch:
 
 concurrency:
-  group: posven3-sqlite-validation-final
+  group: posven3-sqlite-validation-final-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -77,6 +79,12 @@ jobs:
 
       - name: Install dependencies from the committed lockfile
         run: npm ci --no-audit --no-fund
+
+      - name: Rebuild SQLite native binding for Node 20 tests
+        run: npm rebuild better-sqlite3 --runtime=node --target=20.20.2 --dist-url=https://nodejs.org/download/release
+
+      - name: Run regression tests
+        run: npm test
 
       - name: Build Next.js desktop SQLite server
         run: npm run build

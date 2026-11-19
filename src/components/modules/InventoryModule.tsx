@@ -52,6 +52,18 @@ import { PriceLabelsModal } from '@/components/inventory/PriceLabelsModal';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 import PeriodicInventoryExitsReport from '@/components/modules/PeriodicInventoryExitsReport';
 
+ 
+// Compara etiquetas de inventario sin depender de acentos, mayúsculas,
+// espacios repetidos o caracteres invisibles que existan en catálogos antiguos.
+const normalizeCatalogFilter = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleUpperCase('es');
+
 export function InventoryModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [activeTab, setActiveTab] = useState('productos');
   const [search, setSearch] = useState('');
@@ -92,26 +104,38 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [showConteoFisico, setShowConteoFisico] = useState(false);
   const [showPriceLabels, setShowPriceLabels] = useState(false);
 
-  // ✅ CORRECCIÓN: Limpiar departamentos y categorías para evitar duplicados
+  // El catálogo visible incorpora también las etiquetas ya utilizadas por
+  // productos reales, aunque no estén repetidas en las tablas de categorías.
+  // No se insertan categorías de demostración ni se altera la fuente SQLite.
   const cleanDepartamentos = useMemo(() => {
-    const depts = (state.departamentos || [])
-      .map(d => d?.trim())
-      .filter(d => d && d.length > 0);
-    return Array.from(new Set(depts));
-  }, [state.departamentos]);
+    const unique = new Map<string, string>();
+    [...(state.departamentos || []), ...(state.productos || []).map(p => p.departamento)]
+      .forEach(value => {
+        const label = String(value ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+        const key = normalizeCatalogFilter(label);
+        if (key && !unique.has(key)) unique.set(key, label);
+      });
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [state.departamentos, state.productos]);
 
   const cleanCategorias = useMemo(() => {
-    const cats = (state.categorias || [])
-      .map(c => c?.trim())
-      .filter(c => c && c.length > 0);
-    return Array.from(new Set(cats));
-  }, [state.categorias]);
+    const unique = new Map<string, string>();
+    [...(state.categorias || []), ...(state.productos || []).map(p => p.categoria)]
+      .forEach(value => {
+        const label = String(value ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+        const key = normalizeCatalogFilter(label);
+        if (key && !unique.has(key)) unique.set(key, label);
+      });
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [state.categorias, state.productos]);
 
-  const prods = (state.productos || []).filter(p => 
-    p.activo && 
-    ((p.nombre || '').toLowerCase().includes(search.toLowerCase()) || (p.codigo || '').toLowerCase().includes(search.toLowerCase())) &&
-    (catFilter ? p.categoria === catFilter : true) &&
-    (deptFilter ? p.departamento === deptFilter : true)
+  const normalizedSearch = normalizeCatalogFilter(search);
+  const prods = (state.productos || []).filter(p =>
+    p.activo &&
+    (normalizeCatalogFilter(p.nombre).includes(normalizedSearch) ||
+      normalizeCatalogFilter(p.codigo).includes(normalizedSearch)) &&
+    (catFilter ? normalizeCatalogFilter(p.categoria) === normalizeCatalogFilter(catFilter) : true) &&
+    (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
   const lowStockCount = prods.filter(p => p.stock <= (p.stockMinimo || 0)).length;

@@ -5,7 +5,7 @@ import { AppState } from '@/lib/types';
 import { Store } from '@/lib/db-store';
 import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2, Wifi, WifiOff, Network } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeContenido, detectarRespaldoTursoTruncado, type BackupFile } from '@/lib/backup';
+import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeContenido, detectarRespaldoTursoTruncado, previsualizarCatalogosDesdeArchivo, importarCatalogosDesdeArchivo, type BackupFile } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [tasa, setTasa] = useState<string | number>(state.tasa);
@@ -21,10 +21,12 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backupProgress, setBackupProgress] = useState<{ percent: number; stage: string; detail: string } | null>(null);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [isImportingCatalogs, setIsImportingCatalogs] = useState(false);
   const [networkInfo, setNetworkInfo] = useState<any>(null);
   const [networkError, setNetworkError] = useState('');
   const [openingNetworkSettings, setOpeningNetworkSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const catalogFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const api = (window as any).electronAPI;
@@ -98,12 +100,27 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
   const restaurarContenidoRespaldo = async (content: string) => {
     setBackupError(null);
     setBackupProgress(null);
+    let parsed: BackupFile;
+    try {
+      const candidate = JSON.parse(content);
+      if (candidate?.type === 'catalogs-only') {
+        throw new Error('Este archivo es exclusivo de catálogos. Use «Importar solo catálogos» y no la restauración completa.');
+      }
+      if (!candidate || candidate.app !== 'posven-pro' || !candidate.data ||
+          typeof candidate.data !== 'object' || Array.isArray(candidate.data)) {
+        throw new Error('El archivo seleccionado no es un respaldo completo válido de POSVEN.');
+      }
+      parsed = candidate as BackupFile;
+    } catch (error: any) {
+      setBackupError(error?.message || 'El respaldo no contiene JSON válido.');
+      return;
+    }
+
     const confirmar = window.confirm('Se restaurará el sistema completo desde este respaldo. Los datos actuales serán reemplazados. ¿Desea continuar?');
     if (!confirmar) return;
 
     let allowPartialTursoRestore = false;
     try {
-      const parsed = JSON.parse(content) as BackupFile;
       const partial = detectarRespaldoTursoTruncado(parsed);
       if (partial.cappedTables.length) {
         const oldestDate = partial.oldestMovementDate || 'no identificable en el archivo';
@@ -177,6 +194,33 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
       setBackupError(err?.message || 'No se pudo abrir el selector de respaldos.');
     } finally {
       setIsRestoringBackup(false);
+    }
+  };
+
+  const handleImportarSoloCatalogos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setIsImportingCatalogs(true);
+    setBackupError(null);
+    try {
+      const preview = await previsualizarCatalogosDesdeArchivo(file);
+      const d = preview.plan.departamentos;
+      const cat = preview.plan.categorias;
+      const summary =
+        'VISTA PREVIA DE IMPORTACIÓN SEGURA\n\n' +
+        'DEPARTAMENTOS: ' + d.imported + ' en archivo; ' + d.before + ' actuales; ' + d.added + ' nuevos; total final ' + d.after + '.\n' +
+        'CATEGORÍAS: ' + cat.imported + ' en archivo; ' + cat.before + ' actuales; ' + cat.added + ' nuevas; total final ' + cat.after + '.\n\n' +
+        'Solo se fusionarán departamentos y categorías. Productos, existencias, movimientos, ventas, compras, CxC, CxP y caja no serán modificados.\n\n' +
+        '¿Confirmas la importación?';
+      if (!window.confirm(summary)) return;
+      const result = await importarCatalogosDesdeArchivo(file);
+      updateState({ departamentos: result.catalogs.departamentos, categorias: result.catalogs.categorias });
+      toast({ title: 'Catálogos recuperados', description: 'Se fusionaron departamentos y categorías en SQLite local. Los productos y movimientos permanecen intactos.' });
+    } catch (error: any) {
+      setBackupError(error?.message || 'No se pudo importar el JSON de catálogos.');
+    } finally {
+      setIsImportingCatalogs(false);
     }
   };
 
@@ -431,11 +475,11 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             Cree un respaldo completo del sistema (inventario, ventas, cuentas por cobrar/pagar, clientes, proveedores, usuarios, terminales, catálogos y configuración) como archivo <code className="font-mono">.json</code>. Puede restaurarlo posteriormente en este mismo equipo o en otro.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <button
               className="btn btn-primary h-12 px-8 font-black uppercase text-xs shadow-md flex items-center gap-2"
               onClick={handleCrearRespaldo}
-              disabled={isBackingUp}
+              disabled={isBackingUp || isRestoringBackup || isImportingCatalogs}
             >
               {isBackingUp ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {isBackingUp ? 'PREPARANDO RESPALDO...' : 'Crear Respaldo'}
@@ -444,12 +488,29 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
             <button
               className="btn h-12 px-8 font-black uppercase text-xs shadow-md flex items-center gap-2 border border-line bg-surface-soft/50 hover:bg-surface-soft"
               onClick={handleSeleccionarRespaldo}
-              disabled={isRestoringBackup}
+              disabled={isRestoringBackup || isImportingCatalogs}
             >
               {isRestoringBackup ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
               {isRestoringBackup ? 'RESTAURANDO...' : 'Cargar Respaldo'}
             </button>
+
+            <button
+              className="btn h-12 px-6 font-black uppercase text-xs shadow-md flex items-center gap-2 border border-line bg-surface-soft/50 hover:bg-surface-soft"
+              onClick={() => catalogFileInputRef.current?.click()}
+              disabled={isRestoringBackup || isImportingCatalogs}
+            >
+              {isImportingCatalogs ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+              {isImportingCatalogs ? 'IMPORTANDO...' : 'Importar solo catálogos'}
+            </button>
           </div>
+
+          <input
+            ref={catalogFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleImportarSoloCatalogos}
+          />
 
           <input
             ref={fileInputRef}

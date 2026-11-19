@@ -14,7 +14,7 @@
     "electron:build": "npm run build && electron-builder",
     "electron:publish": "npm run build && electron-builder --publish always",
     "postinstall": "electron-builder install-app-deps",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node scripts/run-tests.cjs"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.28.0",

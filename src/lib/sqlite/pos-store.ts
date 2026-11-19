@@ -232,6 +232,16 @@ export function assertSQLiteReady() {
   if (!isSQLiteConfigured()) throw new Error('SQLite local no está configurado.');
 }
 
+const DEFAULT_MAX_BACKUP_BYTES = 64 * 1024 * 1024;
+
+/** Límite técnico de bytes configurable; nunca limita la cantidad de registros. */
+export function getMaxBackupBytes(): number {
+  const configured = Number(process.env.POSVEN_MAX_BACKUP_BYTES);
+  return Number.isSafeInteger(configured) && configured >= 1024 * 1024
+    ? configured
+    : DEFAULT_MAX_BACKUP_BYTES;
+}
+
 function clean(value: any): any {
   if (value === undefined) return null;
   if (typeof value === 'number' && !Number.isFinite(value)) return null;
@@ -411,7 +421,6 @@ export async function exportBackupSnapshot() {
     const data: Record<string, any> = {};
     const sqliteTables: Record<string, number> = {};
     const catalogs: Record<string, number> = {};
-    let totalRows = 0;
     const entries = [
       { key: 'productos', table: 'productos' },
       { key: 'movimientos', table: 'movimientos' },
@@ -444,9 +453,7 @@ export async function exportBackupSnapshot() {
         }
       });
       data[entry.key] = rows;
-      totalRows += rows.length;
       sqliteTables[entry.key === 'cashHistory' ? 'caja' : entry.key] = rows.length;
-      if (rows.length > 200000) throw new Error('El respaldo supera el límite de 200.000 registros en ' + entry.key + '.');
     }
 
     const catalogResult = await tx.execute({
@@ -462,10 +469,20 @@ export async function exportBackupSnapshot() {
       } catch {
         throw new Error('No se puede exportar el catálogo ' + String(row.nombre || '') + ': contenido JSON inválido.');
       }
-      const name = String(row.nombre || '');
-      if (!name) continue;
+      const name = String(row.nombre || '').trim();
+      if (!name) throw new Error('No se puede exportar un catálogo sin nombre.');
+      const reservedBackupKeys = new Set([
+        'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+        'devoluciones','anulaciones','terminales','libroDiario','reportesZ',
+        'cashHistory','caja','compras','users','config','tasa','pinDevolucion',
+        'isInitialized','empresa','proximoRecibo','proximaDevolucion',
+        'proximaAnulacion','ultimoZ','fechaUltimoZ','acumuladoHistorico',
+        'fondoCajaHoyUSD','fondoCajaHoyBS','isCashOpen','cashData',
+      ]);
+      if (reservedBackupKeys.has(name)) {
+        throw new Error('El catálogo ' + name + ' usa un nombre reservado del formato de respaldo.');
+      }
       data[name] = list;
-      totalRows += list.length;
       catalogs[name] = list.length;
     }
 
@@ -501,9 +518,7 @@ export async function exportBackupSnapshot() {
       args: [],
     });
     data.users = usersResult.rows;
-    totalRows += usersResult.rows.length;
     sqliteTables.users = usersResult.rows.length;
-    if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
 
     const snapshot = {
       app: 'posven-pro',
@@ -512,8 +527,8 @@ export async function exportBackupSnapshot() {
       data,
       meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
     };
-    if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > 60 * 1024 * 1024) {
-      throw new Error('El respaldo supera el tamaño seguro de 60 MB. Reduzca el histórico o genere una copia por período.');
+    if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > getMaxBackupBytes()) {
+      throw new Error('El respaldo supera el límite técnico de tamaño configurado (POSVEN_MAX_BACKUP_BYTES). No se limitó por cantidad de operaciones.');
     }
     return snapshot;
   });
@@ -638,6 +653,8 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
 
 export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any; allowPartialTursoRestore?: boolean }) {
   assertSQLiteReady();
+  // Lotes pequeños limitan la memoria temporal y el trabajo por sentencia, sin limitar el total de registros.
+  const RESTORE_BATCH_SIZE = 500;
   if (params.user.rol !== 'administrador') throw new Error('Se requiere administrador.');
 
   const backup = params.backup;
@@ -691,8 +708,25 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     }
   }
   if (backup.meta?.catalogs) {
+    if (typeof backup.meta.catalogs !== 'object' || Array.isArray(backup.meta.catalogs)) {
+      throw new Error('El manifiesto de catálogos no es válido.');
+    }
+    const reservedBackupKeys = new Set([
+      'productos','movimientos','ventas','cxc','cxp','clientes','proveedores',
+      'devoluciones','anulaciones','terminales','libroDiario','reportesZ',
+      'cashHistory','caja','compras','users','config','tasa','pinDevolucion',
+      'isInitialized','empresa','proximoRecibo','proximaDevolucion',
+      'proximaAnulacion','ultimoZ','fechaUltimoZ','acumuladoHistorico',
+      'fondoCajaHoyUSD','fondoCajaHoyBS','isCashOpen','cashData',
+    ]);
     for (const [name, count] of Object.entries(backup.meta.catalogs)) {
-      if (Array.isArray(data[name]) && Number(count) !== data[name].length) {
+      if (!name.trim() || name.length > 120 || reservedBackupKeys.has(name)) {
+        throw new Error('El manifiesto contiene un nombre de catálogo reservado o inválido: ' + name);
+      }
+      if (!Array.isArray(data[name])) {
+        throw new Error('El catálogo ' + name + ' declarado en el manifiesto no está presente en el respaldo.');
+      }
+      if (!Number.isSafeInteger(Number(count)) || Number(count) < 0 || Number(count) !== data[name].length) {
         throw new Error('El conteo del catálogo ' + name + ' no coincide con el manifiesto.');
       }
     }
@@ -715,11 +749,12 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
     { key: 'caja', table: 'caja' },
     { key: 'compras', table: 'compras' },
   ];
-  const catalogNames = [
+  const catalogNames = [...new Set([
     'categorias','departamentos','categoriasPorDepartamento','marcas','presentaciones',
     'productCategories','productUnits','productColors','productSizes',
     'brands','groups','subgroups','lines','suppliers',
-  ];
+    ...Object.keys(backup.meta?.catalogs || {}),
+  ])];
   const configKeys = [
     'tasa','pinDevolucion','isInitialized','empresa','proximoRecibo',
     'proximaDevolucion','proximaAnulacion','ultimoZ','fechaUltimoZ',
@@ -728,15 +763,24 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
   ];
   let totalRows = 0;
   for (const entry of tableKeys) {
+    // cashHistory es el nombre canónico del respaldo; caja solo es alias heredado.
+    if (entry.key === 'caja' && Array.isArray(data.cashHistory)) continue;
     const rows = Array.isArray(data[entry.key]) ? data[entry.key] : [];
     totalRows += rows.length;
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const id = String(row?.id || '').trim();
+      if (!id) throw new Error('El respaldo contiene un registro sin identificador en ' + entry.key + '.');
+      if (seen.has(id)) throw new Error('El respaldo contiene identificadores duplicados en ' + entry.key + ': ' + id + '. No se modificó SQLite local.');
+      seen.add(id);
+    }
   }
   for (const name of catalogNames) {
     if (Array.isArray(data[name])) totalRows += data[name].length;
   }
   const backupUsers = Array.isArray(data.users) ? data.users : [];
   totalRows += backupUsers.length;
-  if (totalRows > 200000) throw new Error('El respaldo supera el límite seguro de 200.000 registros.');
+
   if (Number(backup.version || 0) < 1 || Number(backup.version || 0) > 3) {
     throw new Error('La versión del respaldo no es compatible con POSVEN3.');
   }
@@ -804,7 +848,10 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
           throw new Error('El respaldo contiene un registro sin identificador en ' + entry.key + '.');
         }
       }
-      if (rows.length) await tx.executeBatch(rows.map((row: any) => rowStatement(entry.table, row)));
+      for (let offset = 0; offset < rows.length; offset += RESTORE_BATCH_SIZE) {
+        const batch = rows.slice(offset, offset + RESTORE_BATCH_SIZE);
+        await tx.executeBatch(batch.map((row: any) => rowStatement(entry.table, row)));
+      }
       counts[entry.table] = (counts[entry.table] || 0) + rows.length;
     }
 
@@ -941,6 +988,86 @@ export async function patchCatalog(name: string, lista: any[]): Promise<any[]> {
   await sqliteExecute({ sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP', args: [String(name), JSON.stringify(value), '{}'], wantRows: false });
   return value;
 }
+
+type CatalogsOnlyInput = { departamentos: string[]; categorias: string[] };
+type CatalogMergePlan = { before: number; imported: number; added: number; duplicates: number; after: number; values: string[] };
+
+function normalizeCatalogImportValue(value: string): string {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ')
+    .trim().toLocaleUpperCase('es');
+}
+
+function makeCatalogMergePlan(current: string[], incoming: string[]): CatalogMergePlan {
+  const values = new Map<string, string>();
+  for (const value of current) {
+    const label = String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+    const key = normalizeCatalogImportValue(label);
+    if (key && !values.has(key)) values.set(key, label);
+  }
+  const before = values.size;
+  let added = 0;
+  for (const value of incoming) {
+    const label = String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+    const key = normalizeCatalogImportValue(label);
+    if (!key) continue;
+    if (!values.has(key)) { values.set(key, label); added++; }
+  }
+  const merged = Array.from(values.values());
+  return { before, imported: incoming.length, added, duplicates: Math.max(0, incoming.length - added), after: merged.length, values: merged };
+}
+
+function validateCatalogsOnlyInput(input: any): CatalogsOnlyInput {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      Object.keys(input).sort().join(',') !== 'categorias,departamentos') {
+    throw new Error('El archivo debe contener únicamente departamentos y categorías.');
+  }
+  for (const name of ['departamentos', 'categorias'] as const) {
+    const values = input[name];
+    if (!Array.isArray(values) || values.some((value: unknown) =>
+      typeof value !== 'string' || !value.trim() || value.length > 120
+    )) throw new Error('El catálogo ' + name + ' contiene datos inválidos.');
+  }
+  return { departamentos: input.departamentos, categorias: input.categorias };
+}
+
+export async function previewCatalogsOnlyImport(input: any) {
+  assertSQLiteReady();
+  const data = validateCatalogsOnlyInput(input);
+  const [departments, categories] = await Promise.all([getCatalog('departamentos'), getCatalog('categorias')]);
+  const d = makeCatalogMergePlan(departments, data.departamentos);
+  const c = makeCatalogMergePlan(categories, data.categorias);
+  return { ok: true as const, action: 'preview' as const, plan: { departamentos: d, categorias: c }, catalogs: { departamentos: d.values, categorias: c.values } };
+}
+
+export async function mergeCatalogsOnlyImportTransaction(input: any) {
+  assertSQLiteReady();
+  const data = validateCatalogsOnlyInput(input);
+  // Asegura los catálogos base antes de entrar en la transacción de fusión.
+  await Promise.all([getCatalog('departamentos'), getCatalog('categorias')]);
+  return sqliteInteractiveTransaction(async tx => {
+    const merged: Record<string, CatalogMergePlan> = {};
+    for (const name of ['departamentos', 'categorias'] as const) {
+      const result = await tx.execute({ sql: 'SELECT lista_json FROM catalogos WHERE nombre=? LIMIT 1', args: [name] });
+      let current: string[] = [];
+      if (result.rows.length) {
+        try {
+          const parsed = JSON.parse(String(result.rows[0].lista_json || '[]'));
+          current = Array.isArray(parsed) ? parsed.filter((value: unknown): value is string => typeof value === 'string') : [];
+        } catch { throw new Error('El catálogo local ' + name + ' está dañado; no se modificó ningún catálogo.'); }
+      }
+      const incoming = data[name];
+      const plan = makeCatalogMergePlan(current, incoming);
+      merged[name] = plan;
+      await tx.execute({
+        sql: 'INSERT INTO catalogos(nombre,lista_json,data_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(nombre) DO UPDATE SET lista_json=excluded.lista_json, updated_at=CURRENT_TIMESTAMP',
+        args: [name, JSON.stringify(plan.values), '{}'],
+        wantRows: false,
+      });
+    }
+    return { ok: true as const, action: 'import' as const, plan: merged, catalogs: { departamentos: merged.departamentos.values, categorias: merged.categorias.values } };
+  });
+}
 export async function syncProductChanges(params: {
   changes: Array<{ before?: any | null; after?: any | null }>;
   deletedIds?: string[];
@@ -1000,13 +1127,31 @@ export async function syncRecords(params: {
   const records = Array.isArray(params.records) ? params.records : [];
   const deletedIds = Array.isArray(params.deletedIds) ? params.deletedIds.map(String) : [];
   if (records.length + deletedIds.length > 450) throw new Error('El lote supera el límite seguro de 450 registros.');
+  if (table === 'clientes' && deletedIds.length) {
+    throw new Error('Los clientes deben eliminarse mediante la operación transaccional de eliminación de cliente y su historial CxC.');
+  }
 
   return sqliteInteractiveTransaction(async tx => {
     for (const id of deletedIds) {
       await tx.execute({ sql: `DELETE FROM ${tableName(table)} WHERE id=?`, args: [id], wantRows: false });
     }
-    for (const record of records) await tx.execute(rowStatement(table, record));
-    return { records, deletedIds };
+    const persistedRecords: any[] = [];
+    for (const record of records) {
+      if (!record || typeof record !== 'object' || !String(record.id || '').trim()) {
+        throw new Error('Un registro sincronizado no tiene identificador.');
+      }
+      let canonical = record;
+      if (table === 'clientes') {
+        // El saldo agregado del cliente es un dato financiero derivado de CxC.
+        // Una sincronización de ficha (permitida a cajeros) nunca puede
+        // establecerlo ni modificarlo desde el navegador.
+        const current = rowFromDb((await tx.execute(txSelect('clientes', String(record.id)))).rows[0]);
+        canonical = { ...record, debt: current ? (Number(current.debt) || 0) : 0 };
+      }
+      await tx.execute(rowStatement(table, canonical));
+      persistedRecords.push(canonical);
+    }
+    return { records: persistedRecords, deletedIds };
   });}
 
 export async function upsertRecords(table: SQLiteStoreTable, records: any[]): Promise<{ count: number }> {
@@ -1755,8 +1900,19 @@ export async function createZClosureTransaction(params: {
     const allReturns = await loadRows('devoluciones');
     const allVoids = await loadRows('anulaciones');
     const allJournal = await loadRows('libro_diario');
-    const cutoff = String(current.fechaUltimoZ || current.cashData?.openDate || '');
-    const inWindow = (value: any) => String(value || '') > cutoff;
+    const cutoffCandidates = [current.fechaUltimoZ, current.cashData?.openDate].filter(Boolean).map(String);
+    cutoffCandidates.sort((a, b) => {
+      const aMs = Date.parse(a); const bMs = Date.parse(b);
+      return Number.isFinite(aMs) && Number.isFinite(bMs) ? aMs - bMs : a.localeCompare(b);
+    });
+    const cutoff = cutoffCandidates[cutoffCandidates.length - 1] || '';
+    const inWindow = (value: any) => {
+      const date = String(value || '').trim();
+      if (!date) return false;
+      const dateMs = Date.parse(date); const cutoffMs = Date.parse(cutoff);
+      if (Number.isFinite(dateMs) && Number.isFinite(cutoffMs)) return dateMs >= cutoffMs;
+      return date >= cutoff;
+    };
     const isDebtCollection = (sale: any) => ['COBRO DEUDA','ABONO DEUDA','COBRO_DEUDA'].includes(String(sale?.type || '').trim().toUpperCase());
     const sales = allSales.filter((sale: any) => inWindow(sale.fecha) && sale.estado !== 'anulada' && String(sale.terminalId || '') === params.terminalId && !isDebtCollection(sale));
     const voidedSales = allSales.filter((sale: any) => inWindow(sale.fecha) && sale.estado === 'anulada' && String(sale.terminalId || '') === params.terminalId && !isDebtCollection(sale));
@@ -1775,15 +1931,21 @@ export async function createZClosureTransaction(params: {
     const normalizeMethod = (value: any) => {
       const method = String(value || 'otros').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
       if (['punto_venta','punto_de_venta','punto_pago','punto_de_pago','tarjeta_debito','tarjeta_credito'].includes(method)) return 'tarjeta';
-      return method === 'pago_movil' ? 'pagomovil' : method;
+      if (['pago_movil','pago_movil_bs'].includes(method)) return 'pagomovil';
+      if (['efectivo','efectivo_bs','efectivo_bolivares','bs','bolivares'].includes(method)) return 'efectivo_bs';
+      if (['efectivo_usd','efectivo_usd_dolares','usd','dolar','dolares','efectivo_dolares'].includes(method)) return 'efectivo_usd';
+      if (['transferencia','transferencia_bs','transferencia_bolivares'].includes(method)) return 'transferencia_bs';
+      if (['transferencia_usd','transferencia_dolares'].includes(method)) return 'transferencia_usd';
+      if (method === 'mixto') return 'mixto';
+      return method;
     };
-    const isUsdMethod = (method: string) => ['efectivo_usd','zelle','usd','dolar','dolares','transferencia_usd'].includes(normalizeMethod(method));
-    const isBsMethod = (method: string) => ['efectivo_bs','efectivo','bs','bolivares','tarjeta','pagomovil','biopago','transferencia','transferencia_bs'].includes(normalizeMethod(method));
+    const isUsdMethod = (method: string) => ['efectivo_usd','zelle','transferencia_usd','nota_credito'].includes(normalizeMethod(method));
     const paymentParts = (record: any) => Array.isArray(record?.payments) && record.payments.length ? record.payments : [{ metodo: record?.metodoPago || 'otros', montoUSD: record?.totalUSD, montoBS: record?.totalBS, tasaAplicada: record?.tasaAplicada }];
     const paymentValue = (part: any) => {
       const method = normalizeMethod(part?.metodo || part?.method || 'otros');
-      const usd = Number(part?.montoUSD ?? part?.usdAmount ?? 0) || 0;
-      const bs = Number(part?.montoBS ?? part?.amountBS ?? part?.totalBS ?? 0) || (isBsMethod(method) ? Number(part?.amount) || 0 : 0);
+      const usd = Number(part?.montoUSD ?? part?.montoUsd ?? part?.usdAmount ?? part?.amountUSD ?? 0) || 0;
+      const explicitBs = part?.montoBS ?? part?.montoBs ?? part?.amountBS ?? part?.amountBs ?? part?.totalBS ?? part?.totalBs;
+      const bs = Number(explicitBs ?? 0) || (!isUsdMethod(method) ? Number(part?.amount) || 0 : 0);
       return { method, usd, bs };
     };
     const paymentMethods: Record<string, number> = {};
@@ -1791,37 +1953,74 @@ export async function createZClosureTransaction(params: {
     const ensureMethod = (method: string) => arqueo[method] || (arqueo[method] = { ventasBS:0, ventasUSD:0, cobrosBS:0, cobrosUSD:0, devBS:0, devUSD:0, movPlusBS:0, movPlusUSD:0, movMinusBS:0, movMinusUSD:0 });
     sales.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
       const p = paymentValue(part); paymentMethods[p.method] = (paymentMethods[p.method] || 0) + p.usd;
-      if (p.method === 'credito') return; const row = ensureMethod(p.method);
+      if (['credito','nota_credito','mixto'].includes(p.method)) return;
+      const row = ensureMethod(p.method);
       if (isUsdMethod(p.method)) row.ventasUSD += p.usd; else row.ventasBS += p.bs;
     }));
+    const journal = allJournal.filter((entry: any) => inWindow(entry.fecha) && String(entry.terminalId || '') === params.terminalId);
+    const excludedJournalCategories = new Set(['VENTA','COBRO_DEUDA','DEVOLUCION','ANULACION']);
+    const manualMovements = journal.filter((entry: any) => {
+      const category = String(entry?.categoria || '').trim().toUpperCase().replace(/Á/g, 'A');
+      return !excludedJournalCategories.has(category);
+    });
+    const cashMovements = manualMovements.filter((entry: any) => ['ingreso','egreso'].includes(String(entry.tipo || '').trim().toLowerCase()));
+    const debtJournal = journal.filter((entry: any) => String(entry.categoria || '').trim().toUpperCase() === 'COBRO_DEUDA');
+    const uniqueDebtJournal = debtJournal.filter((entry: any) => {
+      const reference = String(entry.referencia || '');
+      return !reference || !debtCollections.some((sale: any) => reference === String(sale.id) || reference.includes(String(sale.id)));
+    });
+    const debtJournalParts = (entry: any) => Array.isArray(entry.paymentParts) && entry.paymentParts.length ? entry.paymentParts : [entry];
     debtCollections.forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
-      const p = paymentValue(part); const row = ensureMethod(p.method);
+      const p = paymentValue(part);
+      if (['credito','nota_credito','mixto'].includes(p.method)) return;
+      const row = ensureMethod(p.method);
       if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
     }));
-    const applyRefund = (doc: any, isPartial: boolean) => {
-      const sale = saleById.get(String(doc.ventaId));
-      const parts = Array.isArray(doc.refundPayments) && doc.refundPayments.length ? doc.refundPayments : paymentParts(sale || { metodoPago:'otros' });
-      const factor = isPartial && !(Array.isArray(doc.refundPayments) && doc.refundPayments.length) ? (Number(doc.totalUSD) || 0) / Math.max(Number(sale?.totalUSD) || 0.000001, 0.000001) : 1;
-      parts.forEach((part: any) => { const p = paymentValue(part); const row = ensureMethod(p.method);
-        if (isUsdMethod(p.method)) row.devUSD += p.usd * factor; else row.devBS += p.bs * factor;
-      });
-    };
-    voidDocs.forEach((doc: any) => applyRefund(doc, false));
-    const voidedIds = new Set(voidDocs.map((doc: any) => String(doc.ventaId || '')));
-    voidedSales.filter((sale: any) => !voidedIds.has(String(sale.id))).forEach((sale: any) => paymentParts(sale).forEach((part: any) => {
-      const p = paymentValue(part); const row = ensureMethod(p.method);
-      if (isUsdMethod(p.method)) row.devUSD += p.usd; else row.devBS += p.bs;
+    uniqueDebtJournal.forEach((entry: any) => debtJournalParts(entry).forEach((part: any) => {
+      const p = paymentValue(part);
+      if (['credito','nota_credito','mixto'].includes(p.method)) return;
+      const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.cobrosUSD += p.usd; else row.cobrosBS += p.bs;
     }));
-    returns.forEach((doc: any) => applyRefund(doc, true));
-    const journal = allJournal.filter((entry: any) => inWindow(entry.fecha) && String(entry.terminalId || '') === params.terminalId);
-    const cashMovements = journal.filter((entry: any) => {
-      const category = String(entry?.categoria || '').trim().toUpperCase().replace(/Á/g, 'A');
-      return ['MOVIMIENTO_CAJA','MOVIMIENTO DE CAJA'].includes(category) || String(entry?.type || '').toUpperCase() === 'MOVIMIENTO CAJA';
-    }).filter((entry: any) => entry.tipo === 'ingreso' || entry.tipo === 'egreso');
+    const applyRefund = (doc: any, kind: 'devolucion' | 'anulacion') => {
+      const sale = saleById.get(String(doc.ventaId));
+      const category = kind === 'devolucion' ? 'DEVOLUCION' : 'ANULACION';
+      const evidence = journal.find((entry: any) =>
+        String(entry.categoria || '').trim().toUpperCase().replace(/Á/g, 'A') === category &&
+        String(entry.referencia || '') === String(doc.id)
+      );
+      if (!evidence) return;
+      const journalMethod = normalizeMethod(evidence.metodo || 'otros');
+      if (journalMethod === 'nota_credito') { ensureMethod('nota_credito'); return; }
+      const explicit = Array.isArray(doc.refundPayments) && doc.refundPayments.length ? doc.refundPayments : null;
+      const sameOriginalMethod = kind === 'devolucion' && String(doc.metodoReembolso || '').toUpperCase() === 'MISMO_METODO';
+      const mixedCancellation = kind === 'anulacion' && journalMethod === 'mixto';
+      if (explicit || sameOriginalMethod || mixedCancellation) {
+        const parts = explicit || paymentParts(sale || { metodoPago:'otros' });
+        const saleTotal = Math.max(Number(sale?.totalUSD) || 0.000001, 0.000001);
+        const factor = explicit ? 1 : (Number(doc.totalUSD) || 0) / saleTotal;
+        parts.forEach((part: any) => {
+          const p = paymentValue(part);
+          if (['credito','nota_credito','mixto'].includes(p.method)) return;
+          const row = ensureMethod(p.method);
+          if (isUsdMethod(p.method)) row.devUSD += p.usd * factor; else row.devBS += p.bs * factor;
+        });
+        return;
+      }
+      const p = paymentValue({ metodo: evidence.metodo, montoUSD: evidence.montoUSD, montoBS: evidence.montoBS });
+      if (['credito','nota_credito','mixto'].includes(p.method)) return;
+      const row = ensureMethod(p.method);
+      if (isUsdMethod(p.method)) row.devUSD += p.usd; else row.devBS += p.bs;
+    };
+    voidDocs.forEach((doc: any) => applyRefund(doc, 'anulacion'));
+    returns.forEach((doc: any) => applyRefund(doc, 'devolucion'));
     cashMovements.forEach((entry: any) => {
       const method = normalizeMethod(entry.metodo || 'otros'); const row = ensureMethod(method);
-      if (entry.tipo === 'ingreso') { if (isUsdMethod(method)) row.movPlusUSD += Number(entry.montoUSD) || 0; else if (isBsMethod(method)) row.movPlusBS += Number(entry.montoBS) || 0; }
-      else { if (isUsdMethod(method)) row.movMinusUSD += Number(entry.montoUSD) || 0; else if (isBsMethod(method)) row.movMinusBS += Number(entry.montoBS) || 0; }
+      const movementType = String(entry.tipo || '').trim().toLowerCase();
+      const amountUSD = Number(entry.montoUSD ?? entry.montoUsd) || 0;
+      const amountBS = Number(entry.montoBS ?? entry.montoBs) || 0;
+      if (movementType === 'ingreso') { if (isUsdMethod(method)) row.movPlusUSD += amountUSD; else row.movPlusBS += amountBS; }
+      else { if (isUsdMethod(method)) row.movMinusUSD += amountUSD; else row.movMinusBS += amountBS; }
     });
     const cashBs = ensureMethod('efectivo_bs'); const cashUsd = ensureMethod('efectivo_usd');
     const openingBs = Number(current.fondoCajaHoyBS) || 0; const openingUsd = Number(current.fondoCajaHoyUSD) || 0;
@@ -1834,7 +2033,12 @@ export async function createZClosureTransaction(params: {
       const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
       row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
     }));
-    const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'credito']);
+    uniqueDebtJournal.forEach((entry: any) => debtJournalParts(entry).forEach((part: any) => {
+      const p = paymentValue(part); const row = debtByMethod[p.method] || (debtByMethod[p.method] = { metodo:p.method, montoBS:0, montoUSD:0 });
+      row.montoBS += p.bs; row.montoUSD += p.usd; debtBs += p.bs; debtUsd += p.usd;
+    }));
+    ['efectivo_bs','efectivo_usd','zelle','pagomovil','biopago','transferencia_bs','transferencia_usd','tarjeta','nota_credito'].forEach(ensureMethod);
+    const methodKeys = new Set([...Object.keys(arqueo), 'efectivo_bs', 'efectivo_usd', 'zelle', 'pagomovil', 'biopago', 'transferencia_bs', 'transferencia_usd', 'tarjeta', 'nota_credito']);
     const rawActuals = submitted.arqueoReal && typeof submitted.arqueoReal === 'object' ? submitted.arqueoReal : {};
     const actualByMethod: Record<string, number> = {};
     for (const [rawMethod, rawAmount] of Object.entries(rawActuals)) {
@@ -1851,7 +2055,7 @@ export async function createZClosureTransaction(params: {
       const values = ensureMethod(method);
       const opening = method === 'efectivo_bs' ? openingBs : method === 'efectivo_usd' ? openingUsd : 0;
       const usd = isUsdMethod(method);
-      const systemAmount = opening + (usd ? values.ventasUSD + values.cobrosUSD + values.movPlusUSD - values.devUSD - values.movMinusUSD : values.ventasBS + values.cobrosBS + values.movPlusBS - values.devBS - values.movMinusBS);
+      const systemAmount = method === 'nota_credito' ? 0 : opening + (usd ? values.ventasUSD + values.cobrosUSD + values.movPlusUSD - values.devUSD - values.movMinusUSD : values.ventasBS + values.cobrosBS + values.movPlusBS - values.devBS - values.movMinusBS);
       if (Math.abs(systemAmount) >= 0.01 && !Object.prototype.hasOwnProperty.call(actualByMethod, method)) {
         throw new Error('Falta registrar el conteo real del medio de pago: ' + method + '. El Corte Z no se ejecutó.');
       }
@@ -1860,32 +2064,36 @@ export async function createZClosureTransaction(params: {
         if (usd) differenceUsd += delta; else differenceBs += delta;
       }
     }
+    const arqueoWarnings = allSales
+      .filter((sale: any) => inWindow(sale.fecha) && String(sale.terminalId || '') === params.terminalId && normalizeMethod(sale.metodoPago) === 'mixto' && !(Array.isArray(sale.payments) && sale.payments.length))
+      .map((sale: any) => String(sale.id));
+    if (arqueoWarnings.length) throw new Error('Hay ventas con pago mixto sin desglose (' + arqueoWarnings.join(', ') + '). Corrija esos documentos antes de ejecutar el Corte Z.');
     const closedAt = new Date().toISOString();
     const reportData = {
       id: report.id, fecha: closedAt, generatedAt: closedAt,
       terminalId: params.terminalId, terminalName: String(current.nombre || current.name || params.terminalId),
       numeroZ: nextNumber, desdeFactura: sortedSales[0]?.id || 'N/A', hastaFactura: sortedSales[sortedSales.length-1]?.id || 'N/A',
       desdeNotaCredito: sortedReturns[0]?.id || 'N/A', hastaNotaCredito: sortedReturns[sortedReturns.length-1]?.id || 'N/A',
-      cantidadAnuladas: voidDocs.length + voidedSales.filter((sale: any) => !voidedIds.has(String(sale.id))).length,
+      cantidadAnuladas: voidDocs.length + voidedSales.filter((sale: any) => !voidDocs.some((doc: any) => String(doc.ventaId || '') === String(sale.id))).length,
       ventaBrutaUSD: brUSD, totalVentasUSD: brUSD, brUSD, descuentoUSD: discountUSD, devolucionesUSD: devUSD, ventaNetaUSD: netUSD,
       baseImponibleUSD: baseUSD, ivaUSD, exentoUSD: exemptUSD, igtfUSD,
-      metodosPago: paymentMethods, metodosArqueo: Object.entries(arqueo).map(([metodo, values]: any) => ({ metodo, ...values, moneda: isUsdMethod(metodo) ? 'USD' : 'BS' })),
+      metodosPago: paymentMethods, metodosArqueo: Object.entries(arqueo).map(([metodo, values]: any) => ({ metodo, ...values, moneda: isUsdMethod(metodo) ? 'USD' : 'BS' })), arqueoWarnings,
       cobrosDeudaUSD: debtUsd, cobrosDeudaBS: debtBs, cobrosDeudaPorMetodo: Object.values(debtByMethod),
-      manualSalidas: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      manualEntradas: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      salidasCajaUSD: journal.filter((e: any) => e.tipo==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      entradasCajaUSD: journal.filter((e: any) => e.tipo==='ingreso' && !['VENTA','COBRO_DEUDA'].includes(String(e.categoria || '').toUpperCase())).reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      manualSalidasBS: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
-      manualSalidasUSD: cashMovements.filter((e: any) => e.tipo==='egreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
-      manualEntradasBS: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS)||0),0),
-      manualEntradasUSD: cashMovements.filter((e: any) => e.tipo==='ingreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualSalidas: manualMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualEntradas: manualMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='ingreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      salidasCajaUSD: manualMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='egreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      entradasCajaUSD: manualMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='ingreso').reduce((s: number,e: any)=>s+(Number(e.montoUSD)||0),0),
+      manualSalidasBS: cashMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='egreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS ?? e.montoBs)||0),0),
+      manualSalidasUSD: cashMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='egreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD ?? e.montoUsd)||0),0),
+      manualEntradasBS: cashMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='ingreso' && normalizeMethod(e.metodo)==='efectivo_bs').reduce((s: number,e: any)=>s+(Number(e.montoBS ?? e.montoBs)||0),0),
+      manualEntradasUSD: cashMovements.filter((e: any) => String(e.tipo || '').trim().toLowerCase()==='ingreso' && normalizeMethod(e.metodo)==='efectivo_usd').reduce((s: number,e: any)=>s+(Number(e.montoUSD ?? e.montoUsd)||0),0),
       devEfectivoBS: cashBs.devBS, devEfectivoUSD: cashUsd.devUSD,
       totalNetoEfectivoBS: actualByMethod.efectivo_bs || 0, totalNetoEfectivoUSD: actualByMethod.efectivo_usd || 0,
       arqueoReal: actualByMethod,
       estimadoEfectivoBS: { entradas:0, egresos:0, total:estimatedBs }, estimadoEfectivoUSD: { entradas:0, egresos:0, total:estimatedUsd },
       fondoAperturaBS: openingBs, fondoAperturaUSD: openingUsd,
       acumuladoHistoricoUSD: (Number(current.acumuladoHistorico) || 0) + netUSD,
-      stats: { facturas:sales.length, devoluciones:returns.length, anulaciones:voidDocs.length, ticketPromedio:sales.length ? netUSD / sales.length : 0 },
+      stats: { facturas:sales.length, devoluciones:returns.length, anulaciones:voidDocs.length + voidedSales.filter((sale: any) => !voidDocs.some((doc: any) => String(doc.ventaId || '') === String(sale.id))).length, ticketPromedio:sales.length ? netUSD / sales.length : 0 },
       cajeroId: params.user.id, cajeroNombre: String(params.user.nombre || params.user.username || params.user.id),
       openedAt: current.cashData?.openDate || null, openedBy: String(current.cashData?.openedBy || current.cashData?.usuarioApertura || params.user.nombre || params.user.username || params.user.id), closedAt, closedBy: String(params.user.nombre || params.user.username || params.user.id), closedById: params.user.id,
       differenceBs: Number(differenceBs.toFixed(2)), differenceUSD: Number(differenceUsd.toFixed(2)),
@@ -1937,7 +2145,12 @@ export async function applyDebtPaymentTransaction(params: {
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
   if (collection === 'cxp' && params.user?.rol !== 'administrador') throw new Error('El pago a proveedores requiere administrador.');
   if (collection === 'cxc' && params.user?.rol === 'cajero' && !terminalForOperation) throw new Error('El cobro de CxC del cajero requiere su terminal asignada.');
-  if (!(Number(amountUSD) > 0)) return null;
+  const esPagoBsCxp = collection === 'cxp'
+    && ['efectivo_bs', 'pagomovil'].includes(String(payment?.metodo || '').toLowerCase())
+    && Number(amountBS) > 0
+    && Number(payment?.tasaAplicada) > 0;
+  // En CxP pagada en Bs, el equivalente USD puede ser inferior a un centavo.
+  if (esPagoBsCxp ? !(Number(amountBS) > 0) : !(Number(amountUSD) > 0)) return null;
   return sqliteInteractiveTransaction(async tx => {
     const opId = String(operationId || payment?.id || (collection+'|'+debtId+'|'+amountUSD+'|'+payment?.metodo+'|'+payment?.fecha));
     const check = await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['PAGO-DEUDA',opId]});
@@ -2002,8 +2215,16 @@ export async function applyDebtPaymentTransaction(params: {
       : saldoCalculado;
     const saldoCents = Math.round(saldo * 100);
     const amountCents = Math.round(Number(amountUSD) * 100);
-    if (saldoCents <= 0) throw new Error('La deuda ya está pagada.');
-    if (amountCents > saldoCents) throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
+    const tasaPago = Number(payment?.tasaAplicada) || 0;
+    const saldoBSExacto = esPagoBsCxp
+      ? Math.round((saldo * tasaPago + Number.EPSILON) * 100) / 100
+      : 0;
+    if (esPagoBsCxp ? saldoBSExacto <= 0 : saldoCents <= 0) throw new Error('La deuda ya está pagada.');
+    if (esPagoBsCxp
+      ? Number(amountBS) > saldoBSExacto + 0.005
+      : amountCents > saldoCents) {
+      throw new Error('El monto a pagar no puede ser mayor al saldo pendiente.');
+    }
 
     const terminal = terminalForOperation ? rowFromDb((await tx.execute(txSelect('terminales',terminalForOperation))).rows[0]) : null;
     if (terminalForOperation && !terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
@@ -2019,15 +2240,32 @@ export async function applyDebtPaymentTransaction(params: {
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
     const receiptId=terminal?terminalSeries(await terminalUniquePrefix(tx,terminal,terminalForOperation),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
-    const applied=Math.min(amountCents, saldoCents) / 100;
-    const appliedBS=Number(amountBS)>0?Math.min(Number(amountBS),Number(payment?.montoBS)||Number(amountBS)):(Number(payment?.montoBS)||(applied*(Number(payment?.tasaAplicada)||0)));
+    const appliedBS = esPagoBsCxp
+      ? Math.min(Math.round((Number(amountBS) + Number.EPSILON) * 100) / 100, saldoBSExacto)
+      : (Number(amountBS) > 0
+        ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS))
+        : (Number(payment?.montoBS) || (Math.min(amountCents, saldoCents) / 100) * tasaPago));
+    const applied = esPagoBsCxp
+      ? (appliedBS >= saldoBSExacto - 0.005 ? saldo : Math.min(saldo, Math.round((appliedBS / tasaPago + Number.EPSILON) * 1000000) / 1000000))
+      : Math.min(amountCents, saldoCents) / 100;
 
     const paymentWithTerminal = collection === 'cxc'
       ? {...payment, terminalId: terminalForOperation || payment?.terminalId, terminalName: terminal?.nombre || payment?.terminalName, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''}
       : {...payment, terminalId: undefined, terminalName: undefined, usuarioId: params.user.id, usuarioNombre: params.user.nombre || params.user.username || ''};
     const pago=clean({...paymentWithTerminal,id:receiptId,reciboId:receiptId,operationId:opId,terminalForOperation:terminalForOperation||payment?.terminalForOperation,montoUSD:applied,montoBS:appliedBS});
 
-    const updated={...debt,abonadoUSD:abonadoRegistrado+applied,saldoUSD:Math.max(0,saldo-applied),estado:Math.round((saldo-applied)*100)<=0?'pagada':'parcial',historialPagos:[...historialPrevio,pago]};
+    const saldoFinal = esPagoBsCxp && appliedBS >= saldoBSExacto - 0.005
+      ? 0
+      : Math.max(0, saldo - applied);
+    const updated={
+      ...debt,
+      abonadoUSD: esPagoBsCxp
+        ? Math.round((abonadoRegistrado + applied + Number.EPSILON) * 1000000) / 1000000
+        : abonadoRegistrado + applied,
+      saldoUSD: saldoFinal,
+      estado: saldoFinal <= 0.0000005 ? 'pagada' : 'parcial',
+      historialPagos: [...historialPrevio, pago]
+    };
     const statements:SQLiteStatement[]=[rowStatement(collection,updated)];
 
     if(collection==='cxc'){
@@ -2037,20 +2275,25 @@ export async function applyDebtPaymentTransaction(params: {
       const cedulaDeuda = String(customerCedula || (clienteRaw.match(/\[([^\]]+)\]\s*$/)?.[1] || '')).trim();
       const nombreDeuda = clienteRaw.replace(/\s*\[[^\]]+\]\s*$/, '').trim();
 
-      let found;
+      let customerRows:any[]=[];
       if (cedulaDeuda) {
-        found = await tx.execute({
-          sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",
+        const byCedula = await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 2",
           args:[cedulaDeuda]
         });
+        customerRows=byCedula.rows.map(rowFromDb).filter(Boolean);
       }
-      if ((!found || !found.rows.length) && nombreDeuda) {
-        found = await tx.execute({
-          sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(json_extract(data_json,'$.name'))) = LOWER(TRIM(?)) LIMIT 1",
+      if (!customerRows.length && nombreDeuda) {
+        const byName = await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$.name'),json_extract(data_json,'$.nombre'),'')))=LOWER(TRIM(?)) ORDER BY id LIMIT 2",
           args:[nombreDeuda]
         });
+        customerRows=byName.rows.map(rowFromDb).filter(Boolean);
       }
-      const customer=rowFromDb(found?.rows?.[0]);
+      if (customerRows.length > 1) {
+        throw new Error('Hay más de un cliente con esa identificación o nombre. No se puede actualizar el saldo resumen de forma segura; revise la ficha del cliente.');
+      }
+      const customer=customerRows[0];
       if(customer) {
         statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-applied)}));
       }
@@ -2069,7 +2312,12 @@ export async function applyDebtPaymentTransaction(params: {
 async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
   assertSQLiteReady();
   const {operationId,provider,customerName,customerCedula,amountUSD,amountBS,payment,paymentParts,journal,terminalId}=params;
-  if(!(Number(amountUSD)>0)) return {appliedUSD:0,appliedBS:0,debts:[]};
+  const tasaInicial=Number(payment?.tasaAplicada)||0;
+  const esPagoBsCxpInicial=collection==='cxp'
+    && ['efectivo_bs','pagomovil'].includes(String(payment?.metodo||'').toLowerCase())
+    && Number(amountBS)>0 && tasaInicial>0;
+  if(esPagoBsCxpInicial ? !(Number(amountBS)>0) : !(Number(amountUSD)>0))
+    return {appliedUSD:0,appliedBS:0,debts:[]};
   // Los pagos globales a proveedores se originan en Administración → CxP
   // y son administrativos: no dependen de ninguna Caja/Terminal.
   const terminalForOperation = collection === 'cxc' ? terminalId : undefined;
@@ -2121,26 +2369,81 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       });
       docs = found.rows.map(rowFromDb);
     }
-    docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>0.001&&d?.estado!=='pagada');
-    let remCents=Math.max(0,Math.round(Number(amountUSD)*100));
-    let remBS=Number(amountBS)>0?Number(amountBS):Number(amountUSD)*(Number(payment?.tasaAplicada)||0);
+    const tasaAplicada=Number(payment?.tasaAplicada)||0;
+    const esPagoBsCxp=collection==='cxp'&&['efectivo_bs','pagomovil'].includes(String(payment?.metodo||'').toLowerCase())&&Number(amountBS)>0&&tasaAplicada>0;
+    docs = docs.filter((d:any)=>(Number(d?.saldoUSD)||0)>(collection==='cxp'?0.000001:0.001)&&d?.estado!=='pagada');
+    let remCents=esPagoBsCxp?0:Math.max(0,Math.round(Number(amountUSD)*100));
+    let remBS=collection==='cxp'
+      ? (Number(amountBS)>0?Math.round((Number(amountBS)+Number.EPSILON)*100)/100:Number(amountUSD)*tasaAplicada)
+      : (Number(amountBS)>0?Number(amountBS):Number(amountUSD)*tasaAplicada);
     let appliedUSD=0, appliedBS=0; const debts:any[]=[]; const statements:SQLiteStatement[]=[];
     for(const d of docs){
-      if(remCents<=0) break;
-      const debtCents=Math.max(0,Math.round((Number(d.saldoUSD)||0)*100));
-      const pagoCents=Math.min(debtCents,remCents); if(pagoCents<=0) continue;
-      const pago=pagoCents/100;
-      const tasa=Number(payment?.tasaAplicada)||0; const pagoBS=Math.min(remBS,pago*tasa);
-      remCents-=pagoCents; remBS=Math.max(0,remBS-pagoBS);
+      if(esPagoBsCxp ? remBS<=0.0000005 : remCents<=0) break;
+      const saldo=Math.max(0,Number(d.saldoUSD)||0);
+      const debtCents=Math.max(0,Math.round(saldo*100));
+      const debtBS=Math.round((saldo*tasaAplicada+Number.EPSILON)*100)/100;
+      const pagoBS=esPagoBsCxp
+        ? Math.min(remBS,debtBS)
+        : collection==='cxp'
+          ? Math.min(remBS,Math.round((Math.min(debtCents,remCents)/100*tasaAplicada+Number.EPSILON)*100)/100)
+          : Math.min(remBS,(Math.min(debtCents,remCents)/100)*tasaAplicada);
+      const pago=esPagoBsCxp
+        ? (pagoBS>=debtBS-0.0000005 ? saldo : Math.min(saldo,Math.round((pagoBS/tasaAplicada+Number.EPSILON)*1000000)/1000000))
+        : Math.min(debtCents,remCents)/100;
+      if(pago<=0.0000005 || (esPagoBsCxp && pagoBS<=0.0000005)) continue;
+      if(esPagoBsCxp) remBS=Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100);
+      else {
+        remCents-=Math.round(pago*100);
+        remBS=collection==='cxp'
+          ? Math.max(0,Math.round((remBS-pagoBS+Number.EPSILON)*100)/100)
+          : Math.max(0,remBS-pagoBS);
+      }
       const h=[...(Array.isArray(d.historialPagos)?d.historialPagos:[])];
       h.push(clean({...payment,id:receiptId,reciboId:receiptId,terminalId:collection==='cxc'?(terminalForOperation||payment?.terminalId):undefined,montoUSD:pago,montoBS:pagoBS}));
-      const updated={...d,abonadoUSD:(Number(d.abonadoUSD)||0)+pago,saldoUSD:Math.max(0,(Number(d.saldoUSD)||0)-pago),estado:(Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial',historialPagos:h};
+      const saldoNuevo=esPagoBsCxp
+        ? (pagoBS>=debtBS-0.0000005 ? 0 : Math.max(0,Math.round((saldo-pago+Number.EPSILON)*1000000)/1000000))
+        : Math.max(0,saldo-pago);
+      const saldoFinal=esPagoBsCxp ? (saldoNuevo<=0.0000005?0:saldoNuevo) : saldoNuevo;
+      const updated={
+        ...d,
+        abonadoUSD:esPagoBsCxp
+          ? Math.round(((Number(d.abonadoUSD)||0)+pago+Number.EPSILON)*1000000)/1000000
+          : (Number(d.abonadoUSD)||0)+pago,
+        saldoUSD:saldoFinal,
+        estado:esPagoBsCxp ? (saldoFinal===0?'pagada':'parcial') : ((Number(d.saldoUSD)-pago)<=0.001?'pagada':'parcial'),
+        historialPagos:h
+      };
       statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pago,appliedBS:pagoBS}); appliedUSD+=pago; appliedBS+=pagoBS;
     }
-    if(appliedUSD<=0.000001) throw new Error('No hay saldo pendiente para registrar este pago.');
-    if(collection==='cxc'&&customerCedula){
-      const foundCustomer=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
-      const customer=rowFromDb(foundCustomer.rows[0]); if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD)}));
+    if(esPagoBsCxp ? appliedBS<=0.0000005 : appliedUSD<=0.000001) throw new Error('No hay saldo pendiente para registrar este pago.');
+    if(collection==='cxc'){
+      let customerRows:any[]=[];
+      if(customerCedula){
+        const byCedula=await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 2",
+          args:[String(customerCedula)],
+        });
+        customerRows=byCedula.rows.map(rowFromDb).filter(Boolean);
+      }
+      // Si la deuda histórica no conserva cédula, localizar por nombre exacto.
+      // No elegir arbitrariamente cuando existen clientes homónimos.
+      if(!customerRows.length && String(customerName||'').trim()){
+        const byName=await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$.name'),json_extract(data_json,'$.nombre'),'')))=LOWER(TRIM(?)) ORDER BY id LIMIT 2",
+          args:[String(customerName).trim()],
+        });
+        customerRows=byName.rows.map(rowFromDb).filter(Boolean);
+      }
+      if(customerRows.length>1){
+        throw new Error('Hay más de un cliente con esa identificación o nombre. No se puede actualizar el saldo resumen de forma segura; revise la ficha del cliente.');
+      }
+      const customer=customerRows[0];
+      if(customer){
+        statements.push(rowStatement('clientes',{
+          ...customer,
+          debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD),
+        }));
+      }
     }
     const canonicalJournal=journal?.id?{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||journal.terminalId):undefined,terminalName:collection==='cxc'?(terminal?.nombre||journal.terminalName):undefined}:null;
     if(canonicalJournal) statements.push(rowStatement('libroDiario',canonicalJournal));
@@ -2235,7 +2538,9 @@ export async function createCustomerDebtTransaction(params:any){
     } else if(params.customer?.id) {
       customer = {
         ...params.customer,
-        debt: Number(params.customer.debt) || Number(debt.montoUSD) || 0,
+        // El saldo inicial del cliente se deriva de esta deuda registrada;
+        // nunca se acepta el resumen financiero que envíe el navegador.
+        debt: Math.max(0, Number(debt.montoUSD) || 0),
       };
       statements.push(rowStatement('clientes',customer));
     }
@@ -2946,6 +3251,7 @@ export async function createCashMovementTransaction(params: {
 export async function reverseDebtPaymentTransaction(params:any){
   assertSQLiteReady();
   const {operationId,collection,debtId,paymentId,journalId}=params;
+  if (!['cxc','cxp'].includes(String(collection))) throw new Error('Tipo de cartera no válido.');
   return sqliteInteractiveTransaction(async tx=>{
     const opId=String(operationId||collection+'|'+debtId+'|'+paymentId+'|REVERSE');
     const check=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['REVERSAR-PAGO',opId]});
@@ -2955,18 +3261,52 @@ export async function reverseDebtPaymentTransaction(params:any){
       if(!debt)throw new Error('El abono fue reversado, pero la deuda ya no existe para recuperar el resultado.');
       if(!saved.reversedPayment)throw new Error('El abono ya fue reversado. Consulte el historial de auditoría; el registro anterior no conserva una copia del comprobante.');
       const journal=journalId?rowFromDb((await tx.execute(txSelect('libroDiario',String(journalId)))).rows[0]):null;
-      return {...debt,reversedPayment:saved.reversedPayment,journal,recovered:true};
+      const customer=saved.customerId?rowFromDb((await tx.execute(txSelect('clientes',String(saved.customerId)))).rows[0]):null;
+      return {...debt,reversedPayment:saved.reversedPayment,customer,journal,recovered:true};
     }
-    const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]); if(!debt) throw new Error('La deuda ya no existe.');
-    const historial=Array.isArray(debt.historialPagos)?debt.historialPagos:[]; const idx=historial.findIndex((p:any)=>String(p?.id||'')===String(paymentId));
+    const debt=rowFromDb((await tx.execute(txSelect(collection,debtId))).rows[0]);
+    if(!debt) throw new Error('La deuda ya no existe.');
+    const historial=Array.isArray(debt.historialPagos)?debt.historialPagos:[];
+    const idx=historial.findIndex((p:any)=>String(p?.id||'')===String(paymentId));
     if(idx<0) throw new Error('El abono ya fue eliminado o no existe en la deuda.');
     const pago=historial[idx], restantes=historial.filter((_:any,i:number)=>i!==idx);
-    const abonado=Math.max(0,Math.round((restantes.reduce((s:number,p:any)=>s+(Number(p?.montoUSD)||0),0)+Number.EPSILON)*100)/100);
-    const saldo=Math.max(0,Math.round(((Number(debt.montoUSD)||0)-abonado+Number.EPSILON)*100)/100);
-    const updated={...debt,abonadoUSD:abonado,saldoUSD:saldo,estado:saldo<=.001?'pagada':abonado>0?'parcial':'pendiente',historialPagos:restantes};
+    // CxP admite equivalentes USD de pagos en Bs con precisión subcentavo;
+    // al reversarlos no debemos redondear a dos decimales ni marcar como
+    // pagado un saldo pequeño que todavía existe.
+    const precision=collection==='cxp'?1000000:100;
+    const roundAmount=(value:number)=>Math.round((value+Number.EPSILON)*precision)/precision;
+    const abonado=Math.max(0,roundAmount(restantes.reduce((s:number,p:any)=>s+(Number(p?.montoUSD)||0),0)));
+    const saldo=Math.max(0,roundAmount((Number(debt.montoUSD)||0)-abonado));
+    const paidThreshold=collection==='cxp'?0.0000005:0.001;
+    const updated={...debt,abonadoUSD:abonado,saldoUSD:saldo,estado:saldo<=paidThreshold?'pagada':abonado>0?'parcial':'pendiente',historialPagos:restantes};
     const statements:SQLiteStatement[]=[rowStatement(collection,updated)];
+    let updatedCustomer:any=null;
+    if(collection==='cxc'){
+      const rawClient=String(debt.cliente||'');
+      const cedula=rawClient.match(/\[([^\]]+)\]\s*$/)?.[1]||'';
+      const name=rawClient.replace(/\s*\[[^\]]+\]\s*$/,'').trim();
+      let customerResult:any=null;
+      if(cedula){
+        customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 2",args:[cedula]});
+        if(customerResult.rows.length>1){
+          throw new Error('No se puede reversar el abono: hay varias fichas de cliente con la misma cédula. Corrija los duplicados y vuelva a intentarlo.');
+        }
+      }
+      if(!customerResult?.rows?.length&&name){
+        customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$.name'),json_extract(data_json,'$.nombre'),'')))=LOWER(TRIM(?)) LIMIT 2",args:[name]});
+        if(customerResult.rows.length>1){
+          throw new Error('No se puede reversar el abono: hay clientes homónimos y la deuda no tiene una cédula única. Identifique la ficha correcta antes de reintentar.');
+        }
+      }
+      const customer=rowFromDb(customerResult?.rows?.[0]);
+      if(customer){
+        updatedCustomer={...customer,debt:Math.max(0,(Number(customer.debt)||0)+(Number(pago?.montoUSD)||0))};
+        statements.push(rowStatement('clientes',updatedCustomer));
+      }
+    }
     if(journalId){
-      const jr=await tx.execute(txSelect('libroDiario',journalId)); const journal=rowFromDb(jr.rows[0]);
+      const jr=await tx.execute(txSelect('libroDiario',journalId));
+      const journal=rowFromDb(jr.rows[0]);
       if(journal){
         const monto=Math.max(0,Math.round(((Number(journal.montoUSD)||0)-(Number(pago?.montoUSD)||0)+Number.EPSILON)*100)/100);
         const montoBS=Math.max(0,Math.round(((Number(journal.montoBS)||0)-(Number(pago?.montoBS)||0)+Number.EPSILON)*100)/100);
@@ -2974,11 +3314,12 @@ export async function reverseDebtPaymentTransaction(params:any){
         else statements.push(rowStatement('libroDiario',{...journal,montoUSD:monto,montoBS:montoBS,concepto:String(journal.concepto||'').replace(/ \(abono revertido\)$/i,'')+' (abono revertido)'}));
       }
     }
-    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['REVERSAR-PAGO-'+opId,'REVERSAR-PAGO',opId,JSON.stringify({tipo:'REVERSAR-PAGO',operationId:opId,referencia:paymentId,collection,debtId,reversedPayment:pago,journalId:journalId||null})],wantRows:false});
+    statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['REVERSAR-PAGO-'+opId,'REVERSAR-PAGO',opId,JSON.stringify({tipo:'REVERSAR-PAGO',operationId:opId,referencia:paymentId,collection,debtId,reversedPayment:pago,journalId:journalId||null,customerId:updatedCustomer?.id||null})],wantRows:false});
     for(const s of statements) await tx.execute(s);
-    return {...updated,reversedPayment:pago};
+    return {...updated,reversedPayment:pago,customer:updatedCustomer};
   });
 }
+
 export async function deleteCustomerAndDebtsTransaction(params:any){
   assertSQLiteReady();
   return sqliteInteractiveTransaction(async tx=>{
@@ -3002,7 +3343,18 @@ export async function deleteCustomerAndDebtsTransaction(params:any){
 
 export async function createPurchaseTransaction(params:any){
   assertSQLiteReady(); const {operationId,purchase,items,purchaseDate,purchaseDateTime,supplier,invoiceNumber,exchangeRate,journal,debt}=params;
-  if(!items?.length) throw new Error('La compra no contiene productos.'); if(!invoiceNumber||!supplier) throw new Error('La compra no tiene factura/proveedor.'); if(!(Number(exchangeRate)>0)) throw new Error('La tasa de la compra no es válida.'); if(!purchase?.id) throw new Error('La compra no tiene id.');
+  if(!Array.isArray(items)||!items.length) throw new Error('La compra no contiene productos.');
+  if(!String(invoiceNumber||'').trim()||!String(supplier||'').trim()) throw new Error('La compra no tiene factura/proveedor.');
+  if(!(Number(exchangeRate)>0)||!Number.isFinite(Number(exchangeRate))) throw new Error('La tasa de la compra no es válida.');
+  if(!purchase?.id) throw new Error('La compra no tiene id.');
+  for(let index=0;index<items.length;index++){
+    const item=items[index], productId=String(item?.productoId||'').trim();
+    const quantity=Number(item?.cantidad), cost=Number(item?.costoUnitarioUSD), subtotal=Number(item?.subtotalUSD);
+    if(!productId) throw new Error('El producto de la línea '+(index+1)+' no tiene identificador.');
+    if(!Number.isFinite(quantity)||quantity<=0) throw new Error('La cantidad de la línea '+(index+1)+' debe ser mayor que cero.');
+    if(!Number.isFinite(cost)||cost<0) throw new Error('El costo unitario de la línea '+(index+1)+' no es válido.');
+    if(!Number.isFinite(subtotal)||subtotal<0) throw new Error('El subtotal de la línea '+(index+1)+' no es válido.');
+  }
   const opId=String(operationId||purchase.id||(invoiceNumber+'|'+supplier+'|'+purchaseDate));
   return sqliteInteractiveTransaction(async tx=>{
     const prior=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['COMPRA',opId]});
@@ -3023,11 +3375,19 @@ export async function createPurchaseTransaction(params:any){
     if(existing.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una compra con la misma factura, proveedor y fecha.');
     const debtRows=await tx.execute({sql:"SELECT id,data_json FROM cxp WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",args:[String(invoiceNumber),String(supplier)]});
     if(debtRows.rows.some((r:any)=>!purchaseDate||String(rowFromDb(r)?.fecha||'').slice(0,10)===String(purchaseDate).slice(0,10))) throw new Error('Ya existe una cuenta por pagar para esta factura y proveedor.');
-    const ids: string[] = Array.from(new Set<string>(items.map((i:any)=>String(i.productoId||'')).filter((id:string)=>Boolean(id)))), itemBy=new Map<string,any>(); for(const i of items){const pid=String(i.productoId),p=itemBy.get(pid);itemBy.set(pid,p?{...p,cantidad:(Number(p.cantidad)||0)+(Number(i.cantidad)||0),subtotalUSD:(Number(p.subtotalUSD)||0)+(Number(i.subtotalUSD)||0)}:{...i});}
+    const ids: string[] = Array.from(new Set<string>(items.map((i:any)=>String(i.productoId).trim())));
+    const itemBy=new Map<string,any>();
+    for(const item of items){
+      const pid=String(item.productoId).trim(), current=itemBy.get(pid);
+      const quantity=Number(item.cantidad), cost=Number(item.costoUnitarioUSD);
+      itemBy.set(pid,current
+        ? {...current,cantidad:current.cantidad+quantity,subtotalUSD:current.subtotalUSD+Number(item.subtotalUSD),costoTotalUSD:current.costoTotalUSD+(quantity*cost)}
+        : {...item,productoId:pid,cantidad:quantity,subtotalUSD:Number(item.subtotalUSD),costoTotalUSD:quantity*cost});
+    }
     const statements:SQLiteStatement[]=[rowStatement('compras',purchase)];
     const updatedProducts:any[]=[];
-    for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en SQLite local.');const i=itemBy.get(pid),qty=Number(i.cantidad)||0,cost=Number(i.costoUnitarioUSD)||0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
-      const latestRow=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha DESC,id DESC LIMIT 1",args:[pid]})).rows[0]; const latest=latestRow?rowFromDb(latestRow):null; const mv={id:String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID())),productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')}; const latestFecha=String(latest?.fecha||''); const compraEsCronologicamenteUltima=!latestFecha||String(purchaseDateTime||'')>=latestFecha; if(compraEsCronologicamenteUltima){mv.stockAntes=oldStock;mv.stockDespues=newStock;statements.push(rowStatement('movimientos',mv));}else{const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb); const combined=[...rows.map((d:any)=>({id:d.id,data:d})),{id:mv.id,data:mv}].sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))); let running=rows.length?Number(rows[0].stockAntes)||0:0; for(const e of combined){const before=running;running=before+(Number(e.data.cantidad)||0);statements.push(rowStatement('movimientos',{...e.data,id:e.id,stockAntes:before,stockDespues:running}));}} statements.push(rowStatement('productos',{...p,id:pid,stock:newStock,costoUSD:newCost}));}
+    for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en SQLite local.');const i=itemBy.get(pid),qty=Number(i.cantidad),cost=qty>0?Number(i.costoTotalUSD)/qty:0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*10000)/10000:cost;
+      const latestRow=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha DESC,id DESC LIMIT 1",args:[pid]})).rows[0]; const latest=latestRow?rowFromDb(latestRow):null; const movementId=String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID())); if((await tx.execute(txSelect('movimientos',movementId))).rows.length) throw new Error('El identificador del movimiento '+movementId+' ya existe en el Kardex.'); const mv={id:movementId,productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')}; const latestFecha=String(latest?.fecha||''); const compraEsCronologicamenteUltima=!latestFecha||String(purchaseDateTime||'')>=latestFecha; if(compraEsCronologicamenteUltima){mv.stockAntes=oldStock;mv.stockDespues=newStock;statements.push(rowStatement('movimientos',mv));}else{const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb); const combined=[...rows.map((d:any)=>({id:d.id,data:d})),{id:mv.id,data:mv}].sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))); let running=rows.length?Number(rows[0].stockAntes)||0:0; for(const e of combined){const before=running;running=before+(Number(e.data.cantidad)||0);statements.push(rowStatement('movimientos',{...e.data,id:e.id,stockAntes:before,stockDespues:running}));}} const persistedProduct={...p,id:pid,stock:newStock,costoUSD:newCost}; statements.push(rowStatement('productos',persistedProduct)); updatedProducts.push(persistedProduct);}
     if(debt?.id) statements.push(rowStatement('cxp',debt)); if(journal?.id) statements.push(rowStatement('libroDiario',journal)); statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['COMPRA-'+opId,'COMPRA',opId,JSON.stringify({tipo:'COMPRA',operationId:opId,referencia:purchase.id})],wantRows:false}); if(statements.length>450)throw new Error('La compra tiene demasiados movimientos históricos para una sola transacción.'); for(const s of statements)await tx.execute(s); return {purchase,journal:journal||null,debt:debt||null,products:updatedProducts};
   });
 }
@@ -3066,6 +3426,13 @@ export async function deletePurchaseTransaction(params:any){
     }
 
     const purchase=purchaseId?rowFromDb((await tx.execute(txSelect('compras',purchaseId))).rows[0]):null;
+    if(purchase && (
+      String(purchase.numeroFactura||'')!==String(invoiceNumber) ||
+      String(purchase.proveedor||'')!==String(supplier) ||
+      (purchaseDate && String(purchase.fecha||'').slice(0,10)!==String(purchaseDate).slice(0,10))
+    )){
+      throw new Error('La compra seleccionada no coincide con la factura, proveedor y fecha enviados. No se eliminó ningún registro.');
+    }
     const purchases=(await tx.execute({
       sql:"SELECT id,data_json FROM compras WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",
       args:[String(invoiceNumber),String(supplier)]
@@ -3123,6 +3490,14 @@ export async function deletePurchaseTransaction(params:any){
       const deletedIds=new Set(deleted.filter((d:any)=>String(d.productoId)===pid).map((d:any)=>String(d.id)));
       const remaining=rows.filter((m:any)=>!deletedIds.has(String(m.id)));
       const deletedForProduct=deleted.filter((x:any)=>String(x.productoId)===pid);
+      const deletedIndexes=rows.map((m:any,index:number)=>deletedIds.has(String(m.id))?index:-1).filter((index:number)=>index>=0);
+      const lastDeletedIndex=deletedIndexes.length?Math.max(...deletedIndexes):-1;
+      const laterNonPurchase=lastDeletedIndex>=0
+        ? rows.slice(lastDeletedIndex+1).find((m:any)=>!deletedIds.has(String(m.id))&&String(m.tipo||'')!=='compra')
+        : null;
+      if(laterNonPurchase){
+        throw new Error('No se puede eliminar esta compra porque el producto tiene movimientos posteriores de tipo '+String(laterNonPurchase.tipo||'inventario')+'. Para proteger el costo histórico y el Kardex, registre una reversión o ajuste documentado en lugar de borrar la compra.');
+      }
       const latestMovementId=rows.length ? String(rows[rows.length-1].id) : '';
       const deletingLatestMovement=deletedForProduct.some((d:any)=>String(d.id)===latestMovementId);
 
@@ -3132,7 +3507,10 @@ export async function deletePurchaseTransaction(params:any){
       // una eliminación sencilla en cientos/miles de escrituras.
       const rebuilt:any[]=[];
       if(!deletingLatestMovement){
-        let running=remaining.length ? Number(remaining[0].stockAntes)||0 : 0;
+        // El saldo inicial siempre es el existente antes del primer movimiento
+        // original. Usar remaining[0].stockAntes es incorrecto si se elimina
+        // la primera compra: ese snapshot ya incluye las unidades eliminadas.
+        let running=rows.length ? Number(rows[0].stockAntes)||0 : 0;
         for(const m of remaining){
           const before=running;
           running=before+(Number(m.cantidad)||0);

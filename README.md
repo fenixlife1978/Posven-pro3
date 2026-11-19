@@ -2,6 +2,12 @@
 
 POSVEN3 es una aplicación de punto de venta para Windows, construida con Electron y Next.js. Está diseñada para operar con una base de datos SQLite local centralizada en una computadora servidor y varias computadoras cliente dentro de la misma red.
 
+
+
+## Servicios y dependencias expresamente excluidos
+
+POSVEN3 es una aplicación de escritorio Windows. Su única base de datos operativa es el archivo SQLite local del equipo servidor. No utiliza ni debe conectarse a Turso, Firebase, Firestore ni a ningún servicio de base de datos en la nube. Tampoco utiliza Vercel para compilar, alojar, ejecutar o publicar esta aplicación. El servidor HTTP/Next.js forma parte del proceso local de escritorio y atiende exclusivamente la red LAN configurada. Las funciones que consulten servicios externos opcionales (por ejemplo, una tasa de referencia) no pueden convertirse en dependencias para registrar ventas, inventario, caja o contabilidad.
+
 ## Arquitectura de escritorio y red local
 
 - **Una PC SERVIDOR** aloja el servicio local de POSVEN3 y el único archivo SQLite operativo.
@@ -48,6 +54,8 @@ En el primer inicio, POSVEN3 genera la contraseña temporal y la guarda una sola
 POSVEN3 genera respaldos JSON desde SQLite local. Para recuperar información de POSVEN2 utiliza el respaldo administrativo completo que genera POSVEN2; no copies archivos internos de bases de datos remotas.
 
 La restauración valida tablas, catálogos, versión y conteos, crea una copia de seguridad de la SQLite actual y reemplaza los datos dentro de una transacción. Al terminar ejecuta comprobaciones de integridad y claves foráneas. Si algo falla, la transacción se revierte y la base anterior permanece disponible. La restauración invalida las sesiones de las otras cajas; deberán iniciar sesión nuevamente.
+
+La exportación y restauración no imponen topes por cantidad de operaciones o registros. El tamaño del archivo es un límite técnico de seguridad configurable mediante la variable de entorno `POSVEN_MAX_BACKUP_BYTES` (en bytes); por defecto es `67108864` (64 MiB). Si se cambia el límite, debe configurarse en el proceso que ejecuta el servidor local. Los lotes internos solo controlan el uso de memoria y el rendimiento; no omiten filas.
 
 Los respaldos administrativos de POSVEN2 no contienen hashes de contraseña. POSVEN3 conserva los identificadores y datos de cada usuario, genera contraseñas temporales aleatorias y descarga un archivo privado con esas claves. Los hashes presentes en respaldos SQLite de POSVEN3 se conservan.
 
