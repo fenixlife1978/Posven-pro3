@@ -3202,9 +3202,15 @@ export async function reverseDebtPaymentTransaction(params:any){
     const idx=historial.findIndex((p:any)=>String(p?.id||'')===String(paymentId));
     if(idx<0) throw new Error('El abono ya fue eliminado o no existe en la deuda.');
     const pago=historial[idx], restantes=historial.filter((_:any,i:number)=>i!==idx);
-    const abonado=Math.max(0,Math.round((restantes.reduce((s:number,p:any)=>s+(Number(p?.montoUSD)||0),0)+Number.EPSILON)*100)/100);
-    const saldo=Math.max(0,Math.round(((Number(debt.montoUSD)||0)-abonado+Number.EPSILON)*100)/100);
-    const updated={...debt,abonadoUSD:abonado,saldoUSD:saldo,estado:saldo<=.001?'pagada':abonado>0?'parcial':'pendiente',historialPagos:restantes};
+    // CxP admite equivalentes USD de pagos en Bs con precisión subcentavo;
+    // al reversarlos no debemos redondear a dos decimales ni marcar como
+    // pagado un saldo pequeño que todavía existe.
+    const precision=collection==='cxp'?1000000:100;
+    const roundAmount=(value:number)=>Math.round((value+Number.EPSILON)*precision)/precision;
+    const abonado=Math.max(0,roundAmount(restantes.reduce((s:number,p:any)=>s+(Number(p?.montoUSD)||0),0)));
+    const saldo=Math.max(0,roundAmount((Number(debt.montoUSD)||0)-abonado));
+    const paidThreshold=collection==='cxp'?0.0000005:0.001;
+    const updated={...debt,abonadoUSD:abonado,saldoUSD:saldo,estado:saldo<=paidThreshold?'pagada':abonado>0?'parcial':'pendiente',historialPagos:restantes};
     const statements:SQLiteStatement[]=[rowStatement(collection,updated)];
     let updatedCustomer:any=null;
     if(collection==='cxc'){
