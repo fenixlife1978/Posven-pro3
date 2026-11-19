@@ -2275,7 +2275,11 @@ export async function applyDebtPaymentTransaction(params: {
 
     const saldoFinal = esPagoBsCxp && appliedBS >= saldoBSExacto - 0.005
       ? 0
-      : (esPagoBsCxc && applied >= saldo - 0.0000005 ? 0 : Math.max(0, saldo - applied));
+      : (esPagoBsCxc && applied >= saldo - 0.0000005
+        ? 0
+        : (esPagoBs
+          ? Math.max(0, Math.round((saldo - applied + Number.EPSILON) * 1000000) / 1000000)
+          : Math.max(0, saldo - applied)));
     const updated={
       ...debt,
       abonadoUSD: esPagoBs
@@ -2314,7 +2318,12 @@ export async function applyDebtPaymentTransaction(params: {
       }
       const customer=customerRows[0];
       if(customer) {
-        statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-applied)}));
+        statements.push(rowStatement('clientes',{
+          ...customer,
+          debt: esPagoBsCxc
+            ? Math.max(0, Math.round(((Number(customer.debt)||0) - applied + Number.EPSILON) * 1000000) / 1000000)
+            : Math.max(0, (Number(customer.debt)||0) - applied),
+        }));
       }
     }
     const journals=Array.isArray(journal)?journal:(journal?[journal]:[]);
@@ -2477,7 +2486,9 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       if(customer){
         statements.push(rowStatement('clientes',{
           ...customer,
-          debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD),
+          debt:esPagoBsCxc
+            ? Math.max(0,Math.round(((Number(customer.debt)||0)-appliedUSD+Number.EPSILON)*1000000)/1000000)
+            : Math.max(0,(Number(customer.debt)||0)-appliedUSD),
         }));
       }
     }
