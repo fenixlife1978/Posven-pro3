@@ -3420,6 +3420,13 @@ export async function deletePurchaseTransaction(params:any){
     }
 
     const purchase=purchaseId?rowFromDb((await tx.execute(txSelect('compras',purchaseId))).rows[0]):null;
+    if(purchase && (
+      String(purchase.numeroFactura||'')!==String(invoiceNumber) ||
+      String(purchase.proveedor||'')!==String(supplier) ||
+      (purchaseDate && String(purchase.fecha||'').slice(0,10)!==String(purchaseDate).slice(0,10))
+    )){
+      throw new Error('La compra seleccionada no coincide con la factura, proveedor y fecha enviados. No se eliminó ningún registro.');
+    }
     const purchases=(await tx.execute({
       sql:"SELECT id,data_json FROM compras WHERE json_extract(data_json,'$.numeroFactura')=? AND json_extract(data_json,'$.proveedor')=?",
       args:[String(invoiceNumber),String(supplier)]
@@ -3477,6 +3484,14 @@ export async function deletePurchaseTransaction(params:any){
       const deletedIds=new Set(deleted.filter((d:any)=>String(d.productoId)===pid).map((d:any)=>String(d.id)));
       const remaining=rows.filter((m:any)=>!deletedIds.has(String(m.id)));
       const deletedForProduct=deleted.filter((x:any)=>String(x.productoId)===pid);
+      const deletedIndexes=rows.map((m:any,index:number)=>deletedIds.has(String(m.id))?index:-1).filter((index:number)=>index>=0);
+      const lastDeletedIndex=deletedIndexes.length?Math.max(...deletedIndexes):-1;
+      const laterNonPurchase=lastDeletedIndex>=0
+        ? rows.slice(lastDeletedIndex+1).find((m:any)=>!deletedIds.has(String(m.id))&&String(m.tipo||'')!=='compra')
+        : null;
+      if(laterNonPurchase){
+        throw new Error('No se puede eliminar esta compra porque el producto tiene movimientos posteriores de tipo '+String(laterNonPurchase.tipo||'inventario')+'. Para proteger el costo histórico y el Kardex, registre una reversión o ajuste documentado en lugar de borrar la compra.');
+      }
       const latestMovementId=rows.length ? String(rows[rows.length-1].id) : '';
       const deletingLatestMovement=deletedForProduct.some((d:any)=>String(d.id)===latestMovementId);
 
@@ -3486,7 +3501,10 @@ export async function deletePurchaseTransaction(params:any){
       // una eliminación sencilla en cientos/miles de escrituras.
       const rebuilt:any[]=[];
       if(!deletingLatestMovement){
-        let running=remaining.length ? Number(remaining[0].stockAntes)||0 : 0;
+        // El saldo inicial siempre es el existente antes del primer movimiento
+        // original. Usar remaining[0].stockAntes es incorrecto si se elimina
+        // la primera compra: ese snapshot ya incluye las unidades eliminadas.
+        let running=rows.length ? Number(rows[0].stockAntes)||0 : 0;
         for(const m of remaining){
           const before=running;
           running=before+(Number(m.cantidad)||0);
