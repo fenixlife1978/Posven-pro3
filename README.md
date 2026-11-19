@@ -2,6 +2,12 @@
 
 POSVEN3 es una aplicación de punto de venta para Windows, construida con Electron y Next.js. Está diseñada para operar con una base de datos SQLite local centralizada en una computadora servidor y varias computadoras cliente dentro de la misma red.
 
+
+
+## Servicios y dependencias expresamente excluidos
+
+POSVEN3 es una aplicación de escritorio Windows. Su única base de datos operativa es el archivo SQLite local del equipo servidor. No utiliza ni debe conectarse a Turso, Firebase, Firestore ni a ningún servicio de base de datos en la nube. Tampoco utiliza Vercel para compilar, alojar, ejecutar o publicar esta aplicación. El servidor HTTP/Next.js forma parte del proceso local de escritorio y atiende exclusivamente la red LAN configurada. Las funciones que consulten servicios externos opcionales (por ejemplo, una tasa de referencia) no pueden convertirse en dependencias para registrar ventas, inventario, caja o contabilidad.
+
 ## Arquitectura de escritorio y red local
 
 - **Una PC SERVIDOR** aloja el servicio local de POSVEN3 y el único archivo SQLite operativo.
