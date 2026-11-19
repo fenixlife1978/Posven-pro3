@@ -1843,3 +1843,79 @@ test('la reconciliación Kardex respeta el orden de inserción cuando dos movimi
   assert.equal(product.stock, 5);
   assert.equal(result.source, 'kardex');
 });
+
+
+test('el botón Ajustes del POS registra consumo, colaboración, entradas y salidas en SQLite con trazabilidad de caja', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:55:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO app_config(id,data_json,updated_at) VALUES(?,?,?)',
+    args: ['general', JSON.stringify({ tasa: 100 }), at],
+    wantRows: false,
+  });
+
+  const cases = [
+    { type: 'consumo', delta: -2, expected: 8, suffix: 'CONSUMO' },
+    { type: 'colaboracion', delta: -1, expected: 9, suffix: 'COLABORACION' },
+    { type: 'ajuste_salida', delta: -3, expected: 7, suffix: 'SALIDA' },
+    { type: 'ajuste_entrada', delta: 4, expected: 14, suffix: 'ENTRADA' },
+  ];
+
+  for (const item of cases) {
+    const productId = 'POS-AJUSTE-' + item.suffix;
+    const movementId = 'POS-AJUSTE-MOV-' + item.suffix;
+    const operationId = 'POS-AJUSTE-OP-' + item.suffix;
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+      args: [productId, JSON.stringify({
+        id: productId, nombre: 'Producto ' + item.suffix, stock: 10, costoUSD: 4, activo: true,
+      }), at],
+      wantRows: false,
+    });
+
+    const payload = {
+      operationId,
+      operationType: 'AJUSTE-INVENTARIO-POS',
+      movements: [{
+        id: movementId, productoId: productId, tipo: item.type,
+        cantidad: item.delta, fecha: at, referencia: item.suffix + ' | PRUEBA POS',
+        terminalId: 'CAJA-POS-01',
+      }],
+      productPatches: {},
+    };
+    const result = await posStore.applyInventoryMovementsTransaction(payload);
+    assert.equal(result.products[0].stock, item.expected, item.type + ' stock final');
+    assert.equal(result.movements[0].cantidad, item.delta, item.type + ' signo del movimiento');
+    assert.equal(result.movements[0].terminalId, 'CAJA-POS-01', item.type + ' terminal');
+    assert.equal(result.movements[0].stockAntes, 10, item.type + ' stock inicial');
+    assert.equal(result.movements[0].stockDespues, item.expected, item.type + ' stock posterior');
+
+    if (item.delta < 0) {
+      assert.equal(result.movements[0].costoUnitarioUSD, 4, item.type + ' snapshot costo');
+      assert.equal(result.movements[0].tasaBCV, 100, item.type + ' snapshot tasa');
+    }
+
+    const persistedProduct = await posStore.getRecord('productos', productId, { id: 'admin-pos-adjustment', rol: 'administrador' });
+    assert.equal(persistedProduct.stock, item.expected);
+    const persistedMovement = await sqliteExecute({
+      sql: 'SELECT data_json FROM movimientos WHERE id=?',
+      args: [movementId],
+    });
+    assert.equal(persistedMovement.rows.length, 1);
+    const savedMovement = JSON.parse(String(persistedMovement.rows[0].data_json));
+    assert.equal(savedMovement.terminalId, 'CAJA-POS-01');
+    assert.equal(savedMovement.referencia, item.suffix + ' | PRUEBA POS');
+
+    // Reintentar la misma operación debe recuperar el resultado idempotente,
+    // nunca volver a aplicar la variación de existencias.
+    const retry = await posStore.applyInventoryMovementsTransaction(payload);
+    assert.equal(retry.recovered, true, item.type + ' idempotencia');
+    const afterRetry = await posStore.getRecord('productos', productId, { id: 'admin-pos-adjustment', rol: 'administrador' });
+    assert.equal(afterRetry.stock, item.expected, item.type + ' no duplica el ajuste');
+    const movementCount = await sqliteExecute({
+      sql: 'SELECT COUNT(*) AS total FROM movimientos WHERE id=?',
+      args: [movementId],
+    });
+    assert.equal(Number(movementCount.rows[0].total), 1, item.type + ' no duplica el Kardex');
+  }
+});
