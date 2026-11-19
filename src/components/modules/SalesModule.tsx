@@ -856,8 +856,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const paymentParts = payments.map((p: any) => ({
         id: receiptId + '-' + String(p.method || 'OTROS'),
         metodo: p.method,
-        montoUSD: Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa,
-        montoBS: Number(p.amount) || 0,
+        montoUSD: Math.round(((Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa) + Number.EPSILON) * 1000000) / 1000000,
+        montoBS: Math.round(((Number(p.amount) || 0) + Number.EPSILON) * 100) / 100,
         tasaAplicada: state.tasa,
         terminalId: terminal?.id,
       }));
