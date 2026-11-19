@@ -2,7 +2,7 @@
 
 **Corte de comparación:** 18-11-2026  
 **Referencia funcional:** `fenixlife1978/posven-pro`, rama `main`  
-**Destino:** `fenixlife1978/Posven-pro3`, rama `main` (cambios de esta ronda en PR #40)
+**Destino:** `fenixlife1978/Posven-pro3`, rama de trabajo `feat/posven-pro3-parity-unlimited-backups` (PR #40; sin fusionar)
 
 ## Principio de adaptación
 
@@ -23,6 +23,34 @@ POSVEN-Pro sirve como referencia para descubrir reglas de negocio y mejoras. POS
 | Configuración y respaldo | Pro3 tiene restauración SQLite y panel LAN; faltaba la importación exclusiva de catálogos que tenía Pro. | PR #40 agrega importación local de catálogos con vista previa, confirmación admin y fusión transaccional; también elimina topes artificiales por cantidad de filas y hace configurable el límite técnico de bytes. |
 | Usuarios / control global | La lógica funcional de pantallas se conserva; cambian las llamadas de persistencia. | Adaptar a SQLite local; no copiar autenticación cloud. |
 | Contabilidad, proveedores y caja | Las pantallas compartidas mantienen funciones equivalentes; la capa de persistencia difiere por arquitectura. | Revisar reglas de negocio al tocar cada módulo; mantener SQLite local. |
+
+## Comparación estructural de repositorios (revisión 18-11-2026)
+
+Se compararon los árboles completos de archivos de ambas ramas: POSVEN-Pro `main` (133 archivos) y POSVEN-Pro3 en la rama de trabajo de PR #40 (144 archivos). Se encontraron 113 rutas compartidas. Esta comparación estructural sirve para orientar la auditoría, pero **la coincidencia o diferencia de rutas no demuestra por sí sola paridad funcional**.
+
+### Elementos exclusivos de POSVEN-Pro revisados
+
+| Elemento | Hallazgo | Clasificación / decisión |
+|---|---|---|
+| `src/components/pos/PosModule.tsx` | El flujo POS de referencia está integrado en `src/components/modules/SalesModule.tsx` en Pro3, que además contiene funciones propias. | **Equivalente mediante otra implementación**. Seguir comparando reglas y casos de uso; no duplicar el módulo. |
+| `src/lib/offline-queue.ts` | Cola durable basada en IndexedDB del navegador, procesada cuando vuelve la conexión. En POSVEN-Pro, `db-store.ts` la utiliza para encolar operaciones de inventario y el procesador las envía a la persistencia remota/Turso. | **No aplicable en su forma actual**. POSVEN-Pro3 centraliza la autoridad en SQLite del servidor LAN. Replicar una cola de escrituras autónoma en cada cliente podría aceptar cambios sin validación central y provocar conflictos de stock. No importar IndexedDB ni la sincronización Turso. Si se requiere tolerancia a desconexiones LAN, diseñar por separado un protocolo local con IDs idempotentes, validación y conciliación contra SQLite; no asumir que la cola web es transferible. |
+| `src/lib/turso/*`, `src/app/api/turso/*`, `src/lib/auth/turso-auth.ts`, archivos Firebase/Firestore y configuración App Hosting | Son implementación de infraestructura cloud y persistencia del repositorio de referencia. | **No aplicable por arquitectura**. Pro3 usa SQLite local; no trasladar endpoints, secretos ni dependencias. |
+| `docs/migracion-turso.md` y `docs/auditoria-persistencia-pre-turso.md` | Documentación de la arquitectura histórica/remota del proyecto de referencia. | **No aplicable como implementación**. Solo consultar si ayuda a entender reglas funcionales; nunca usarla para cambiar la arquitectura de Pro3. |
+
+### Elementos exclusivos de POSVEN-Pro3 que se deben conservar
+
+- `src/components/pos/FractionalProductSelectorModal.tsx`: selección de presentaciones/productos fraccionados.
+- `src/components/pos/ZReportPreview80mm.tsx`: vista e impresión de reporte Z de 80 mm.
+- `src/components/modules/CreditDetailModal.tsx`: detalle de crédito.
+- `src/components/inventory/PriceLabelsModal.tsx`: etiquetas de precios.
+- `src/components/modules/PeriodicInventoryExitsReport.tsx`: reporte de salidas periódicas.
+- `src/lib/sqlite/*`, servidor LAN y pruebas de transacciones/instalador: infraestructura propia que no debe reemplazarse por la del repositorio de referencia.
+
+### Diferencias de comportamiento observadas en POS / inventario
+
+- La comparación de `SalesModule.tsx` confirma que Pro3 contiene el flujo de ventas integrado y ampliado: mantiene la lógica de pagos/abonos, X/Z, devoluciones/anulaciones y ajustes; además incorpora consulta de detalles de crédito, lectura posterior de saldos desde SQLite y movimientos de caja. No se detectó una función POS exclusiva de Pro que justifique copiar el archivo completo.
+- Los módulos de inventario comparten catálogo, valorización, ajustes, Kardex, ventas, devoluciones y consumo/colaboraciones. Pro3 añade sincronización de stock desde Kardex, normalización de etiquetas, etiquetas imprimibles y reporte de salidas periódicas. Los ajustes deben seguir validándose con pruebas funcionales y no solo por coincidencia de componentes.
+- El panel de control global conserva creación/eliminación de terminales y asignación de usuarios en ambos repositorios; en Pro3 las operaciones persisten en SQLite local en lugar de Turso.
 
 ## Mejoras propias de Pro3 que deben preservarse
 
