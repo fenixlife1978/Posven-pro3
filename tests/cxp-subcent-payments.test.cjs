@@ -21,7 +21,7 @@ test('CxP global payments can apply a valid Bs amount below one USD cent', () =>
   assert.match(cxp, /esMetodoBS \? aplicadoBS <= 0 : totalAplicado <= 0\.001/);
   assert.match(store, /const esPagoBsCxpInicial=collection==='cxp'/);
   assert.match(store, /let remCents=esPagoBs\?0:/);
-  assert.match(store, /if\(esPagoBsCxp \? appliedBS<=0\.0000005 : appliedUSD<=0\.000001\)/);
+  assert.match(store, /if\(esPagoBsCxp \? appliedBS<=0\.0000005 : appliedUSD<=0\.0000005\)/);
   assert.match(store, /saldoNuevo=\(esPagoBsCxp\|\|esPagoBsCxc\)[\s\S]*?1000000/);
 });
 
