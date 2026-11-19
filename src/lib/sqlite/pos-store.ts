@@ -1094,8 +1094,23 @@ export async function syncRecords(params: {
     for (const id of deletedIds) {
       await tx.execute({ sql: `DELETE FROM ${tableName(table)} WHERE id=?`, args: [id], wantRows: false });
     }
-    for (const record of records) await tx.execute(rowStatement(table, record));
-    return { records, deletedIds };
+    const persistedRecords: any[] = [];
+    for (const record of records) {
+      if (!record || typeof record !== 'object' || !String(record.id || '').trim()) {
+        throw new Error('Un registro sincronizado no tiene identificador.');
+      }
+      let canonical = record;
+      if (table === 'clientes') {
+        // El saldo agregado del cliente es un dato financiero derivado de CxC.
+        // Una sincronización de ficha (permitida a cajeros) nunca puede
+        // establecerlo ni modificarlo desde el navegador.
+        const current = rowFromDb((await tx.execute(txSelect('clientes', String(record.id)))).rows[0]);
+        canonical = { ...record, debt: current ? (Number(current.debt) || 0) : 0 };
+      }
+      await tx.execute(rowStatement(table, canonical));
+      persistedRecords.push(canonical);
+    }
+    return { records: persistedRecords, deletedIds };
   });}
 
 export async function upsertRecords(table: SQLiteStoreTable, records: any[]): Promise<{ count: number }> {
