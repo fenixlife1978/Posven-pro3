@@ -1053,3 +1053,78 @@ test('reversar un pago CxP subcentavo conserva precisión de seis decimales', as
   assert.equal(result.saldoUSD, 0.001);
   assert.equal(result.estado, 'pendiente');
 });
+
+
+test('la restauración recupera catálogos personalizados y rechaza IDs duplicados antes de borrar datos', async () => {
+  await schema.ensureSqliteSchema();
+  const adminResult = await sqliteExecute({
+    sql: "SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 ORDER BY is_seed_admin DESC LIMIT 1",
+  });
+  assert.ok(adminResult.rows[0], 'la prueba requiere un administrador activo');
+  const user = { id: String(adminResult.rows[0].id), rol: 'administrador' };
+
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
+    args: ['BACKUP-RESTORE-PRESERVE', JSON.stringify({ id: 'BACKUP-RESTORE-PRESERVE', nombre: 'No borrar en validación', stock: 9 })],
+    wantRows: false,
+  });
+
+  const emptyTables = {
+    movimientos: [], ventas: [], cxc: [], cxp: [], clientes: [], proveedores: [],
+    devoluciones: [], anulaciones: [], terminales: [], libroDiario: [],
+    reportesZ: [], compras: [], cashHistory: [],
+  };
+  const catalogNames = [
+    'categorias','departamentos','categoriasPorDepartamento','marcas','presentaciones',
+    'productCategories','productUnits','productColors','productSizes',
+    'brands','groups','subgroups','lines','suppliers','departamentosPersonalizados',
+  ];
+  const catalogs = Object.fromEntries(catalogNames.map(name => [name, name === 'departamentosPersonalizados' ? ['Área exclusiva del negocio'] : []]));
+  const catalogCounts = Object.fromEntries(catalogNames.map(name => [name, catalogs[name].length]));
+  const baseData = {
+    ...emptyTables,
+    productos: [],
+    users: [],
+    config: {},
+    ...catalogs,
+  };
+
+  const duplicateBackup = {
+    app: 'posven-pro', version: 3,
+    data: {
+      ...baseData,
+      productos: [
+        { id: 'DUPLICATE-PRODUCT', nombre: 'Primero', stock: 1 },
+        { id: 'DUPLICATE-PRODUCT', nombre: 'Segundo', stock: 2 },
+      ],
+    },
+    meta: { source: 'sqlite-local', complete: true, catalogs: catalogCounts },
+  };
+  await assert.rejects(
+    posStore.restoreBackupTransaction({ user, backup: duplicateBackup }),
+    /identificadores duplicados/,
+  );
+  const preserved = await posStore.getRecord('productos', 'BACKUP-RESTORE-PRESERVE', user);
+  assert.equal(preserved.stock, 9, 'un respaldo inválido no debe borrar ni alterar SQLite');
+
+  const validBackup = {
+    app: 'posven-pro', version: 3,
+    data: {
+      ...baseData,
+      productos: [{ id: 'RESTORED-PRODUCT', nombre: 'Producto restaurado', stock: 4 }],
+    },
+    meta: {
+      source: 'sqlite-local', complete: true,
+      sqliteTables: { productos: 1, movimientos: 0, ventas: 0, cxc: 0, cxp: 0, clientes: 0, proveedores: 0, devoluciones: 0, anulaciones: 0, terminales: 0, libroDiario: 0, reportesZ: 0, caja: 0, compras: 0, users: 0 },
+      catalogs: catalogCounts,
+    },
+  };
+  const restored = await posStore.restoreBackupTransaction({ user, backup: validBackup });
+  assert.equal(restored.counts['catalogo:departamentosPersonalizados'], 1);
+  const customCatalog = await sqliteExecute({
+    sql: "SELECT lista_json FROM catalogos WHERE nombre='departamentosPersonalizados'",
+  });
+  assert.deepEqual(JSON.parse(customCatalog.rows[0].lista_json), ['Área exclusiva del negocio']);
+  const product = await posStore.getRecord('productos', 'RESTORED-PRODUCT', user);
+  assert.equal(product.stock, 4);
+});
