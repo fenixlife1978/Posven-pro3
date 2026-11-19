@@ -956,6 +956,48 @@ test('crear una deuda CxC nueva deriva el saldo del monto real y no del resumen 
 });
 
 
+test('el abono individual CxC conserva el total Bs real de pagos mixtos', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T14:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CLIENT-MIXED-CXC', JSON.stringify({
+      id: 'CLIENT-MIXED-CXC', name: 'Cliente Pago Mixto', cedula: 'V-900', debt: 100,
+    }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-MIXED-CURRENCY', JSON.stringify({
+      id: 'CXC-MIXED-CURRENCY', cliente: 'Cliente Pago Mixto [V-900]',
+      montoUSD: 100, abonadoUSD: 0, saldoUSD: 100, estado: 'pendiente',
+      historialPagos: [],
+    }), at],
+    wantRows: false,
+  });
+
+  const result = await posStore.applyDebtPaymentTransaction({
+    operationId: 'CXC-MIXED-CURRENCY-001',
+    collection: 'cxc',
+    debtId: 'CXC-MIXED-CURRENCY',
+    amountUSD: 10,
+    // El pago incluye USD y Bs: Bs reales recibidos, no la conversión del total USD.
+    amountBS: 3000,
+    payment: {
+      fecha: at, montoUSD: 10, montoBS: 8740, tasaAplicada: 874,
+      metodo: 'mixto', reciboId: 'PEND-CXC-MIXED',
+    },
+    user: { id: 'admin-cxc-mixed', rol: 'administrador' },
+  });
+
+  assert.equal(result.appliedUSD, 10);
+  assert.equal(result.appliedBS, 3000);
+  assert.equal(result.payment.montoBS, 3000);
+  const saved = await posStore.getRecord('cxc', 'CXC-MIXED-CURRENCY', { id: 'admin-cxc-mixed', rol: 'administrador' });
+  assert.equal(saved.historialPagos[0].montoBS, 3000);
+});
+
+
 test('reversar un abono CxC restaura también el saldo resumen del cliente y es idempotente', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T13:20:00.000Z';

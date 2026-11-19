@@ -266,3 +266,14 @@ Se añadieron regresiones SQLite para verificar el stock/costo tras eliminar la 
 En las secciones funcionales inspeccionadas del POS de referencia no se encontró una capacidad exclusiva de POSVEN-Pro que falte en POSVEN-Pro3. Las capacidades equivalentes están presentes con otra organización de componentes; las diferencias restantes observadas son mejoras de Pro3. Por tanto, **no se copia el archivo POS de Pro ni se reemplazan componentes actuales**: eso eliminaría controles de SQLite, arqueo o funciones fraccionadas.
 
 Esta conclusión se limita al POS/Ventas y a los componentes enumerados. No equivale a declarar terminada la auditoría de todo el sistema. La siguiente pasada debe continuar por los módulos enlazados al POS: inventario/Kardex, compras/recepción, CxC/CxP, caja/terminales y reportes, verificando tanto reglas como pruebas transaccionales.
+
+
+### POS / abono individual CxC: preservar el monto real en Bs (19-11-2026)
+
+La comparación directa del flujo `ejecutarAbono` de POSVEN-Pro con POSVEN-Pro3 detectó una omisión en Pro3: el flujo calculaba el total USD de los pagos, pero no sumaba ni enviaba el total real en Bs a `applyDebtPaymentTransaction`. El registro podía terminar usando el equivalente teórico `totalUSD × tasa`, aunque el cobro mixto hubiera recibido una cantidad distinta de bolívares.
+
+**Corrección en curso en esta rama:** Pro3 suma `montoBS` de cada medio recibido y lo pasa explícitamente como `amountBS` a la transacción SQLite. Se conserva el equivalente de factura y la tasa en el documento de cobro, mientras el campo aplicado Bs refleja el importe real distribuido entre métodos. También se incorpora `processingRef` para impedir doble ejecución mientras React actualiza el estado de procesamiento.
+
+**Regresión añadida:** pago CxC mixto con USD 10 de equivalente y Bs 3.000 efectivamente recibidos, aunque la conversión teórica del total USD sea Bs 8.740. La prueba exige que SQLite conserve exactamente Bs 3.000 en el abono y en el resultado aplicado.
+
+Esta corrección se considera pendiente de aprobación hasta que terminen las pruebas SQLite, TypeScript y el instalador Windows.
