@@ -366,8 +366,10 @@ test('devoluciones limitan reintegros al dinero cobrado y excluyen notas de cré
   const debt = { id: 'REFUND-DEBT', ventaId: sale.id, montoUSD: 14, saldoUSD: 14, abonadoUSD: 0, estado: 'parcial' };
   for (const [table, row] of [['terminales', terminal], ['productos', product], ['ventas', sale], ['cxc', debt]]) {
     await sqliteExecute({
-      sql: `INSERT INTO ${table}(id,data_json,fecha) VALUES(?,?,?)`,
-      args: [row.id, JSON.stringify(row), at],
+      sql: table === 'productos'
+        ? 'INSERT INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)'
+        : `INSERT INTO ${table}(id,data_json,fecha) VALUES(?,?,?)`,
+      args: table === 'productos' ? [row.id, JSON.stringify(row)] : [row.id, JSON.stringify(row), at],
       wantRows: false,
     });
   }
