@@ -3209,8 +3209,8 @@ export async function reverseDebtPaymentTransaction(params:any){
     let updatedCustomer:any=null;
     if(collection==='cxc'){
       const rawClient=String(debt.cliente||'');
-      const cedula=rawClient.match(/\\[([^\\]]+)\\]\\s*$/)?.[1]||'';
-      const name=rawClient.replace(/\\s*\\[[^\\]]+\\]\\s*$/,'').trim();
+      const cedula=rawClient.match(/\[([^\]]+)\]\s*$/)?.[1]||'';
+      const name=rawClient.replace(/\s*\[[^\]]+\]\s*$/,'').trim();
       let customerResult:any=null;
       if(cedula){
         customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[cedula]});
@@ -3231,7 +3231,7 @@ export async function reverseDebtPaymentTransaction(params:any){
         const monto=Math.max(0,Math.round(((Number(journal.montoUSD)||0)-(Number(pago?.montoUSD)||0)+Number.EPSILON)*100)/100);
         const montoBS=Math.max(0,Math.round(((Number(journal.montoBS)||0)-(Number(pago?.montoBS)||0)+Number.EPSILON)*100)/100);
         if(monto<=.001) await tx.execute({sql:'DELETE FROM libro_diario WHERE id=?',args:[journalId],wantRows:false});
-        else statements.push(rowStatement('libroDiario',{...journal,montoUSD:monto,montoBS:montoBS,concepto:String(journal.concepto||'').replace(/ \\(abono revertido\\)$/i,'')+' (abono revertido)'}));
+        else statements.push(rowStatement('libroDiario',{...journal,montoUSD:monto,montoBS:montoBS,concepto:String(journal.concepto||'').replace(/ \(abono revertido\)$/i,'')+' (abono revertido)'}));
       }
     }
     statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['REVERSAR-PAGO-'+opId,'REVERSAR-PAGO',opId,JSON.stringify({tipo:'REVERSAR-PAGO',operationId:opId,referencia:paymentId,collection,debtId,reversedPayment:pago,journalId:journalId||null,customerId:updatedCustomer?.id||null})],wantRows:false});
