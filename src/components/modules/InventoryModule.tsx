@@ -390,6 +390,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 id: Store.uid(), productoId: a.productoId,
                 tipo: diferencia > 0 ? 'ajuste_entrada' : 'ajuste_salida',
                 cantidad: diferencia, stockAntes, stockDespues: nuevoStock,
+                stockEsperadoAntes: stockAntes,
                 fecha: Utils.ahora(),
                 referencia: `CONTEO FISICO | ${a.motivo}`,
                 terminalId: 'ADMIN',
