@@ -2618,8 +2618,8 @@ export async function processReturnOrCancellationTransaction(params:any){
     if (user?.rol === 'cajero' && String(sale.terminalId || '') !== String(terminalId || '')) {
       throw new Error('El cajero solo puede devolver o anular ventas de su propia terminal.');
     }
-    if(operationType==='ANULACION' && String(sale.estado||'')==='anulada')
-      throw new Error('La factura ya fue anulada.');
+    if(String(sale.estado||'')==='anulada')
+      throw new Error('La factura ya fue anulada y no admite nuevas devoluciones ni anulaciones.');
 
     const terminal = terminalId
       ? rowFromDb((await tx.execute(txSelect('terminales',terminalId))).rows[0])
@@ -2644,6 +2644,11 @@ export async function processReturnOrCancellationTransaction(params:any){
       args:[String(saleId)],
     });
     const previousReturns = previousReturnsRows.rows.map(rowFromDb).filter(Boolean);
+    const previousAnnulationsRows = await tx.execute({
+      sql:"SELECT id,data_json FROM anulaciones WHERE json_extract(data_json,'$.ventaId')=? ORDER BY COALESCE(fecha,''),id",
+      args:[String(saleId)],
+    });
+    const previousAnnulations = previousAnnulationsRows.rows.map(rowFromDb).filter(Boolean);
 
     const returnedByProduct = new Map<string,number>();
     for(const dev of previousReturns){
@@ -2712,6 +2717,38 @@ export async function processReturnOrCancellationTransaction(params:any){
       throw new Error('La factura ya no tiene mercancía pendiente de reversión.');
 
     const effectiveTotal=Math.round((effectiveItems.reduce((sum:number,item:any)=>sum+(Number(item.subtotalUSD)||0),0)+Number.EPSILON)*100)/100;
+
+    // El límite de reintegro se calcula en SQLite con pagos reales de la venta
+    // menos reintegros anteriores. Crédito y nota de crédito nunca son efectivo.
+    const normalizeRefundMethod=(value:any)=>String(value||'otros').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/\\s+/g,'_');
+    const isActualRefundMethod=(value:any)=>!['credito','nota_credito','mixto'].includes(normalizeRefundMethod(value));
+    const paymentUsd=(part:any)=>{
+      const explicit=Number(part?.montoUSD??part?.montoUsd??part?.amountUSD??0);
+      if(Number.isFinite(explicit)&&explicit>0)return explicit;
+      const bs=Number(part?.montoBS??part?.montoBs??part?.amountBS??0);
+      const rate=Number(part?.tasaAplicada??part?.tasa??0);
+      return bs>0&&rate>0&&Number.isFinite(bs/rate)?bs/rate:0;
+    };
+    const salePaymentParts=Array.isArray(sale.payments)&&sale.payments.length?sale.payments:[{metodo:sale.metodoPago,montoUSD:sale.totalUSD}];
+    const originalPaidUSD=salePaymentParts.reduce((sum:number,p:any)=>sum+(isActualRefundMethod(p?.metodo??p?.method)?Math.max(0,paymentUsd(p)):0),0);
+    const priorCashRefundUSD=[...previousReturns,...previousAnnulations].reduce((sum:number,doc:any)=>{
+      const parts=Array.isArray(doc?.refundPayments)&&doc.refundPayments.length?doc.refundPayments:[{metodo:doc?.metodoReembolso,montoUSD:doc?.totalUSD}];
+      return sum+parts.reduce((partSum:number,p:any)=>partSum+(isActualRefundMethod(p?.metodo??p?.method)?Math.max(0,paymentUsd(p)):0),0);
+    },0);
+    const currentRefundParts=Array.isArray(operationDoc?.refundPayments)?operationDoc.refundPayments:[];
+    for(const part of currentRefundParts){
+      const amount=Number(part?.montoUSD??part?.montoUsd??part?.amountUSD??0);
+      const bs=Number(part?.montoBS??part?.montoBs??part?.amountBS??0);
+      if(!Number.isFinite(amount)||amount<0||!Number.isFinite(bs)||bs<0)
+        throw new Error('La distribución del reembolso contiene importes inválidos.');
+    }
+    const requestedRefundUSD=currentRefundParts.reduce((sum:number,p:any)=>sum+Math.max(0,paymentUsd(p)),0);
+    if(requestedRefundUSD>effectiveTotal+0.005)
+      throw new Error('El reembolso supera el valor de la mercancía que todavía puede revertirse.');
+    const currentCashRefundUSD=currentRefundParts.reduce((sum:number,p:any)=>sum+(isActualRefundMethod(p?.metodo??p?.method)?Math.max(0,paymentUsd(p)):0),0);
+    const remainingPaidUSD=Math.max(0,originalPaidUSD-priorCashRefundUSD);
+    if(currentCashRefundUSD>remainingPaidUSD+0.005)
+      throw new Error('El reintegro en dinero supera lo realmente cobrado a la venta, descontando reintegros anteriores. El excedente debe registrarse como nota de crédito o reducción de CxC.');
 
     // En una anulación total posterior a una devolución parcial, SOLO se
     // registra lo que todavía quedaba pendiente. Así, 2 Polar ya devueltas
@@ -2834,11 +2871,7 @@ export async function processReturnOrCancellationTransaction(params:any){
 
     // Si la venta era a crédito y no tenía pagos, nunca puede existir un
     // egreso de dinero por una devolución/anulación.
-    const originalPaid=Array.isArray(sale.payments)
-      ? sale.payments.reduce((sum:number,p:any)=>sum+(Number(p?.montoUSD)||0),0)
-      : 0;
-    if(updatedDebt && originalPaid<=0.001){
-      delete canonicalOperationDoc.refundPayments;
+    if(updatedDebt && originalPaidUSD<=0.001){
       canonicalOperationDoc.metodoReembolso='nota_credito';
     }
 
@@ -2859,7 +2892,7 @@ export async function processReturnOrCancellationTransaction(params:any){
     // Solo el monto realmente devuelto en efectivo/tarjeta/etc. genera
     // asiento de egreso. Nota de crédito sin pago no mueve caja.
     const refundTotal=Array.isArray(canonicalOperationDoc.refundPayments)
-      ? canonicalOperationDoc.refundPayments.reduce((sum:number,p:any)=>sum+(Number(p?.montoUSD)||0),0)
+      ? canonicalOperationDoc.refundPayments.reduce((sum:number,p:any)=>sum+(isActualRefundMethod(p?.metodo??p?.method)?Math.max(0,paymentUsd(p)):0),0)
       : 0;
 
     const canonicalJournal=journal && refundTotal>0.001
