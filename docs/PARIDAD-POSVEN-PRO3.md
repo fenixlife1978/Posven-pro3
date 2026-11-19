@@ -209,3 +209,14 @@ Se detectó que la transacción de compra persistía el stock y el costo CPP en 
 - Se rechaza un identificador de movimiento ya existente en Kardex para impedir sobrescrituras silenciosas.
 
 **Pruebas añadidas:** compra con dos líneas del mismo producto y costos distintos, respuesta con stock actualizado, costo ponderado, Kardex consolidado y reintento idempotente; compra con cantidad negativa rechazada sin alterar inventario ni historial. El cobro individual CxC también resuelve ficha por nombre exacto si no hay cédula disponible; si hay homónimos, revierte todo el cobro. Se cubren ambos escenarios con pruebas SQLite.
+
+
+## Auditoría de eliminación de compras y reconstrucción del Kardex (19-11-2026)
+
+Se detectó y corrigió un riesgo en la eliminación de compras:
+
+- Al eliminar la primera compra cronológica, el Kardex reconstruía el saldo inicial desde el primer movimiento restante. Ese snapshot ya incluía las unidades de la compra eliminada y podía conservar stock ficticio. La reconstrucción ahora parte del saldo anterior al primer movimiento original.
+- Una compra no puede eliminarse si existen movimientos posteriores distintos de otras compras. En especial, una venta posterior requiere recalcular su costo histórico y el costo de las existencias; borrar solo la entrada de compra produciría una valoración incorrecta. En ese caso la operación se rechaza sin modificar datos y se debe registrar una reversión/ajuste documentado.
+- El identificador de compra recibido debe corresponder a la factura, proveedor y fecha indicados; evita que un ID válido se use accidentalmente para borrar otra compra.
+
+Se añadieron regresiones SQLite para verificar el stock/costo tras eliminar la primera compra, el rechazo atómico ante una venta posterior y la validación de identidad de la compra. La eliminación de compras históricas con salidas posteriores queda deliberadamente protegida hasta implementar una reconstrucción completa y auditada del costo de ventas.
