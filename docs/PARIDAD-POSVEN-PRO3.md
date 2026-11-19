@@ -196,3 +196,16 @@ La auditoría detectó que el cobro global actualizaba el saldo de la deuda CxC,
 **Corrección aplicada:** el cobro global busca primero por cédula y, si no encuentra ficha vinculada, por nombre exacto sin distinguir mayúsculas/minúsculas. Si encuentra exactamente un cliente, descuenta el cobro aplicado en la misma transacción SQLite. Si encuentra homónimos, aborta la operación completa para no modificar la ficha equivocada.
 
 **Pruebas añadidas:** cobro por nombre actualiza deuda CxC y resumen del cliente; clientes homónimos provocan rollback sin alterar deuda ni fichas. Se conservan las reglas de caja: el cobro CxC puede quedar vinculado a terminal, mientras el pago global CxP sigue siendo administrativo y no depende de caja.
+
+
+### Compras: stock y costo ponderado coherentes al registrar
+
+Se detectó que la transacción de compra persistía el stock y el costo CPP en SQLite, pero devolvía `products: []` porque nunca agregaba los productos actualizados al resultado. El módulo Compras solo actualiza su estado visual con esa respuesta, por lo que el inventario podía verse desactualizado hasta una recarga.
+
+**Correcciones aplicadas:**
+- La transacción devuelve los productos realmente actualizados, también en la recuperación idempotente.
+- La cantidad debe ser positiva y finita; el costo unitario y el subtotal deben ser finitos y no negativos; cada línea debe identificar un producto.
+- Cuando una factura contiene varias líneas del mismo producto con costos distintos, el movimiento de Kardex usa el costo unitario ponderado por cantidades, y el CPP incorpora el valor total real de las líneas.
+- Se rechaza un identificador de movimiento ya existente en Kardex para impedir sobrescrituras silenciosas.
+
+**Pruebas añadidas:** compra con dos líneas del mismo producto y costos distintos, respuesta con stock actualizado, costo ponderado, Kardex consolidado y reintento idempotente; compra con cantidad negativa rechazada sin alterar inventario ni historial. El cobro individual CxC también resuelve ficha por nombre exacto si no hay cédula disponible; si hay homónimos, revierte todo el cobro. Se cubren ambos escenarios con pruebas SQLite.
