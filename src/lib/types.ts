@@ -133,6 +133,8 @@ export interface Movimiento {
   costoUnitarioUSD?: number;
   costoUnitarioBs?: number;
   tasaBCV?: number;
+  /** Stock leído al abrir un conteo físico; SQLite rechaza el ajuste si cambió antes de guardar. */
+  stockEsperadoAntes?: number;
 }
 
 export interface SaleItem {
