@@ -149,3 +149,12 @@ La autenticación y el perímetro se han revisado a nivel de código. La matriz 
 **Ajuste adicional de login:** la API local ahora exige explícitamente el perfil administrador/cajero, igual que la referencia, y solo limpia el contador de intentos después de validar contraseña y perfil. Esto evita aceptar solicitudes incompletas desde clientes no UI y evita borrar intentos ante un perfil incorrecto.
 
 La prueba de regresión también ejecuta dos degradaciones de administradores en paralelo: solo una puede completarse y siempre queda al menos un administrador activo, gracias a BEGIN IMMEDIATE y la validación dentro de la misma transacción.
+
+
+## Integridad de cartera CxC y sincronización de fichas de clientes (19-11-2026)
+
+La ruta `recordsSync` permite a cajeros sincronizar fichas de clientes, pero la implementación anterior persistía íntegramente el objeto enviado por el navegador, incluido `debt`. Ese campo es un resumen financiero derivado de las operaciones CxC y no debe poder modificarse mediante una sincronización genérica de datos maestros.
+
+**Corrección aplicada en Pro3:** para `clientes`, `syncRecords` ahora conserva el saldo `debt` existente en SQLite al actualizar datos personales y asigna cero a un cliente nuevo. Los aumentos/disminuciones del saldo siguen perteneciendo exclusivamente a las transacciones de creación/cobro/reversión/eliminación de CxC. La operación sigue siendo atómica y devuelve al cliente el registro canónico persistido.
+
+**Prueba de regresión:** `tests/sqlite-transaction.test.cjs` intenta elevar una deuda existente a 999999 y crear un cliente con deuda inicial 5000 mediante sincronización genérica; verifica que el saldo existente se conserve y el nuevo comience en cero, sin impedir la actualización de los datos de contacto.
