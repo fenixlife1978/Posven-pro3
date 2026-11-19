@@ -817,3 +817,36 @@ test('la administración de usuarios es atómica y protege al último administra
   assert.equal(updated.accesoBloqueado, true);
   await auth.deleteUser(regular.id);
 });
+
+
+test('dos solicitudes concurrentes no pueden degradar simultáneamente a los últimos administradores', async () => {
+  const seedResult = await sqliteExecute({
+    sql: "SELECT id FROM users WHERE is_seed_admin=1 AND rol='administrador' LIMIT 1",
+  });
+  const seedId = String(seedResult.rows[0].id);
+  const first = await auth.createUser({
+    username: 'admin-race-one', email: 'admin-race-one@example.test',
+    nombre: 'Admin Race Uno', password: 'ClaveSegura123', rol: 'administrador',
+  });
+  const second = await auth.createUser({
+    username: 'admin-race-two', email: 'admin-race-two@example.test',
+    nombre: 'Admin Race Dos', password: 'ClaveSegura123', rol: 'administrador',
+  });
+
+  await auth.setUserBlocked(seedId, true);
+  const outcomes = await Promise.allSettled([
+    auth.updateUser({ id: first.id, rol: 'cajero' }),
+    auth.updateUser({ id: second.id, rol: 'cajero' }),
+  ]);
+  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(result => result.status === 'rejected').length, 1);
+
+  const remaining = await sqliteExecute({
+    sql: "SELECT COUNT(*) AS total FROM users WHERE rol='administrador' AND acceso_bloqueado=0",
+  });
+  assert.equal(Number(remaining.rows[0].total), 1);
+
+  await auth.setUserBlocked(seedId, false);
+  await auth.deleteUser(first.id);
+  await auth.deleteUser(second.id);
+});
