@@ -512,7 +512,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
                         </td>
                         <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
                         <td className={`text-right py-4 font-black text-base ${tieneDeudaPendiente ? 'text-status-info' : 'text-green-600'}`}>
-                          {Utils.fmtUSD(group.totalUSD)}
+                          {fmtSaldoCxC(group.totalUSD)}
                         </td>
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
                         <td className="text-center py-4">
