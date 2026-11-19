@@ -1,8 +1,8 @@
 # Auditoría de paridad POSVEN-Pro → POSVEN-Pro3
 
-**Corte de comparación:** 18-11-2026  
+**Corte de comparación:** 19-11-2026  
 **Referencia funcional:** `fenixlife1978/posven-pro`, rama `main`  
-**Destino:** `fenixlife1978/Posven-pro3`, rama de trabajo `feat/posven-pro3-parity-unlimited-backups` (PR #40; sin fusionar)
+**Destino:** `fenixlife1978/Posven-pro3`, rama `main` (PR #40 fusionada en `eae3d474aa77efd18c84050320c73372ae395cae`)
 
 ## Principio de adaptación
 
@@ -225,3 +225,44 @@ Se detectó y corrigió un riesgo en la eliminación de compras:
 - El identificador de compra recibido debe corresponder a la factura, proveedor y fecha indicados; evita que un ID válido se use accidentalmente para borrar otra compra.
 
 Se añadieron regresiones SQLite para verificar el stock/costo tras eliminar la primera compra, el rechazo atómico ante una venta posterior y la validación de identidad de la compra. La eliminación de compras históricas con salidas posteriores queda deliberadamente protegida hasta implementar una reconstrucción completa y auditada del costo de ventas.
+
+
+## Auditoría profunda del módulo POS / Ventas (19-11-2026)
+
+**Archivos comparados:** referencia `src/components/pos/PosModule.tsx` (1319 líneas; componente `SalesModule`) frente a destino `src/components/modules/SalesModule.tsx` (2297 líneas), ambos en `main`. También se compararon `FloatingPaymentModal.tsx`, `ReceiptModal.tsx` y `ReturnsModule.tsx`, y se revisaron los componentes exclusivos de Pro3 `CreditSaleModal.tsx`, `CashZArqueoModal.tsx`, `ZReportPreview80mm.tsx` y `FractionalProductSelectorModal.tsx`.
+
+### Matriz funcional del POS
+
+| Sección / flujo | POSVEN-Pro (referencia) | POSVEN-Pro3 (destino) | Resultado |
+|---|---|---|---|
+| Búsqueda y escaneo | Búsqueda por nombre/código y selección por Enter. | Conserva búsqueda y escaneo; ordena coincidencias exactas de código/barra antes de resultados parciales. | **Presente y mejorado en Pro3**. |
+| Carrito y stock | Agrega productos, modifica cantidad y evita superar stock disponible. | Conserva límites y añade borrador persistido por terminal, presentación/fracción y venta por peso. | **Presente y ampliado**. |
+| Presentaciones / fracciones | No se encontró selector equivalente en el flujo de referencia inspeccionado. | Selector dedicado por presentación, gramos, kg, ml y despacho por importe Bs; convierte la cantidad a descontar del inventario. | **Mejora propia de Pro3**. |
+| Precio de venta | Permite cambiar entre precio base, mayor, oferta y promoción cuando existen. | Conserva el selector de los cuatro precios. | **Equivalente**. |
+| Pago mixto | Modal flotante con métodos, moneda, equivalencia y abonos parciales para CxC. | El archivo `FloatingPaymentModal.tsx` comparte la misma implementación y cálculos centrales (401 líneas en ambas ramas). | **Equivalente; no copiar**. |
+| Venta a crédito | Busca cliente, registra uno nuevo con nombre, documento, teléfono y dirección, y carga a cartera. | `CreditSaleModal.tsx` encapsula búsqueda, selección y alta de cliente con los mismos datos funcionales; `handleCreditModalConfirm` valida identidad antes de crear la deuda. | **Equivalente mediante componente separado y validación reforzada**. |
+| Abono individual y pago global CxC | Permite abonar una deuda y pagar globalmente deudas agrupadas por cliente. | Conserva ambos flujos; los pagos pasan por transacciones SQLite, registran recibo/asiento y actualizan saldo canónico. | **Equivalente y adaptado a SQLite**. |
+| Consulta de créditos | Agrupa deudas, expande facturas, muestra saldo, permite abono e historial del cliente. | Añade paginación, búsqueda normalizada por nombre/palabras/cédula/contacto y auditoría de la factura original desde el documento CxC. | **Presente y mejorado**. |
+| Historial de caja | Lista operaciones de la terminal y permite abrir detalle. | Conserva historial y añade paginación; distingue ventas, cobros y movimientos de caja y presenta detalle por operación. | **Presente y mejorado**. |
+| Devolución parcial | Permite seleccionar artículos/cantidades y condición del producto (stock o merma). El flujo de referencia usa un método de reintegro más simple. | Añade distribución del reembolso por varios métodos reales y valida que el total coincida; una venta a crédito sin pagos no genera salida ficticia de efectivo. | **Mejora propia de Pro3**. |
+| Anulación total | Exige PIN y pregunta si hubo reintegro físico; la lógica original permite reintegro genérico. | Exige autorización y confirma reintegro; permite distribuirlo por método y ejecuta la operación de forma transaccional en SQLite. | **Mejora de integridad en Pro3**. |
+| Corte X/Z | Calcula datos y muestra comprobante X/Z; en el flujo de referencia el cierre Z se dispara al cerrar el comprobante. | Separa vista de arqueo, captura conteo real, exige valores por método, confirma Z en SQLite y luego permite reimpresión térmica 80 mm. | **Mejora de control en Pro3**. |
+| Impresión de venta / reporte | Recibo y reporte con impresión de navegador y opción nativa. | Conserva impresión; añade desglose de arqueo, exportación PDF y compartir PDF del arqueo desde `ReceiptModal`, además de vista Z específica de 80 mm. | **Mejora propia de Pro3**. |
+| Ajuste manual de stock | Incluye edición directa del stock desde el POS. | Conserva ajuste, pero lo registra mediante movimiento de Kardex y transacción SQLite. | **Equivalente con trazabilidad reforzada**. |
+| Ajustes de consumo / colaboración | No se identificó modal equivalente en el módulo de referencia inspeccionado. | Pro3 permite registrar consumo propio, colaboración y ajuste, con detalle, cantidad y movimiento de Kardex vinculado a la caja. | **Mejora propia de Pro3**. |
+| Movimientos extraordinarios de caja | No se encontró formulario equivalente dentro del POS de referencia inspeccionado. | Pro3 permite ingresos/egresos en Bs o USD con concepto y observación; persiste por `createCashMovementTransaction`. | **Mejora propia de Pro3**. |
+
+### Componentes compartidos y exclusivos
+
+- `FloatingPaymentModal.tsx`: mismo tamaño y misma implementación de cálculos, pagos parciales, cambio y ajuste de redondeo; no se justifica copiar ni modificar por paridad.
+- `ReceiptModal.tsx`: Pro3 conserva los recibos y reportes de Pro, y agrega desglose de arqueo por método, cálculo de diferencias, exportación PDF y compartir el PDF. Mantener esa extensión.
+- `ReturnsModule.tsx`: Pro3 incorpora cálculo del efectivo realmente pagado, distribución de reintegro y nota de crédito cuando una venta a crédito no ha recibido pagos. No trasladar el flujo simplificado de Pro.
+- `CreditSaleModal.tsx`: separa el alta/selección de clientes del POS principal; mantiene nombre, identificación fiscal, teléfono y dirección. No es una omisión que el formulario ya no esté inline.
+- `CashZArqueoModal.tsx` + `ZReportPreview80mm.tsx`: componentes propios de Pro3 que implementan captura y presentación de arqueo/cierre con mayor control.
+- `FractionalProductSelectorModal.tsx`: capacidad propia de Pro3 para presentaciones, peso, volumen y venta por importe.
+
+### Conclusión de esta pasada
+
+En las secciones funcionales inspeccionadas del POS de referencia no se encontró una capacidad exclusiva de POSVEN-Pro que falte en POSVEN-Pro3. Las capacidades equivalentes están presentes con otra organización de componentes; las diferencias restantes observadas son mejoras de Pro3. Por tanto, **no se copia el archivo POS de Pro ni se reemplazan componentes actuales**: eso eliminaría controles de SQLite, arqueo o funciones fraccionadas.
+
+Esta conclusión se limita al POS/Ventas y a los componentes enumerados. No equivale a declarar terminada la auditoría de todo el sistema. La siguiente pasada debe continuar por los módulos enlazados al POS: inventario/Kardex, compras/recepción, CxC/CxP, caja/terminales y reportes, verificando tanto reglas como pruebas transaccionales.
