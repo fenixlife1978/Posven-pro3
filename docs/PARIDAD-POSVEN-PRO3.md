@@ -83,6 +83,17 @@ La revisión confirma que no se debe asumir que una diferencia de código equiva
 | Inventario / stock y reportes | Pro3 incorpora reconciliación de stock desde Kardex, etiquetas de precios y reporte de salidas periódicas, ausentes como funciones equivalentes en el módulo revisado de Pro. | **Mejoras propias de Pro3**; conservar y probar contra SQLite. |
 | Reportes X/Z | La pantalla de referencia llama al historial «Cortes Z». Pro3 lo presenta como «Consolidados de Ventas», restringe el historial a administrador y añade reimpresión en 80 mm. La lógica utiliza los registros `reportesZ`; es una diferencia de etiqueta y de presentación, no evidencia de ausencia del historial. | **Equivalente con mejoras propias**. Mantener clara la identificación del documento Z en el comprobante y en auditoría. |
 
+## Auditoría ampliada de Contabilidad, Dashboard, Caja y Terminales (18-11-2026)
+
+| Módulo | Diferencia comprobada | Estado |
+|---|---|---|
+| Contabilidad | `AccountingModule.tsx` coincide funcionalmente en las operaciones revisadas: libro diario, filtros, totales, detalle de auditoría, egresos manuales y exportación PDF. | **Equivalente**; mantener pruebas sobre asientos originados por operaciones SQLite. |
+| Dashboard | Los indicadores y distribución de ventas por método se corresponden. Pro3 reemplaza el texto heredado que anunciaba sincronización Firebase por una referencia explícita a SQLite local. | **Equivalente y adaptado**. No trasladar indicadores ni conectores Firebase. |
+| Caja / apertura | POSVEN-Pro modifica estado de caja directamente desde el cliente. POSVEN-Pro3 exige terminal asignada, abre mediante `Store.openCashTransaction` y solo marca la caja abierta después de recibir confirmación del servidor SQLite. | **Mejora de integridad en Pro3**; conservar la transacción central. |
+| Caja / cierre | Pro3 impide cerrar la sesión desde el formulario genérico: exige ejecutar el proceso de Corte Z. No modifica la caja ni el historial si el cierre no fue confirmado por Z. | **Control más seguro en Pro3**; conservar. |
+| Arqueo X/Z | Pro3 muestra siempre los métodos principales aunque tengan cero movimiento, exige conteo explícito incluso cero para Z, valida importes inválidos, advierte ventas mixtas sin desglose y distingue lectura X temporal de conciliación Z. | **Mejora de control en Pro3**; verificar con casos de arqueo parcial, sobrante, faltante y pagos mixtos. |
+| Control global / terminales | Las operaciones equivalentes de crear, eliminar y asignar usuario están adaptadas en Pro3 a `/api/pos/store`, con confirmación de SQLite. La creación inicializa consecutivos independientes para recibos, CxC, CxP, devoluciones y anulaciones, además de prefijo de caja. | **Adaptación SQLite presente**. No copiar rutas `/api/turso/*` de Pro. |
+
 ## Mejoras propias de Pro3 que deben preservarse
 
 - SQLite local como única fuente de verdad operativa; nada de escrituras POS en nube ni fallback a datos demo.
