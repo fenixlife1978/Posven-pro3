@@ -55,3 +55,14 @@ La tarea estratégica permanente de POSVEN-Pro3 es comparar sistemáticamente lo
 - Mantener actualizado `docs/PARIDAD-POSVEN-PRO3.md` con la matriz de diferencias, decisiones de adaptación y pendientes de auditoría. No declarar paridad total hasta completar y probar cada módulo.
 
 - La importación de catálogos desde respaldo exclusivo debe ofrecer vista previa, exigir administrador y confirmación explícita, fusionar sin duplicados en una transacción SQLite y no modificar productos, stock, movimientos, ventas, compras, CxC/CxP ni caja.
+
+## Exclusión total de Vercel
+
+POSVEN-PRO3 **no necesita Vercel y no debe utilizarlo bajo ninguna circunstancia como parte de su ciclo de vida**. Es una aplicación de escritorio Windows con Electron, Next.js ejecutado localmente y SQLite local. Por tanto:
+
+- No desplegar, publicar, alojar, ejecutar, compilar ni probar POSVEN-PRO3 en Vercel.
+- No crear deployments Preview ni Production, no usar Vercel CLI, APIs, tokens, variables, proyectos, dominios, cron jobs ni servicios de Vercel para este producto.
+- No considerar los avisos, fallos, límites diarios, checks ni comentarios del bot de Vercel como bloqueos de POSVEN-PRO3. Ignorarlos en la evaluación de calidad del producto; no gastar tiempo intentando corregirlos.
+- La presencia accidental de una integración GitHub/Vercel o de un check externo no convierte a Vercel en dependencia. No adaptar código ni arquitectura para satisfacerla.
+- La compilación, pruebas y empaquetado se realizan localmente o mediante GitHub Actions compatibles con Windows, sin despliegues externos. Los artefactos instalables se generan y distribuyen por los mecanismos autorizados del proyecto.
+- No solicitar autorización para evitar Vercel ni detener el trabajo por advertencias de Vercel: su exclusión es una decisión arquitectónica permanente ya establecida.
