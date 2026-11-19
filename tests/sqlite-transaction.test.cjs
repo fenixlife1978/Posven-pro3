@@ -1812,3 +1812,34 @@ test('un conteo físico vigente aplica el stock contado y no persiste el campo t
   assert.equal(result.movements[0].stockDespues, 4);
   assert.equal(Object.hasOwn(result.movements[0], 'stockEsperadoAntes'), false);
 });
+
+
+test('la reconciliación Kardex respeta el orden de inserción cuando dos movimientos comparten fecha y hora', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:45:00.000Z';
+  const productId = 'INV-KARDEX-SAME-TIMESTAMP';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({ id: productId, nombre: 'Producto Movimientos Simultáneos', stock: 999 }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha,updated_at) VALUES(?,?,?,?)',
+    args: ['ZZZ-FIRST-MOVEMENT', JSON.stringify({
+      id: 'ZZZ-FIRST-MOVEMENT', productoId, fecha: at, cantidad: 2, stockAntes: 0, stockDespues: 2,
+    }), at, at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha,updated_at) VALUES(?,?,?,?)',
+    args: ['AAA-SECOND-MOVEMENT', JSON.stringify({
+      id: 'AAA-SECOND-MOVEMENT', productoId, fecha: at, cantidad: 3, stockAntes: 2, stockDespues: 5,
+    }), at, at],
+    wantRows: false,
+  });
+
+  const result = await posStore.syncProductsStockFromKardex();
+  const product = await posStore.getRecord('productos', productId, { id: 'admin-inventory-test', rol: 'administrador' });
+  assert.equal(product.stock, 5);
+  assert.equal(result.source, 'kardex');
+});
