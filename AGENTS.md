@@ -1,7 +1,7 @@
 # AGENTS.md — POSVEN-Pro3
 
 ## Objetivo permanente
-POSVEN-Pro3 debe conservar la arquitectura de escritorio **SQLite local + servidor LAN** y alcanzar la paridad funcional con el repositorio de referencia `fenixlife1978/posven-pro`. El repositorio de referencia es una fuente para descubrir y trasladar mejoras de negocio, validaciones, cálculos, reportes, UX y correcciones; **no** es una autorización para copiar su infraestructura de nube/Turso/Firebase ni sus mecanismos de persistencia.
+POSVEN-Pro3 es exclusivamente un **software de escritorio para Windows**, construido con Electron + Next.js local y **SQLite local como única base de datos y fuente de verdad**. El equipo servidor aloja el archivo SQLite y expone la API autenticada únicamente a clientes de la red LAN. POSVEN-Pro3 **no usa, no debe usar ni debe depender de Turso, Firebase, Firestore, Vercel ni de una base de datos cloud** para operar. No configurar despliegues Vercel ni tratar Vercel como plataforma de ejecución de este producto. Alcanzar la paridad funcional con el repositorio de referencia `fenixlife1978/posven-pro`. El repositorio de referencia es una fuente para descubrir y trasladar mejoras de negocio, validaciones, cálculos, reportes, UX y correcciones; **no** es una autorización para copiar su infraestructura de nube/Turso/Firebase ni sus mecanismos de persistencia.
 
 ## Comparación continua con POSVEN-Pro
 - Antes de cerrar una tarea, comparar el comportamiento afectado en `fenixlife1978/posven-pro` (rama `main`) con `fenixlife1978/Posven-pro3` (rama `main`).
@@ -19,7 +19,7 @@ POSVEN-Pro3 debe conservar la arquitectura de escritorio **SQLite local + servid
 - La restauración debe validar estructura, IDs, duplicados, relaciones, conteos y consistencia antes de reemplazar datos; preservar respaldo de seguridad, transacción atómica, rollback, integridad SQLite y verificación posterior.
 - Procesar en lotes cuando sea necesario para memoria, tiempo de respuesta y parámetros SQL, informando progreso real. Los lotes no pueden dejar una restauración parcial como si fuera completa.
 - Se permiten límites técnicos de tamaño de archivo, memoria, tiempo o concurrencia para proteger la instalación, pero deben ser explícitos, configurables/documentados y no confundirse con límites de cantidad de operaciones. Ante un límite técnico, cancelar de forma segura y explicar la causa sin modificar la base destino.
-- No inferir truncamiento únicamente porque una tabla tenga exactamente 10.000 filas. Detectar truncamiento mediante evidencia explícita de paginación/manifestación incompleta o error de lectura; los respaldos históricos sin metadatos suficientes deben tratarse con cautela y confirmación clara, sin afirmar como hecho que faltan registros.
+- No inferir truncamiento únicamente porque una tabla tenga exactamente 10.000 filas. Detectar truncamiento mediante evidencia explícita de paginación/manifiesto incompleto o error de lectura; los respaldos históricos importados de POSVEN2 sin metadatos suficientes deben tratarse con cautela y confirmación clara, sin afirmar como hecho que faltan registros. La lectura de metadatos de respaldos heredados no autoriza ni implica conexión a servicios cloud.
 - Probar exportación y restauración con volúmenes superiores a los antiguos topes, registros en tablas grandes, duplicados, archivos corruptos, fallo a mitad de restauración y rollback.
 
 ## Flujo de trabajo obligatorio
