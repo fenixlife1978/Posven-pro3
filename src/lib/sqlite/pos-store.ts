@@ -2263,7 +2263,7 @@ export async function applyDebtPaymentTransaction(params: {
       : esPagoBsCxc
         ? (applied >= saldo - 0.0000005
           ? saldoBSExacto
-          : Math.min(saldoBSExacto, Math.round((applied * tasaPago + Number.EPSILON) * 100) / 100))
+          : Math.min(saldoBSExacto, Math.round((Number(amountBS) + Number.EPSILON) * 100) / 100))
         : (Number(amountBS) > 0
           ? Math.min(Number(amountBS), Number(payment?.montoBS) || Number(amountBS))
           : (Number(payment?.montoBS) || (Math.min(amountCents, saldoCents) / 100) * tasaPago));
@@ -2419,7 +2419,7 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       const pagoBS=esPagoBsCxp
         ? Math.min(remBS,debtBS)
         : esPagoBsCxc
-          ? Math.min(remBS,debtBS,Math.round((pago*tasaAplicada+Number.EPSILON)*100)/100)
+          ? Math.min(remBS,debtBS,Math.round(((remMicros > 0 ? pago / (remMicros / 1000000) * remBS : 0) + Number.EPSILON)*100)/100)
           : collection==='cxp'
             ? Math.min(remBS,Math.round((Math.min(debtCents,remCents)/100*tasaAplicada+Number.EPSILON)*100)/100)
             : Math.min(remBS,(Math.min(debtCents,remCents)/100)*tasaAplicada);
