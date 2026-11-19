@@ -103,20 +103,29 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
       ? x.historialPagos.reduce((sum: number, p: any) => sum + Math.max(0, Number(p?.montoUSD) || 0), 0)
       : 0;
     const abonadoActual = Math.min(monto, Math.max(abonadoRegistrado, abonadoHistorial));
-    return abonadoActual > 0.000001
+    return abonadoActual > 0.0000005
       ? Math.max(0, monto - abonadoActual)
       : saldoRegistrado;
   };
 
   // Una cuenta SOLO es deuda activa (por cobrar) cuando conserva saldo real.
   const esDeudaActiva = (x: any) =>
-    (x.montoUSD || 0) > 0.001 &&
-    saldoActualDeuda(x) > 0.001 &&
+    (x.montoUSD || 0) > 0.0000005 &&
+    saldoActualDeuda(x) > 0.0000005 &&
     x.estado !== 'pagada';
 
   // Deudas activas por cobrar para el total
   const pendientes = todasLasDeudas.filter(esDeudaActiva);
   const totalPendiente = pendientes.reduce((s: number, x: any) => s + saldoActualDeuda(x), 0);
+
+  const fmtSaldoCxC = (saldoUSD: number) => {
+    const usd = Number(saldoUSD) || 0;
+    const bs = usd * (Number(state.tasa) || 0);
+    const usdVisible = Utils.fmtUSD(usd);
+    return usd > 0 && usdVisible === '$0.00' && bs > 0
+      ? `${usdVisible} (${Utils.fmtBS(bs)})`
+      : usdVisible;
+  };
 
   // Agrupar SOLO clientes que existen en state.clientes
   const groupedCredits = useMemo(() => {
@@ -503,7 +512,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
                         </td>
                         <td className="text-right py-4 font-black text-ink">{group.debts.length} Facturas</td>
                         <td className={`text-right py-4 font-black text-base ${tieneDeudaPendiente ? 'text-status-info' : 'text-green-600'}`}>
-                          {Utils.fmtUSD(group.totalUSD)}
+                          {fmtSaldoCxC(group.totalUSD)}
                         </td>
                         <td className="text-right py-4 font-black text-ink">{Utils.fmtBS(group.totalUSD * state.tasa)}</td>
                         <td className="text-center py-4">
@@ -575,7 +584,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
                                              </td>
                                              <td className="text-[10px] font-black p-2 mono text-ink">{d.id}</td>
                                              <td className="text-[10px] font-black p-2 text-right text-ink">{Utils.fmtUSD(d.montoUSD)}</td>
-                                             <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td>
+                                             <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{fmtSaldoCxC(saldoActualDeuda(d))}</td>
                                              <td className="p-2 text-center">
                                                <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
                                                  {d.estado}
@@ -651,7 +660,7 @@ export default function CxCModule({ state, updateState }: CxCModuleProps) {
                             <td className="p-4 text-xs font-black mono text-ink">{d.id}</td>
                             <td className="p-4 text-right text-xs font-black text-ink">{Utils.fmtUSD(d.montoUSD)}</td>
                             <td className="p-4 text-right text-xs font-black text-status-success">{Utils.fmtUSD(d.abonadoUSD)}</td>
-                            <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{Utils.fmtUSD(saldoActualDeuda(d))}</td>
+                            <td className="p-4 text-right text-sm font-black text-brand-gold-deep">{fmtSaldoCxC(saldoActualDeuda(d))}</td>
                             <td className="p-4 text-center">
                               <span className={`badge ${d.estado === 'pagada' ? 'badge-ok' : (d.estado === 'parcial' ? 'badge-info' : 'badge-warn')} font-black text-[8px] uppercase px-3`}>
                                 {d.estado}
