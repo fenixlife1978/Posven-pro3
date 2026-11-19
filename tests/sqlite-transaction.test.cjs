@@ -1850,3 +1850,39 @@ test('CxP individual Bs payment retains its six-decimal USD equivalent in SQLite
   assert.equal(result.saldoUSD, 0.000075);
   assert.equal(result.estado, 'parcial');
 });
+
+
+test('CxP global Bs payment preserves sub-cent USD application across supplier invoices', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-20T00:01:00.000Z';
+  for (const id of ['CXP-GLOBAL-SUBCENT-1', 'CXP-GLOBAL-SUBCENT-2']) {
+    const debt = {
+      id, proveedor: 'Proveedor Global Subcent', montoUSD: 0.0001,
+      abonadoUSD: 0, saldoUSD: 0.0001, estado: 'pendiente', historialPagos: [], fecha: at,
+    };
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO cxp(id,data_json,fecha) VALUES(?,?,?)',
+      args: [id, JSON.stringify(debt), at],
+      wantRows: false,
+    });
+  }
+  const result = await posStore.applyGlobalProviderPaymentTransaction({
+    operationId: 'PAY-CXP-GLOBAL-SUBCENT-001',
+    provider: 'Proveedor Global Subcent',
+    amountUSD: 0.000025,
+    amountBS: 0.01,
+    payment: {
+      id: 'PAY-CXP-GLOBAL-SUBCENT-001', metodo: 'efectivo_bs',
+      montoUSD: 0.000025, montoBS: 0.01, tasaAplicada: 400,
+    },
+  });
+  assert.equal(result.appliedUSD, 0.000025);
+  assert.equal(result.appliedBS, 0.01);
+  assert.equal(result.debts.length, 1);
+  assert.equal(result.debts[0].saldoUSD, 0.000075);
+  const saved = JSON.parse(String((await sqliteExecute({
+    sql: 'SELECT data_json FROM cxp WHERE id=?', args: ['CXP-GLOBAL-SUBCENT-1'],
+  })).rows[0].data_json));
+  assert.equal(saved.saldoUSD, 0.000075);
+  assert.equal(saved.historialPagos[0].montoUSD, 0.000025);
+});
