@@ -2411,9 +2411,34 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
       statements.push(rowStatement(collection,updated)); debts.push({...updated,appliedUSD:pago,appliedBS:pagoBS}); appliedUSD+=pago; appliedBS+=pagoBS;
     }
     if(esPagoBsCxp ? appliedBS<=0.0000005 : appliedUSD<=0.000001) throw new Error('No hay saldo pendiente para registrar este pago.');
-    if(collection==='cxc'&&customerCedula){
-      const foundCustomer=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[String(customerCedula)]});
-      const customer=rowFromDb(foundCustomer.rows[0]); if(customer) statements.push(rowStatement('clientes',{...customer,debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD)}));
+    if(collection==='cxc'){
+      let customerRows:any[]=[];
+      if(customerCedula){
+        const byCedula=await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 2",
+          args:[String(customerCedula)],
+        });
+        customerRows=byCedula.rows.map(rowFromDb).filter(Boolean);
+      }
+      // Si la deuda histórica no conserva cédula, localizar por nombre exacto.
+      // No elegir arbitrariamente cuando existen clientes homónimos.
+      if(!customerRows.length && String(customerName||'').trim()){
+        const byName=await tx.execute({
+          sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$.name'),json_extract(data_json,'$.nombre'),'')))=LOWER(TRIM(?)) ORDER BY id LIMIT 2",
+          args:[String(customerName).trim()],
+        });
+        customerRows=byName.rows.map(rowFromDb).filter(Boolean);
+      }
+      if(customerRows.length>1){
+        throw new Error('Hay más de un cliente con esa identificación o nombre. No se puede actualizar el saldo resumen de forma segura; revise la ficha del cliente.');
+      }
+      const customer=customerRows[0];
+      if(customer){
+        statements.push(rowStatement('clientes',{
+          ...customer,
+          debt:Math.max(0,(Number(customer.debt)||0)-appliedUSD),
+        }));
+      }
     }
     const canonicalJournal=journal?.id?{...journal,montoUSD:appliedUSD,montoBS:appliedBS,referencia:receiptId,terminalId:collection==='cxc'?(terminalForOperation||journal.terminalId):undefined,terminalName:collection==='cxc'?(terminal?.nombre||journal.terminalName):undefined}:null;
     if(canonicalJournal) statements.push(rowStatement('libroDiario',canonicalJournal));
