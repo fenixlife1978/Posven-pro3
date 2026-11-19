@@ -823,11 +823,11 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const handleOpenGlobalCreditPayment = (clientName: string, debts: Debt[]) => {
     const activeDebts = debts
-      .filter(d => d.estado !== 'pagada' && (Number(d.saldoUSD) || 0) > 0.001)
+      .filter(d => d.estado !== 'pagada' && (Number(d.saldoUSD) || 0) > 0.0000005)
       .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id));
     if (activeDebts.length === 0) return;
     const totalUSD = activeDebts.reduce((sum, d) => sum + (Number(d.saldoUSD) || 0), 0);
-    if (totalUSD <= 0.001) return;
+    if (totalUSD <= 0.0000005) return;
     const cedulaMatch = String(activeDebts[0]?.cliente || '').match(/\[([^\]]+)\]\s*$/);
     setGlobalCreditCustomer({
       name: clientName,
@@ -839,8 +839,8 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
 
   const handleProcessGlobalCreditPayment = async (payments: any[]) => {
     if (!globalCreditCustomer || isProcessing || !payments?.length) return;
-    const totalUSD = payments.reduce((s, p) => s + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0);
-    const totalBS = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    const totalUSD = Math.round((payments.reduce((s, p) => s + (Number(p.usdAmount) || (Number(p.amount) || 0) / state.tasa), 0) + Number.EPSILON) * 1000000) / 1000000;
+    const totalBS = Math.round((payments.reduce((s, p) => s + (Number(p.amount) || 0), 0) + Number.EPSILON) * 100) / 100;
     if (totalUSD <= 0 || totalBS <= 0) return;
     setIsProcessing(true);
     try {
@@ -955,6 +955,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     } catch (e) {
       console.error('[POS Ventas] No se pudo resolver el detalle histórico de CxC:', e);
     }
+  };
+
+  const fmtSaldoCxC = (saldoUSD: number) => {
+    const usd = Number(saldoUSD) || 0;
+    const bs = usd * (Number(state.tasa) || 0);
+    const usdVisible = Utils.fmtUSD(usd);
+    return usd > 0 && usdVisible === '$0.00' && bs > 0
+      ? `${usdVisible} (${Utils.fmtBS(bs)})`
+      : usdVisible;
   };
 
   const groupedCredits = useMemo(() => {
@@ -1253,8 +1262,15 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
     processingRef.current = true;
     setIsProcessing(true);
     try {
-      const totalAbonado = pagosAbono.reduce((s, p) => s + p.montoUSD, 0);
-      const totalAbonadoBS = pagosAbono.reduce((s, p) => s + (Number(p.montoBS) || 0), 0);
+      const totalAbonado = Math.round((pagosAbono.reduce((s, p) => s + Number(p.montoUSD || 0), 0) + Number.EPSILON) * 1000000) / 1000000;
+      const totalAbonadoBS = Math.round((pagosAbono.reduce((s, p) => s + (Number(p.montoBS) || 0), 0) + Number.EPSILON) * 100) / 100;
+      const paymentParts = pagosAbono.map((p, index) => ({
+        id: 'ABONO-' + index,
+        metodo: p.metodo,
+        montoUSD: Math.round((Number(p.montoUSD || 0) + Number.EPSILON) * 1000000) / 1000000,
+        montoBS: Math.round((Number(p.montoBS || 0) + Number.EPSILON) * 100) / 100,
+        tasaAplicada: state.tasa,
+      }));
       if (totalAbonado <= 0 || totalAbonadoBS <= 0) return;
 
       // La deuda histórica puede conservar un nombre antiguo. La identidad
@@ -1272,8 +1288,10 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       const pagoAtomic = {
         fecha: ahoraStr,
         montoUSD: totalAbonado,
-        montoBS: totalAbonado * state.tasa,
+        montoBS: totalAbonadoBS,
         metodo: pagosAbono.length > 1 ? 'mixto' : pagosAbono[0].metodo,
+        tasaAplicada: state.tasa,
+        paymentParts,
         reciboId: reciboProvisional
       };
 
@@ -1302,7 +1320,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
       });
       if (!resultadoPago) throw new Error('No se pudo registrar el abono.');
       const appliedUSD = Number(resultadoPago.appliedUSD) || totalAbonado;
-      if (Math.abs(appliedUSD - totalAbonado) > 0.001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
+      if (Math.abs(appliedUSD - totalAbonado) > 0.000001) throw new Error('El saldo cambió mientras se registraba el abono. La operación fue limitada al saldo real.');
 
       const saleFinal = resultadoPago.sale || { ...saleAbono, id: resultadoPago.receiptId || saleAbono.id };
       if (resultadoPago.sale?.payments?.length) {
@@ -1687,7 +1705,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                                             <td className={`text-[10px] font-black p-2 ${Number(d.saldoUSD) > 0.001 && d.fechaVencimiento < Utils.hoy() ? 'text-status-danger' : 'text-ink'}`}>{d.fechaVencimiento === '2099-12-31' ? 'ABIERTA' : Utils.fmtFecha(d.fechaVencimiento)}</td>
                                             <td className="text-[10px] font-black p-2 mono">{d.id}</td>
                                             <td className="text-[10px] font-black p-2 text-right">{Utils.fmtUSD(d.montoUSD)}</td>
-                                            <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{Utils.fmtUSD(d.saldoUSD)}</td>
+                                            <td className="text-[10px] font-black p-2 text-right text-brand-gold-deep">{fmtSaldoCxC(d.saldoUSD)}</td>
                                             <td className="text-[10px] font-black p-2 text-center uppercase">{d.estado}</td>
                                             <td className="p-2 text-center">
                                               <button onClick={() => { void handleOpenCreditDetails(d); }} className="w-8 h-8 rounded-full flex items-center justify-center text-status-success hover:bg-status-success/10" title="Auditar factura">
@@ -2124,7 +2142,7 @@ export default function SalesModule({ state, updateState }: { state: AppState, u
                  </div>
                  <div className="p-3 bg-brand-gold-soft border border-brand-gold/20 rounded-lg">
                     <label className="text-[8px] font-black uppercase text-brand-gold-deep block mb-1">Saldo Actual</label>
-                    <p className="text-lg font-black text-brand-gold-deep">{Utils.fmtUSD(showDetails.saldoUSD)}</p>
+                    <p className="text-lg font-black text-brand-gold-deep">{fmtSaldoCxC(showDetails.saldoUSD)}</p>
                  </div>
               </div>
 
