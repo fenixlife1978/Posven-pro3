@@ -3287,10 +3287,16 @@ export async function reverseDebtPaymentTransaction(params:any){
       const name=rawClient.replace(/\s*\[[^\]]+\]\s*$/,'').trim();
       let customerResult:any=null;
       if(cedula){
-        customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 1",args:[cedula]});
+        customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE json_extract(data_json,'$.cedula')=? LIMIT 2",args:[cedula]});
+        if(customerResult.rows.length>1){
+          throw new Error('No se puede reversar el abono: hay varias fichas de cliente con la misma cédula. Corrija los duplicados y vuelva a intentarlo.');
+        }
       }
       if(!customerResult?.rows?.length&&name){
-        customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$.name'),json_extract(data_json,'$.nombre'),'')))=LOWER(TRIM(?)) LIMIT 1",args:[name]});
+        customerResult=await tx.execute({sql:"SELECT id,data_json FROM clientes WHERE LOWER(TRIM(COALESCE(json_extract(data_json,'$.name'),json_extract(data_json,'$.nombre'),'')))=LOWER(TRIM(?)) LIMIT 2",args:[name]});
+        if(customerResult.rows.length>1){
+          throw new Error('No se puede reversar el abono: hay clientes homónimos y la deuda no tiene una cédula única. Identifique la ficha correcta antes de reintentar.');
+        }
       }
       const customer=rowFromDb(customerResult?.rows?.[0]);
       if(customer){
