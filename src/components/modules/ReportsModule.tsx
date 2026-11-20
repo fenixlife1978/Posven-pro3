@@ -41,6 +41,9 @@ export default function ReportsModule({ state }: { state: AppState }) {
   });
 
   const totalVentasUSD = ventasFiltradas.reduce((s, v) => s + v.totalUSD, 0);
+  // El IVA cobrado no es ingreso propio ni forma parte del margen bruto.
+  const ingresosNetosVentasUSD = ventasFiltradas.reduce((sum, sale) =>
+    sum + Math.max(0, (Number(sale.totalUSD) || 0) - (Number(sale.ivaUSD) || 0)), 0);
 
   // En el historial se conserva la moneda original del pago. Para pagos
   // originados en BS mostramos su equivalencia BS; para USD (Zelle/Efectivo
@@ -81,7 +84,7 @@ export default function ReportsModule({ state }: { state: AppState }) {
     }, 0);
   }, 0);
   const costoHistoricoCompleto = missingHistoricalCostLines === 0;
-  const gananciaNeta = costoHistoricoCompleto ? totalVentasUSD - totalCostoVentas : null;
+  const gananciaBruta = costoHistoricoCompleto ? ingresosNetosVentasUSD - totalCostoVentas : null;
 
   const reportesZFiltrados = (state.reportesZ || [])
     .filter(z => {
@@ -332,8 +335,8 @@ export default function ReportsModule({ state }: { state: AppState }) {
              <div className="card-body p-7">
                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                  <div className="kpi bg-surface-soft border-line p-6 rounded-2xl shadow-inner border-t-4 border-t-ink text-center">
-                   <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Ingreso Bruto (Ventas)</div>
-                   <div className="text-3xl font-black text-ink">{Utils.fmtUSD(totalVentasUSD)}</div>
+                   <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Ingreso por Ventas (sin IVA)</div>
+                   <div className="text-3xl font-black text-ink">{Utils.fmtUSD(ingresosNetosVentasUSD)}</div>
                  </div>
                  <div className="kpi bg-surface-soft border-line p-6 rounded-2xl shadow-inner border-t-4 border-t-status-danger text-center">
                    <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Costo Histórico Identificado (CPP)</div>
@@ -341,11 +344,11 @@ export default function ReportsModule({ state }: { state: AppState }) {
                    {!costoHistoricoCompleto && <div className="text-status-danger text-[10px] font-bold mt-2">Valor parcial: faltan costos históricos</div>}
                  </div>
                  <div className="kpi bg-surface-soft border-line p-6 rounded-2xl shadow-inner border-t-4 border-t-status-success text-center">
-                   <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Margen de Ganancia Neta</div>
-                   <div className="text-4xl font-black text-status-success">{costoHistoricoCompleto ? Utils.fmtUSD(gananciaNeta as number) : 'NO DISPONIBLE'}</div>
+                   <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Ganancia Bruta</div>
+                   <div className="text-4xl font-black text-status-success">{costoHistoricoCompleto ? Utils.fmtUSD(gananciaBruta as number) : 'NO DISPONIBLE'}</div>
                    <div className="text-ink text-[11px] font-black mt-2 uppercase opacity-60">
                      {costoHistoricoCompleto
-                       ? `Margen Real: ${totalVentasUSD > 0 ? (((gananciaNeta as number)/totalVentasUSD)*100).toFixed(2) : 0}%`
+                       ? `Margen Bruto: ${ingresosNetosVentasUSD > 0 ? (((gananciaBruta as number)/ingresosNetosVentasUSD)*100).toFixed(2) : 0}%`
                        : `Faltan ${missingHistoricalCostLines} líneas con costo histórico`}
                    </div>
                  </div>
