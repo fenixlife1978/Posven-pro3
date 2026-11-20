@@ -2262,9 +2262,9 @@ test('rechaza compra atrasada cuando existen ventas posteriores que exigirían r
     purchase: {
       id: 'PURCHASE-BACKDATED-BASE', fecha: '2026-11-19', fechaHora: '2026-11-19T10:00:00.000Z',
       proveedor: 'Proveedor Base', numeroFactura: 'FAC-BACKDATED-BASE',
-      montoUSD: 30, items: [{ productoId, cantidad: 3, costoUnitarioUSD: 10 }],
+      montoUSD: 30, items: [{ productoId: productId, cantidad: 3, costoUnitarioUSD: 10 }],
     },
-    items: [{ productoId, cantidad: 3, costoUnitarioUSD: 10, subtotalUSD: 30 }],
+    items: [{ productoId: productId, cantidad: 3, costoUnitarioUSD: 10, subtotalUSD: 30 }],
     purchaseDate: '2026-11-19', purchaseDateTime: '2026-11-19T10:00:00.000Z',
     supplier: 'Proveedor Base', invoiceNumber: 'FAC-BACKDATED-BASE', exchangeRate: 370,
   });
@@ -2273,7 +2273,7 @@ test('rechaza compra atrasada cuando existen ventas posteriores que exigirían r
   await sqliteExecute({
     sql: 'INSERT INTO movimientos(id,data_json,fecha) VALUES(?,?,?)',
     args: ['PURCHASE-BACKDATED-SALE-MOV', JSON.stringify({
-      id: 'PURCHASE-BACKDATED-SALE-MOV', productoId, tipo: 'venta', cantidad: -2,
+      id: 'PURCHASE-BACKDATED-SALE-MOV', productoId: productId, tipo: 'venta', cantidad: -2,
       stockAntes: 8, stockDespues: 6, costoUnitarioUSD: 8.75,
       fecha: saleAt, referencia: 'VENTA POSTERIOR TEST',
     }), saleAt],
@@ -2291,9 +2291,9 @@ test('rechaza compra atrasada cuando existen ventas posteriores que exigirían r
       purchase: {
         id: 'PURCHASE-BACKDATED-NEW', fecha: '2026-11-19', fechaHora: '2026-11-19T11:00:00.000Z',
         proveedor: 'Proveedor Atrasado', numeroFactura: 'FAC-BACKDATED-NEW',
-        montoUSD: 48, items: [{ productoId, cantidad: 4, costoUnitarioUSD: 12 }],
+        montoUSD: 48, items: [{ productoId: productId, cantidad: 4, costoUnitarioUSD: 12 }],
       },
-      items: [{ productoId, cantidad: 4, costoUnitarioUSD: 12, subtotalUSD: 48 }],
+      items: [{ productoId: productId, cantidad: 4, costoUnitarioUSD: 12, subtotalUSD: 48 }],
       purchaseDate: '2026-11-19', purchaseDateTime: '2026-11-19T11:00:00.000Z',
       supplier: 'Proveedor Atrasado', invoiceNumber: 'FAC-BACKDATED-NEW', exchangeRate: 370,
     }),
