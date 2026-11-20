@@ -407,3 +407,15 @@ Regla de integridad:
 - Si existe una salida o ajuste posterior a la fecha de la compra, la transacción se rechaza antes de persistir factura, deuda, asiento, movimiento o cambios de stock.
 - El mensaje explica que debe registrarse en su fecha real o solicitar una reconstrucción histórica controlada. No se modifica silenciosamente el costo de ventas ya confirmadas.
 - Se añade una regresión que comprueba el rechazo atómico y la conservación del stock, CPP y movimiento de venta.
+
+### Devoluciones/anulaciones y costo histórico del inventario
+
+El reingreso físico de mercancía debe restaurar su costo de la venta original, no conservar sin ajuste el CPP vigente en el momento de la devolución.
+
+Regla:
+- Para productos normales, el costo de retorno se obtiene del movimiento original de venta y, como respaldo, del snapshot de la línea de venta.
+- Para kits `stock_componentes`, se utiliza el snapshot original de cada componente consumido en el Kardex; no se distribuye ni inventa el costo agregado del kit padre.
+- El movimiento de devolución/anulación conserva costo USD, costo Bs y tasa BCV históricos cuando están disponibles.
+- Al reingresar unidades con costo histórico conocido, el CPP se recalcula ponderando el stock/costo vigente con las unidades devueltas/costo original, a seis decimales.
+- En registros históricos sin snapshot, no se sustituye el dato faltante por el costo actual: el movimiento queda marcado `costoHistoricoPendiente` para revisión y el CPP no se altera por una suposición.
+- La prueba de kit cambia deliberadamente el CPP del componente después de la venta y verifica que devolución y anulación recuperan el costo original y el CPP ponderado correcto.
