@@ -911,6 +911,7 @@ function HistorialAjustes({ state }: { state: AppState }) {
         </div>
       </div>
 
+      {movimientosSinCostoHistorico > 0 && <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">Hay {movimientosSinCostoHistorico} movimientos antiguos sin costo histórico. Se excluyen del total para no valorarlos con el costo actual del producto.</p>}
       <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
         <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR AJUSTES POR PERÍODO</label>
         <DateRangeFilter value={rango} onChange={setRango} />
@@ -1002,6 +1003,7 @@ function ReporteConsumo({ state }: { state: AppState }) {
         </div>
       </div>
 
+      {consumosSinCostoHistorico > 0 && <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">Hay {consumosSinCostoHistorico} consumos o colaboraciones antiguos sin costo histórico. Se excluyen del total; no se sustituye su costo con el valor actual del catálogo.</p>}
       <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
         <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR CONSUMO Y COLABORACIONES POR PERÍODO</label>
         <DateRangeFilter value={rango} onChange={setRango} />
@@ -1271,8 +1273,8 @@ function ModalAjuste({ producto, tasaBCV, onClose, onSave }: { producto: Product
           ? 'COLABORACIÓN'
           : motivo).toUpperCase(),
       terminalId: 'ADMIN',
-      costoUnitarioUSD: Number(producto.costoUSD) || 0,
-      costoUnitarioBs: (Number(producto.costoUSD) || 0) * Number(tasaBCV || 0),
+      costoUnitarioUSD: movimientoTipo === 'ajuste_entrada' ? pCosto : (Number(producto.costoUSD) || 0),
+      costoUnitarioBs: (movimientoTipo === 'ajuste_entrada' ? pCosto : (Number(producto.costoUSD) || 0)) * Number(tasaBCV || 0),
       tasaBCV: Number(tasaBCV) || 0
     };
 
