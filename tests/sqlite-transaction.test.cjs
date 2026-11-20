@@ -2173,3 +2173,45 @@ test('formulario de compras conserva seis decimales y no descarta pagos o saldos
   assert.match(source, /saldoPendienteUSD > 0 \?/);
   assert.doesNotMatch(source, /paidUSD > 0\.0001|saldoUSD > 0\.0001|saldoPendienteUSD > 0\.0001/);
 });
+
+
+test('costo promedio ponderado de inventario conserva seis decimales en ajustes y SQLite', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-20T15:00:00.000Z';
+  const productId = 'INV-WEIGHTED-COST-6DP';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({
+      id: productId, nombre: 'Producto Costo Ponderado 6D', stock: 3, costoUSD: 1.234567,
+    }), at],
+    wantRows: false,
+  });
+
+  const stockActual = 3;
+  const costoActual = 1.234567;
+  const cantidadNueva = 2;
+  const nuevoCosto = 2.345678;
+  const costoPonderado = Math.round((((stockActual * costoActual) + (cantidadNueva * nuevoCosto)) / (stockActual + cantidadNueva) + Number.EPSILON) * 1000000) / 1000000;
+  assert.equal(costoPonderado, 1.679011);
+
+  const result = await posStore.applyInventoryMovementsTransaction({
+    operationId: 'INV-WEIGHTED-COST-6DP-OP',
+    operationType: 'AJUSTE_INVENTARIO',
+    movements: [{
+      id: 'INV-WEIGHTED-COST-6DP-MOV', productoId, tipo: 'ajuste_entrada',
+      cantidad: cantidadNueva, fecha: at, referencia: 'ENTRADA CON COSTO PROMEDIO',
+    }],
+    productPatches: { [productId]: { costoUSD: costoPonderado } },
+  });
+
+  assert.equal(result.products[0].stock, 5);
+  assert.equal(result.products[0].costoUSD, 1.679011);
+  const saved = await posStore.getRecord('productos', productId, { id: 'admin-weighted-cost-test', rol: 'administrador' });
+  assert.equal(saved.costoUSD, 1.679011);
+
+  const inventorySource = fs.readFileSync(path.join(process.cwd(), 'src/components/modules/InventoryModule.tsx'), 'utf8');
+  const utilitySource = fs.readFileSync(path.join(process.cwd(), 'src/lib/db-store.ts'), 'utf8');
+  assert.match(inventorySource, /Utils\.roundUSD6\(\(\(stockActual \* costoActual\) \+ \(cantidadNueva \* Number\(nuevoCosto\)\)\) \/ stockTotal\)/);
+  assert.match(utilitySource, /roundUSD6: \(v: any\) =>[\s\S]*?Math\.round\(\(n \+ Number\.EPSILON\) \* 1000000\) \/ 1000000/);
+  assert.doesNotMatch(inventorySource, /Utils\.round\(\(\(stockActual \* costoActual\)/);
+});
