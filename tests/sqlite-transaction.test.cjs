@@ -1929,3 +1929,181 @@ test('el botón Ajustes del POS registra consumo, colaboración, entradas y sali
     assert.equal(Number(movementCount.rows[0].total), 1, item.type + ' no duplica el Kardex');
   }
 });
+
+
+test('CxC individual Bs payments preserve six-decimal USD equivalents and close only at the real Bs balance', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:59:00.000Z';
+  const debtId = 'CXC-SUBCENT-INDIVIDUAL';
+  const customerId = 'CUS-CXC-SUBCENT-INDIVIDUAL';
+  const customer = { id: customerId, name: 'Cliente Subcent', cedula: 'V-990001', debt: 0.0001 };
+  const debt = {
+    id: debtId, cliente: 'Cliente Subcent [V-990001]', montoUSD: 0.0001,
+    abonadoUSD: 0, saldoUSD: 0.0001, estado: 'pendiente', historialPagos: [],
+    fecha: at,
+  };
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: [customerId, JSON.stringify(customer), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: [debtId, JSON.stringify(debt), at],
+    wantRows: false,
+  });
+
+  const user = { id: 'admin-cxc-subcent', rol: 'administrador', nombre: 'Prueba' };
+  const first = await posStore.applyDebtPaymentTransaction({
+    operationId: 'PAY-CXC-SUBCENT-001',
+    collection: 'cxc',
+    debtId,
+    amountUSD: 0.000025,
+    amountBS: 0.01,
+    payment: {
+      id: 'PAY-CXC-SUBCENT-001', metodo: 'mixto', montoUSD: 0.000025,
+      montoBS: 0.01, tasaAplicada: 400,
+      paymentParts: [{ metodo: 'efectivo_bs', montoUSD: 0.000025, montoBS: 0.01 }],
+    },
+    user,
+  });
+  assert.equal(first.appliedUSD, 0.000025);
+  assert.equal(first.appliedBS, 0.01);
+  assert.equal(first.saldoUSD, 0.000075);
+  assert.equal(first.estado, 'parcial');
+  assert.equal(first.historialPagos[0].montoUSD, 0.000025);
+
+  const second = await posStore.applyDebtPaymentTransaction({
+    operationId: 'PAY-CXC-SUBCENT-002',
+    collection: 'cxc',
+    debtId,
+    amountUSD: 0.000075,
+    amountBS: 0.03,
+    payment: {
+      id: 'PAY-CXC-SUBCENT-002', metodo: 'efectivo_bs', montoUSD: 0.000075,
+      montoBS: 0.03, tasaAplicada: 400,
+    },
+    user,
+  });
+  assert.equal(second.appliedUSD, 0.000075);
+  assert.equal(second.appliedBS, 0.03);
+  assert.equal(second.saldoUSD, 0);
+  assert.equal(second.estado, 'pagada');
+  const savedCustomer = JSON.parse(String((await sqliteExecute({
+    sql: 'SELECT data_json FROM clientes WHERE id=?', args: [customerId],
+  })).rows[0].data_json));
+  assert.equal(savedCustomer.debt, 0);
+});
+
+test('CxC global Bs payment distributes sub-cent USD amounts without dropping the collection', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-19T23:59:30.000Z';
+  const customerId = 'CUS-CXC-GLOBAL-SUBCENT';
+  const customer = { id: customerId, name: 'Cliente Global Subcent', cedula: 'V-990002', debt: 0.0002 };
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO clientes(id,data_json,fecha) VALUES(?,?,?)',
+    args: [customerId, JSON.stringify(customer), at],
+    wantRows: false,
+  });
+  for (const id of ['CXC-GLOBAL-SUBCENT-1', 'CXC-GLOBAL-SUBCENT-2']) {
+    const debt = {
+      id, cliente: 'Cliente Global Subcent [V-990002]', montoUSD: 0.0001,
+      abonadoUSD: 0, saldoUSD: 0.0001, estado: 'pendiente', historialPagos: [], fecha: at,
+    };
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+      args: [id, JSON.stringify(debt), at],
+      wantRows: false,
+    });
+  }
+  const result = await posStore.applyGlobalCustomerPaymentTransaction({
+    operationId: 'PAY-CXC-GLOBAL-SUBCENT-001',
+    customerName: 'Cliente Global Subcent',
+    customerCedula: 'V-990002',
+    amountUSD: 0.00005,
+    amountBS: 0.02,
+    payment: {
+      id: 'PAY-CXC-GLOBAL-SUBCENT-001', metodo: 'mixto', montoUSD: 0.00005,
+      montoBS: 0.02, tasaAplicada: 400,
+      paymentParts: [{ metodo: 'efectivo_bs', montoUSD: 0.00005, montoBS: 0.02, tasaAplicada: 400 }],
+    },
+    paymentParts: [{ metodo: 'efectivo_bs', montoUSD: 0.00005, montoBS: 0.02, tasaAplicada: 400 }],
+    user: { id: 'admin-cxc-global-subcent', rol: 'administrador', nombre: 'Prueba' },
+  });
+  assert.equal(result.appliedUSD, 0.00005);
+  assert.equal(result.appliedBS, 0.02);
+  assert.equal(result.debts.length, 1);
+  assert.equal(result.debts[0].saldoUSD, 0.00005);
+  const saved = JSON.parse(String((await sqliteExecute({
+    sql: 'SELECT data_json FROM cxc WHERE id=?', args: ['CXC-GLOBAL-SUBCENT-1'],
+  })).rows[0].data_json));
+  assert.equal(saved.saldoUSD, 0.00005);
+  assert.equal(saved.historialPagos[0].montoUSD, 0.00005);
+});
+
+test('CxP individual Bs payment retains its six-decimal USD equivalent in SQLite', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-20T00:00:00.000Z';
+  const debtId = 'CXP-SUBCENT-INDIVIDUAL';
+  const debt = {
+    id: debtId, proveedor: 'Proveedor Subcent', montoUSD: 0.0001,
+    abonadoUSD: 0, saldoUSD: 0.0001, estado: 'pendiente', historialPagos: [], fecha: at,
+  };
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxp(id,data_json,fecha) VALUES(?,?,?)',
+    args: [debtId, JSON.stringify(debt), at],
+    wantRows: false,
+  });
+  const result = await posStore.applyDebtPaymentTransaction({
+    operationId: 'PAY-CXP-SUBCENT-001',
+    collection: 'cxp',
+    debtId,
+    amountUSD: 0.000025,
+    amountBS: 0.01,
+    payment: {
+      id: 'PAY-CXP-SUBCENT-001', metodo: 'efectivo_bs', montoUSD: 0.000025,
+      montoBS: 0.01, tasaAplicada: 400,
+    },
+    user: { id: 'admin-cxp-subcent', rol: 'administrador', nombre: 'Prueba' },
+  });
+  assert.equal(result.appliedUSD, 0.000025);
+  assert.equal(result.appliedBS, 0.01);
+  assert.equal(result.saldoUSD, 0.000075);
+  assert.equal(result.estado, 'parcial');
+});
+
+
+test('CxP global Bs payment preserves sub-cent USD application across supplier invoices', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-20T00:01:00.000Z';
+  for (const id of ['CXP-GLOBAL-SUBCENT-1', 'CXP-GLOBAL-SUBCENT-2']) {
+    const debt = {
+      id, proveedor: 'Proveedor Global Subcent', montoUSD: 0.0001,
+      abonadoUSD: 0, saldoUSD: 0.0001, estado: 'pendiente', historialPagos: [], fecha: at,
+    };
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO cxp(id,data_json,fecha) VALUES(?,?,?)',
+      args: [id, JSON.stringify(debt), at],
+      wantRows: false,
+    });
+  }
+  const result = await posStore.applyGlobalProviderPaymentTransaction({
+    operationId: 'PAY-CXP-GLOBAL-SUBCENT-001',
+    provider: 'Proveedor Global Subcent',
+    amountUSD: 0.000025,
+    amountBS: 0.01,
+    payment: {
+      id: 'PAY-CXP-GLOBAL-SUBCENT-001', metodo: 'efectivo_bs',
+      montoUSD: 0.000025, montoBS: 0.01, tasaAplicada: 400,
+    },
+  });
+  assert.equal(result.appliedUSD, 0.000025);
+  assert.equal(result.appliedBS, 0.01);
+  assert.equal(result.debts.length, 1);
+  assert.equal(result.debts[0].saldoUSD, 0.000075);
+  const saved = JSON.parse(String((await sqliteExecute({
+    sql: 'SELECT data_json FROM cxp WHERE id=?', args: ['CXP-GLOBAL-SUBCENT-1'],
+  })).rows[0].data_json));
+  assert.equal(saved.saldoUSD, 0.000075);
+  assert.equal(saved.historialPagos[0].montoUSD, 0.000025);
+});

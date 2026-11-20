@@ -68,8 +68,8 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
   // pagar. Un saldo $0.00 (o despreciable) la convierte en PAGADA, aunque por un
   // residuo/redondeo no haya quedado marcada como 'pagada'.
   const esDeudaActiva = (x: Debt) =>
-    (x.montoUSD || 0) > 0.001 &&
-    (x.saldoUSD || 0) > 0.001 &&
+    (x.montoUSD || 0) > 0.0000005 &&
+    (x.saldoUSD || 0) > 0.0000005 &&
     x.estado !== 'pagada';
 
   const pendientes = (state.cxp || []).filter(esDeudaActiva);
@@ -325,7 +325,7 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
 
       toast({
         title: "Pago global registrado",
-        description: `${Utils.fmtUSD(totalAplicado)}${esMetodoBS ? ' (' + Utils.fmtBS(aplicadoBS) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.001 ? ' (excedente sin aplicar)' : ''}${pagoAtrasado ? ' · Pago atrasado registrado' : ''}`
+        description: `${Utils.fmtUSD(totalAplicado)}${esMetodoBS ? ' (' + Utils.fmtBS(aplicadoBS) + ')' : ''} aplicado a ${aplicados.length} deuda(s)${remanente > 0.0000005 ? ' (excedente sin aplicar)' : ''}${pagoAtrasado ? ' · Pago atrasado registrado' : ''}`
       });
 
       setGlobalProvider(null);
@@ -511,12 +511,12 @@ export default function CxPModule({ state, updateState, terminalId }: CxPModuleP
                         <div className="min-w-0">
                           <p className="text-sm font-black uppercase text-ink truncate">{g.proveedor}</p>
                           <p className="text-[9px] font-black uppercase text-ink/50 tracking-widest">
-                            {g.pendientes.length} factura(s) pendiente(s) · Tot. {Utils.fmtUSD(g.saldoTotal)}
+                            {g.pendientes.length} factura(s) pendiente(s) · Tot. {fmtSaldoCxP(g.saldoTotal)}
                           </p>
                         </div>
                       </button>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-sm font-black text-status-danger mono">{Utils.fmtUSD(g.saldoTotal)}</span>
+                        <span className="text-sm font-black text-status-danger mono">{fmtSaldoCxP(g.saldoTotal)}</span>
                         <button
                           onClick={() => handleOpenGlobalPayment(g.proveedor)}
                           disabled={g.saldoTotal <= 0}
