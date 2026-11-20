@@ -432,3 +432,10 @@ La reparación de una devolución o anulación también debe reconstruir la traz
 - La regresión elimina deliberadamente el movimiento de una devolución ya registrada, ejecuta la reparación y comprueba que el movimiento reconstruido recupera USD 2, Bs 4 y tasa BCV 2, además del stock final correcto.
 
 Esta corrección restaura el snapshot histórico del movimiento reparado. La reconstrucción cronológica del CPP vigente cuando existen compras/ventas posteriores continúa como auditoría separada; no se debe recalcular desde el costo actual sin reconstruir toda la secuencia de valoración.
+
+
+### Informes de inventario: snapshots de costo histórico y conteo de kits
+
+Los informes de ajustes, consumos y colaboraciones valoran cada movimiento con su snapshot `costoUnitarioUSD` o, cuando está disponible, con el costo Bs dividido por la tasa BCV histórica. Los registros antiguos sin costo verificable se muestran como `SIN HISTÓRICO` y se excluyen de los totales; nunca se sustituyen por el CPP actual. El detalle CPP muestra el costo unitario de cada compra/entrada y el inventario actual conserva seis decimales en sus cálculos internos.
+
+Las entradas manuales que introducen un costo nuevo guardan ese importe como snapshot del movimiento. El conteo físico excluye los kits `stock_componentes` porque sus existencias reales están representadas por sus componentes, que son las unidades que deben contarse.
