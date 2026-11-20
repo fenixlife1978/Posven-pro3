@@ -376,3 +376,13 @@ Corrección:
 - El backend de recepción de Compras también recalcula el costo ponderado con seis decimales; ya no trunca el resultado a cuatro antes de persistir el producto.
 - Prueba de regresión: 3 unidades a USD 1,234567 más 2 unidades a USD 2,345678 deben producir un costo promedio USD 1,679011, persistido íntegramente en SQLite.
 
+### Rentabilidad: costo histórico de cada venta
+
+El informe de rentabilidad no debe consultar el costo actual del catálogo para recalcular ventas anteriores. Cada línea de venta conserva el snapshot `costoUnitarioUSD` capturado al confirmar la operación.
+
+Corrección:
+- El costo de ventas se calcula desde el snapshot de cada línea histórica.
+- Las ventas libres en Bs. no generan costo de inventario.
+- Los registros antiguos que no tengan snapshot se contabilizan como líneas sin costo histórico; no se sustituye el dato faltante por el costo vigente del producto.
+- Mientras falte al menos un costo histórico, el informe muestra el costo identificado como parcial y no presenta ganancia ni porcentaje de margen como si fueran exactos.
+- Se añade una regresión para impedir que el informe vuelva a depender del costo actual del catálogo.
