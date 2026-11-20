@@ -396,3 +396,14 @@ Corrección:
 - El informe de rentabilidad calcula el ingreso sin IVA, ya que el impuesto cobrado no es ingreso propio.
 - El resultado se denomina ganancia bruta y margen bruto; no se presenta como ganancia neta porque este informe no descuenta gastos operativos ni otros egresos.
 - Se añade regresión para el costo de kit y para evitar incluir IVA en el margen bruto.
+
+### Inventario: valoración histórica de ajustes, consumos y colaboraciones
+
+Los informes de ajustes y consumos no deben recalcular el valor de movimientos anteriores usando el CPP vigente del producto. Cada movimiento de inventario captura su propio `costoUnitarioUSD`.
+
+Corrección:
+- El efecto neto de ajustes se calcula con cantidad firmada por el costo unitario guardado en el movimiento.
+- Las pérdidas por consumo y colaboración usan el mismo snapshot histórico.
+- Las tablas muestran el costo del movimiento, no el costo actual del catálogo.
+- Los movimientos antiguos sin snapshot se excluyen del total identificado y se cuentan como faltantes; el informe marca el importe como parcial y no muestra un costo ficticio.
+- Se añade regresión para impedir que estos informes vuelvan a depender del CPP actual del producto.
