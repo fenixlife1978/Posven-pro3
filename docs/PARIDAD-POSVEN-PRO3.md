@@ -396,3 +396,14 @@ Corrección:
 - El informe de rentabilidad calcula el ingreso sin IVA, ya que el impuesto cobrado no es ingreso propio.
 - El resultado se denomina ganancia bruta y margen bruto; no se presenta como ganancia neta porque este informe no descuenta gastos operativos ni otros egresos.
 - Se añade regresión para el costo de kit y para evitar incluir IVA en el margen bruto.
+
+### Valoración histórica de consumos y detalle CPP
+
+Se corrigieron dos pantallas que todavía consultaban el costo actual del producto para mostrar importes de períodos anteriores:
+
+- El reporte de consumo y colaboraciones ahora valora cada salida con `movimiento.costoUnitarioUSD`, snapshot guardado al registrar el movimiento.
+- Si un movimiento antiguo no tiene costo histórico, la fila se marca como `NO DISPONIBLE` y el total se identifica como parcial; no se rellena con el CPP actual.
+- El detalle CPP muestra el costo unitario que corresponde a cada movimiento de compra/entrada, en lugar de repetir el costo ponderado vigente en todas las filas.
+- El detalle muestra seis decimales para mantener visible la precisión interna de USD.
+
+Se añadieron pruebas de regresión para impedir el uso accidental de `producto.costoUSD` en ambos historiales.
