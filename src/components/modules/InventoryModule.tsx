@@ -462,7 +462,19 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   : Number(nuevoCosto);
               }
               productPatches[mov.productoId] = patch;
-              movimientos.push({ ...mov, id: Store.uid(), stockAntes: 0, stockDespues: 0, fecha: ahora });
+              // Una entrada manual con costo nuevo debe guardar ese precio de
+              // entrada como snapshot; no el CPP anterior del producto.
+              const movementCostUSD = mov.tipo === 'ajuste_entrada' && Number(nuevoCosto) > 0
+                ? Number(nuevoCosto)
+                : Number(mov.costoUnitarioUSD) || 0;
+              const movementRate = Number(mov.tasaBCV) > 0 ? Number(mov.tasaBCV) : Number(state.tasa) || 0;
+              movimientos.push({
+                ...mov,
+                costoUnitarioUSD: movementCostUSD,
+                costoUnitarioBs: movementCostUSD * movementRate,
+                tasaBCV: movementRate,
+                id: Store.uid(), stockAntes: 0, stockDespues: 0, fecha: ahora
+              });
             }
 
             try {
