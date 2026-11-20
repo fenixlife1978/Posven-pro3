@@ -3083,6 +3083,44 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
       return f!==0?f:String(a.doc?.id||'').localeCompare(String(b.doc?.id||''));
     });
 
+    // Los movimientos reconstruidos deben recuperar el snapshot del costo
+    // de la salida original. En kits, el Kardex identifica cada componente.
+    const originalSaleMovementRows=(await tx.execute({
+      sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.tipo')='venta' AND json_extract(data_json,'$.referencia') LIKE ? ORDER BY COALESCE(fecha,''),id",
+      args:['%'+saleId+'%'],
+    })).rows.map(rowFromDb).filter(Boolean);
+    const originalSaleMovementByProduct=new Map<string,any>();
+    for(const movement of originalSaleMovementRows){
+      const reference=String(movement?.referencia||'');
+      if(!reference.includes(saleId)) continue;
+      const pid=String(movement?.productoId||'');
+      if(pid&&!originalSaleMovementByProduct.has(pid)) originalSaleMovementByProduct.set(pid,movement);
+    }
+    const historicalCostForProduct=(pid:string)=>{
+      const originalMovement=originalSaleMovementByProduct.get(pid);
+      const originalItem=(Array.isArray(sale.items)?sale.items:[]).find((item:any)=>String(item?.productoId||'')===pid);
+      const movementCost=originalMovement?.costoUnitarioUSD;
+      const itemCost=originalItem?.costoUnitarioUSD;
+      const hasCost=(movementCost!==undefined&&movementCost!==null&&Number.isFinite(Number(movementCost))&&Number(movementCost)>=0)
+        ||(itemCost!==undefined&&itemCost!==null&&Number.isFinite(Number(itemCost))&&Number(itemCost)>=0);
+      if(!hasCost) return {costoHistoricoPendiente:true};
+      const costUSD=movementCost!==undefined&&movementCost!==null?Number(movementCost):Number(itemCost);
+      const rate=Number(originalMovement?.tasaBCV)||Number(originalItem?.tasaBCV)||Number(sale.tasaAplicada)||Number(sale.tasa)||0;
+      const movementBs=originalMovement?.costoUnitarioBs;
+      const itemBs=originalItem?.costoUnitarioBs;
+      const costBs=movementBs!==undefined&&movementBs!==null&&Number.isFinite(Number(movementBs))&&Number(movementBs)>=0
+        ? Number(movementBs)
+        : itemBs!==undefined&&itemBs!==null&&Number.isFinite(Number(itemBs))&&Number(itemBs)>=0
+          ? Number(itemBs)
+          : rate>0?costUSD*rate:undefined;
+      return {
+        costoUnitarioUSD:costUSD,
+        ...(costBs!==undefined?{costoUnitarioBs:costBs}:{}),
+        ...(rate>0?{tasaBCV:rate}:{}),
+        costoHistoricoPendiente:false,
+      };
+    };
+
     const remaining=new Map<string,number>();
     for(const item of (Array.isArray(sale.items)?sale.items:[]))
       remaining.set(String(item?.productoId||''),Math.max(0,Number(item?.cantidad)||0));
@@ -3190,6 +3228,7 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
         }else{
           await tx.execute(rowStatement('movimientos',{
             ...movement,
+            ...historicalCostForProduct(pid),
             cantidad:Number(item.cantidad)||0,
             stockDespues:Number(movement.stockAntes||0)+(Number(item.cantidad)||0),
             reparadoPorOperacion:String(doc.id||''),
@@ -3220,6 +3259,7 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
             ? 'ANULACIÓN TOTAL FACTURA #'+saleId
             : 'DEVOLUCIÓN '+String(doc.id)+' - REF VENTA '+saleId,
           terminalId:String(doc.terminalId||'GLOBAL'),
+          ...historicalCostForProduct(pid),
           reparado:true,
         };
         await tx.execute(rowStatement('movimientos',movement));
