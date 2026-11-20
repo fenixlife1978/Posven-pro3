@@ -407,3 +407,15 @@ Regla de integridad:
 - Si existe una salida o ajuste posterior a la fecha de la compra, la transacción se rechaza antes de persistir factura, deuda, asiento, movimiento o cambios de stock.
 - El mensaje explica que debe registrarse en su fecha real o solicitar una reconstrucción histórica controlada. No se modifica silenciosamente el costo de ventas ya confirmadas.
 - Se añade una regresión que comprueba el rechazo atómico y la conservación del stock, CPP y movimiento de venta.
+
+### Informes de ajustes, consumos y valorización de inventario
+
+Los reportes históricos no deben reconstruir el costo de una salida usando el CPP vigente del catálogo, porque ese valor puede haber cambiado después del movimiento.
+
+Correcciones:
+- Bitácora de ajustes y reporte de consumo/colaboraciones toman el costo unitario del snapshot guardado en el movimiento (USD, o Bs dividido por la tasa histórica guardada).
+- Los movimientos antiguos sin snapshot se identifican como `SIN HISTÓRICO`; no se reemplazan silenciosamente por el costo actual del producto y se excluyen de los importes agregados, con aviso visible del número de registros incompletos.
+- Los ajustes de entrada capturan como costo histórico el costo nuevo introducido en esa operación, no el costo anterior del producto.
+- El historial de compras presenta el costo unitario de cada movimiento de compra, no el CPP actual repetido en todas las filas.
+- La valorización actual conserva seis decimales en sus cálculos internos; el formato monetario de pantalla sigue siendo presentación.
+- Pruebas de regresión verifican uso de snapshots, advertencias por históricos incompletos y precisión.
