@@ -396,3 +396,14 @@ Corrección:
 - El informe de rentabilidad calcula el ingreso sin IVA, ya que el impuesto cobrado no es ingreso propio.
 - El resultado se denomina ganancia bruta y margen bruto; no se presenta como ganancia neta porque este informe no descuenta gastos operativos ni otros egresos.
 - Se añade regresión para el costo de kit y para evitar incluir IVA en el margen bruto.
+
+### Compras atrasadas y protección del costo histórico
+
+Una compra incorporada con fecha anterior a ventas, consumos, devoluciones u otras salidas ya registradas puede cambiar el CPP vigente en esas fechas. Recalcular solo los saldos físicos del Kardex, sin reconstruir los costos de esas salidas, deja una valoración y una rentabilidad incoherentes.
+
+Regla de integridad:
+- Se ordena el Kardex por fecha y, para fechas iguales, por identificador del movimiento.
+- Una compra atrasada puede incorporarse si los movimientos posteriores del producto son únicamente otras compras; el costo promedio ponderado final sigue siendo matemáticamente reconciliable.
+- Si existe una salida o ajuste posterior a la fecha de la compra, la transacción se rechaza antes de persistir factura, deuda, asiento, movimiento o cambios de stock.
+- El mensaje explica que debe registrarse en su fecha real o solicitar una reconstrucción histórica controlada. No se modifica silenciosamente el costo de ventas ya confirmadas.
+- Se añade una regresión que comprueba el rechazo atómico y la conservación del stock, CPP y movimiento de venta.
