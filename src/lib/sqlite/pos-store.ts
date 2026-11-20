@@ -3661,7 +3661,7 @@ export async function deletePurchaseTransaction(params:any){
         const beforeStock=finalStock;
         const currentValue=currentStock*finalCost;
         const beforeValue=Math.max(0,currentValue-deletedCostTotal);
-        if(beforeStock>0) finalCost=Math.round((beforeValue/beforeStock+Number.EPSILON)*10000)/10000;
+        if(beforeStock>0) finalCost=Math.round((beforeValue/beforeStock+Number.EPSILON)*1000000)/1000000;
         else finalCost=0;
       }
 
