@@ -2870,10 +2870,41 @@ export async function processReturnOrCancellationTransaction(params:any){
       }
     }
 
+    // Recuperar el costo unitario exacto de la salida original. En kits
+    // stock_componentes el Kardex conserva un snapshot por cada componente.
+    const originalSaleMovementRows=await tx.execute({
+      sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.tipo')='venta' AND json_extract(data_json,'$.referencia') LIKE ? ORDER BY COALESCE(fecha,''),id",
+      args:['%'+String(saleId)+'%'],
+    });
+    const originalSaleMovements=originalSaleMovementRows.rows.map(rowFromDb).filter(Boolean);
+    const originalSaleMovementByProduct=new Map<string,any>();
+    for(const originalMovement of originalSaleMovements){
+      const pid=String(originalMovement?.productoId||'');
+      if(pid&&!originalSaleMovementByProduct.has(pid)) originalSaleMovementByProduct.set(pid,originalMovement);
+    }
     for(const [pid,reintegration] of reintegrationsByProduct){
       const requestedMovement=reintegration.movement;
+      const originalMovement=originalSaleMovementByProduct.get(pid);
+      const originalSaleItem=originalItems.find((item:any)=>String(item?.productoId||'')===pid);
+      const movementCost=originalMovement?.costoUnitarioUSD;
+      const itemCost=originalSaleItem?.costoUnitarioUSD;
+      const hasHistoricalCost=(movementCost!==undefined&&movementCost!==null&&Number.isFinite(Number(movementCost))&&Number(movementCost)>=0)
+        ||(itemCost!==undefined&&itemCost!==null&&Number.isFinite(Number(itemCost))&&Number(itemCost)>=0);
+      const historicalCostUSD=movementCost!==undefined&&movementCost!==null?Number(movementCost):Number(itemCost);
+      const historicalRate=Number(originalMovement?.tasaBCV)||Number(originalSaleItem?.tasaBCV)||Number(sale.tasaAplicada)||Number(sale.tasa)||0;
+      const historicalCostBS=Number(originalMovement?.costoUnitarioBs)>0
+        ? Number(originalMovement.costoUnitarioBs)
+        : Number(originalSaleItem?.costoUnitarioBs)>0
+          ? Number(originalSaleItem.costoUnitarioBs)
+          : hasHistoricalCost&&historicalRate>0?historicalCostUSD*historicalRate:undefined;
       effectiveMovements.push({
         ...(requestedMovement||{}),
+        ...(hasHistoricalCost?{
+          costoUnitarioUSD:historicalCostUSD,
+          ...(historicalCostBS!==undefined?{costoUnitarioBs:historicalCostBS}:{}),
+          ...(historicalRate>0?{tasaBCV:historicalRate}:{}),
+          costoHistoricoPendiente:false,
+        }:{costoHistoricoPendiente:true}),
         id:String(requestedMovement?.id||('MOV-'+crypto.randomUUID())),
         productoId:pid,
         tipo:operationType==='ANULACION'?'anulacion':'devolucion',
@@ -2955,9 +2986,16 @@ export async function processReturnOrCancellationTransaction(params:any){
       const pid=String(m.productoId);
       const p=products.get(pid);
       const before=Number(p.stock)||0;
-      const after=before+(Number(m.cantidad)||0);
+      const quantity=Number(m.cantidad)||0;
+      const after=before+quantity;
+      const hasHistoricalCost=m.costoUnitarioUSD!==undefined&&m.costoUnitarioUSD!==null&&Number.isFinite(Number(m.costoUnitarioUSD))&&Number(m.costoUnitarioUSD)>=0&&!m.costoHistoricoPendiente;
+      const currentCost=Number(p.costoUSD)||0;
+      const returnedCost=Number(m.costoUnitarioUSD)||0;
+      const weightedCost=hasHistoricalCost&&after>0
+        ? Math.round(((before*currentCost)+(quantity*returnedCost))/after*1000000)/1000000
+        : currentCost;
       const persisted={...m,productoId:pid,stockAntes:before,stockDespues:after,usuarioId:user?.id||m.usuarioId,usuarioNombre:user?.nombre||user?.username||m.usuarioNombre,id:String(m.id||('MOV-'+crypto.randomUUID()))};
-      products.set(pid,{...p,stock:after});
+      products.set(pid,{...p,stock:after,costoUSD:weightedCost});
       statements.push(rowStatement('movimientos',persisted));
     }
 
