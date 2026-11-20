@@ -281,6 +281,13 @@ test('devolver y anular un kit repone sus componentes, no el artículo padre', a
   assert.equal(JSON.parse(parent.rows[0].data_json).stock, 5);
   assert.equal(JSON.parse(component.rows[0].data_json).stock, 6);
 
+  // Simula que el CPP cambió después de la venta; la devolución debe
+  // reingresar los componentes al costo original y recalcular el promedio.
+  await sqliteExecute({
+    sql: "UPDATE productos SET data_json=json_set(data_json,'$.costoUSD',3) WHERE id=?",
+    args: ['KIT-COMP'],
+    wantRows: false,
+  });
   const returnedItem = {
     productoId: 'KIT-PACK', nombre: 'Kit de prueba', cantidad: 1,
     precioUnitUSD: 10, subtotalUSD: 10, estadoProducto: 'REINTEGRADO_STOCK',
@@ -300,6 +307,12 @@ test('devolver y anular un kit repone sus componentes, no el artículo padre', a
   component = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-COMP'] });
   assert.equal(JSON.parse(parent.rows[0].data_json).stock, 5);
   assert.equal(JSON.parse(component.rows[0].data_json).stock, 8);
+  assert.equal(JSON.parse(component.rows[0].data_json).costoUSD, 2.5, 'el CPP debe ponderar 6 unidades a USD 3 y 2 devueltas a USD 1');
+  const returnMovement = await sqliteExecute({
+    sql: "SELECT data_json FROM movimientos WHERE json_extract(data_json,'$.tipo')='devolucion' AND json_extract(data_json,'$.productoId')='KIT-COMP'",
+  });
+  assert.equal(JSON.parse(returnMovement.rows[0].data_json).costoUnitarioUSD, 1);
+  assert.equal(JSON.parse(returnMovement.rows[0].data_json).tasaBCV, 1);
 
   await posStore.processReturnOrCancellationTransaction({
     operationId: 'KIT-CANCEL-REGRESSION',
@@ -316,6 +329,12 @@ test('devolver y anular un kit repone sus componentes, no el artículo padre', a
   component = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-COMP'] });
   assert.equal(JSON.parse(parent.rows[0].data_json).stock, 5);
   assert.equal(JSON.parse(component.rows[0].data_json).stock, 10);
+  assert.equal(JSON.parse(component.rows[0].data_json).costoUSD, 2.2, 'la anulación debe reponer las unidades pendientes al costo original y recalcular CPP');
+  const cancellationMovement = await sqliteExecute({
+    sql: "SELECT data_json FROM movimientos WHERE json_extract(data_json,'$.tipo')='anulacion' AND json_extract(data_json,'$.productoId')='KIT-COMP'",
+  });
+  assert.equal(JSON.parse(cancellationMovement.rows[0].data_json).costoUnitarioUSD, 1);
+  assert.equal(JSON.parse(cancellationMovement.rows[0].data_json).tasaBCV, 1);
 
   const saleMovements = await sqliteExecute({
     sql: "SELECT data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha,id",
