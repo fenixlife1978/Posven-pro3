@@ -144,3 +144,18 @@ test('el conteo físico excluye kits que descuentan componentes y dirige el cont
   assert.match(inventory, /!\(p\.isKit && p\.kitType === 'stock_componentes'\)/);
   assert.match(inventory, /Los kits que descuentan componentes se cuentan por sus componentes/);
 });
+
+
+test('los productos nuevos conservan un baseline inmutable para reconstrucción cronológica del CPP', () => {
+  const types = read('src/lib/types.ts');
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  assert.match(types, /stockInicialReconstruccion\?: number/);
+  assert.match(types, /costoInicialUSDReconstruccion\?: number/);
+  assert.match(types, /tasaInicialBCVReconstruccion\?: number/);
+  assert.match(types, /fechaInicialReconstruccion\?: string/);
+  assert.match(inventory, /const stockInicialReconstruccion = Math\.max\(0, Number\(datos\.stock\) \|\| 0\)/);
+  assert.match(inventory, /const costoInicialUSDReconstruccion = Math\.max\(0, Number\(datos\.costoUSD\) \|\| 0\)/);
+  assert.match(inventory, /stockInicialReconstruccion,/);
+  assert.match(inventory, /costoUnitarioUSD: costoInicialUSDReconstruccion/);
+  assert.match(inventory, /fecha: fechaInicialReconstruccion/);
+});
