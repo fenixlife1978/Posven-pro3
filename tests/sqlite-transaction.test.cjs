@@ -2126,7 +2126,7 @@ test('compra registra pagos iniciales sub-centavo y CxP con seis decimales en SQ
     proveedor: 'Proveedor Subcentavo', numeroFactura: 'FAC-SUBCENT-001',
     condicion: 'mixto', montoUSD: 0.0001, pagadoUSD: 0.000025,
     saldoUSD: 0.000075,
-    items: [{ productoId, nombre: 'Producto Compra Subcentavo', cantidad: 1, costoUnitarioUSD: 0.0001, subtotalUSD: 0.0001 }],
+    items: [{ productoId: productId, nombre: 'Producto Compra Subcentavo', cantidad: 1, costoUnitarioUSD: 0.0001, subtotalUSD: 0.0001 }],
   };
   const debt = {
     id: 'CXP-PURCHASE-SUBCENT-001', fecha: '2026-11-20',
