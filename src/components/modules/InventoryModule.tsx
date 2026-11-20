@@ -605,7 +605,7 @@ function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movim
 
           <div className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
             <span className="text-[10px] font-bold text-gray-500 uppercase">COSTO ACTUAL (PONDERADO)</span>
-            <span className="text-[#2563EB] font-mono font-black text-lg">{format4(producto.costoUSD)}</span>
+            <span className="text-[#2563EB] font-mono font-black text-lg">{format4(Number(m.costoUnitarioUSD ?? 0))}</span>
           </div>
 
           <div className="space-y-3">
@@ -870,6 +870,18 @@ function ReporteDevoluciones({ state, updateState }: { state: AppState, updateSt
   );
 }
 
+function costoHistoricoMovimiento(m: Movimiento): number | null {
+  if (m.costoUnitarioUSD !== undefined && m.costoUnitarioUSD !== null) {
+    const value = Number(m.costoUnitarioUSD);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+  if (m.costoUnitarioBs !== undefined && m.costoUnitarioBs !== null && Number(m.tasaBCV) > 0) {
+    const value = Number(m.costoUnitarioBs) / Number(m.tasaBCV);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+  return null;
+}
+
 function HistorialAjustes({ state }: { state: AppState }) {
   const [rango, setRango] = useState<DateRange>({ desde: Utils.hoy(), hasta: Utils.hoy() });
   const ajustes = (state.movimientos || []).filter(m => 
@@ -877,11 +889,11 @@ function HistorialAjustes({ state }: { state: AppState }) {
   ).filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
   .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
-  const totalVariacionUSD = ajustes.reduce((acc, m) => {
-    const p = state.productos.find(prod => prod.id === m.productoId);
-    const costo = p?.costoUSD || 0;
-    return acc + (m.cantidad * costo);
-  }, 0);
+  const movimientosSinCostoHistorico = ajustes.filter(m => costoHistoricoMovimiento(m) === null).length;
+  const totalVariacionUSD = Utils.roundUSD6(ajustes.reduce((acc, m) => {
+    const costo = costoHistoricoMovimiento(m);
+    return costo === null ? acc : acc + (Number(m.cantidad) * costo);
+  }, 0));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -946,7 +958,7 @@ function HistorialAjustes({ state }: { state: AppState }) {
                         {m.cantidad > 0 ? '+' : ''}{m.cantidad}
                       </TableCell>
                       <TableCell className="text-right mono text-xs font-bold text-ink/40">
-                        {Utils.fmtUSD(p?.costoUSD || 0)}
+                        {costoHistoricoMovimiento(m) === null ? 'SIN HISTÓRICO' : Utils.fmtUSD(costoHistoricoMovimiento(m)!)}
                       </TableCell>
                       <TableCell>
                         <div className="text-[10px] opacity-60 italic uppercase text-ink max-w-[250px] truncate" title={m.referencia}>
@@ -972,10 +984,11 @@ function ReporteConsumo({ state }: { state: AppState }) {
     .filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
     .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
-  const totalPerdida = consumos.reduce((acc, m) => {
-    const p = state.productos.find(prod => prod.id === m.productoId);
-    return acc + (Math.abs(m.cantidad) * (p?.costoUSD || 0));
-  }, 0);
+  const consumosSinCostoHistorico = consumos.filter(m => costoHistoricoMovimiento(m) === null).length;
+  const totalPerdida = Utils.roundUSD6(consumos.reduce((acc, m) => {
+    const costo = costoHistoricoMovimiento(m);
+    return costo === null ? acc : acc + (Math.abs(Number(m.cantidad)) * costo);
+  }, 0));
 
   return (
     <div className="space-y-6">
@@ -1014,17 +1027,17 @@ function ReporteConsumo({ state }: { state: AppState }) {
             <TableBody className="bg-white">
               {consumos.map(m => {
                 const p = state.productos.find(prod => prod.id === m.productoId);
-                const costo = p?.costoUSD || 0;
-                const subtotal = Math.abs(m.cantidad) * costo;
+                const costo = costoHistoricoMovimiento(m);
+                const subtotal = costo === null ? null : Utils.roundUSD6(Math.abs(Number(m.cantidad)) * costo);
                 
                 return (
                   <TableRow key={m.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                     <TableCell className="text-xs font-bold text-ink">{m.fecha.slice(0,10)}</TableCell>
                     <TableCell className="font-black uppercase text-xs text-ink">{p?.nombre || 'Producto Eliminado'}</TableCell>
                     <TableCell><span className="badge badge-neutral font-black text-[9px] uppercase">{m.tipo.replace('_', ' ')}</span></TableCell>
-                    <TableCell className="text-right mono text-xs text-ink/50">{Utils.fmtUSD(costo)}</TableCell>
+                    <TableCell className="text-right mono text-xs text-ink/50">{costo === null ? 'SIN HISTÓRICO' : Utils.fmtUSD(costo)}</TableCell>
                     <TableCell className={`text-center font-black text-status-danger`}>{Math.abs(m.cantidad)}</TableCell>
-                    <TableCell className="text-right mono font-black text-status-danger">{Utils.fmtUSD(subtotal)}</TableCell>
+                    <TableCell className="text-right mono font-black text-status-danger">{subtotal === null ? '—' : Utils.fmtUSD(subtotal)}</TableCell>
                     <TableCell className="text-[10px] uppercase font-bold opacity-40 text-ink max-w-[250px] truncate">{m.referencia}</TableCell>
                   </TableRow>
                 );
