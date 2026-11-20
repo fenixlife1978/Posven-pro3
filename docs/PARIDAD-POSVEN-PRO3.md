@@ -363,3 +363,15 @@ Corrección en `fix/purchase-initial-payment-decimal-precision`:
 
 Pruebas añadidas: persistencia transaccional de una compra de USD 0,0001 con pago inicial Bs. 0,01 (USD 0,000025) y saldo CxP USD 0,000075; prueba del formulario para impedir regresiones a cuatro decimales y umbrales que descarten importes pequeños.
 
+
+
+### Inventario: precisión del costo promedio ponderado
+
+El ajuste de entrada que permite introducir un nuevo costo unitario calculaba el promedio ponderado mediante `Utils.round`, que redondea a dos decimales. Esto podía alterar el costo real del inventario, incluso aunque Compras y CxP conservaran más precisión.
+
+Corrección:
+- Se agrega `Utils.roundUSD6` para normalizar importes USD a seis decimales sin cambiar el redondeo general de importes monetarios de caja.
+- El promedio ponderado `(stock actual × costo actual + cantidad nueva × costo nuevo) / stock total` se guarda con seis decimales.
+- La escritura del costo y el movimiento de inventario sigue ocurriendo en una única transacción SQLite.
+- Prueba de regresión: 3 unidades a USD 1,234567 más 2 unidades a USD 2,345678 deben producir un costo promedio USD 1,679011, persistido íntegramente en SQLite.
+
