@@ -2214,6 +2214,9 @@ test('costo promedio ponderado de inventario conserva seis decimales en ajustes 
   assert.match(inventorySource, /Utils\.roundUSD6\(\(\(stockActual \* costoActual\) \+ \(cantidadNueva \* Number\(nuevoCosto\)\)\) \/ stockTotal\)/);
   assert.match(utilitySource, /roundUSD6: \(v: any\) =>[\s\S]*?Math\.round\(\(n \+ Number\.EPSILON\) \* 1000000\) \/ 1000000/);
   assert.doesNotMatch(inventorySource, /Utils\.round\(\(\(stockActual \* costoActual\)/);
+  const storeSource = fs.readFileSync(path.join(process.cwd(), 'src/lib/sqlite/pos-store.ts'), 'utf8');
+  assert.match(storeSource, /Math\.round\(\(\(\(oldStock\*oldCost\)\+\(qty\*cost\)\)\/newStock\+Number\.EPSILON\)\*1000000\)\/1000000/);
+  assert.match(storeSource, /Math\.round\(\(beforeValue\/beforeStock\+Number\.EPSILON\)\*1000000\)\/1000000/);
 });
 
 
