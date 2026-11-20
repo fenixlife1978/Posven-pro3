@@ -142,3 +142,10 @@ test('los informes de ajustes, consumo y colaboraciones usan el costo histórico
   assert.match(adjustments, /Number\(movement\.cantidad\) \* Number\(movement\.costoUnitarioUSD\)/);
   assert.match(consumption, /Math\.abs\(Number\(movement\.cantidad\)\) \* Number\(movement\.costoUnitarioUSD\)/);
 });
+
+test('una entrada manual con costo nuevo conserva ese costo como snapshot histórico', () => {
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  assert.match(inventory, /movementCostUSD = mov\.tipo === 'ajuste_entrada' && Number\(nuevoCosto\) > 0/);
+  assert.match(inventory, /costoUnitarioUSD: movementCostUSD/);
+  assert.match(inventory, /costoUnitarioBs: movementCostUSD \* movementRate/);
+});
