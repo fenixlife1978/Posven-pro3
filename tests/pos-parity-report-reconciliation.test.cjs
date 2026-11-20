@@ -123,3 +123,9 @@ test('el costo histórico de kits refleja sus componentes y el margen excluye IV
   assert.match(reports, /Margen Bruto/);
   assert.doesNotMatch(reports, /Margen de Ganancia Neta/);
 });
+
+test('el conteo físico excluye kits que descuentan componentes y dirige el conteo a existencias reales', () => {
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  assert.match(inventory, /!\(p\.isKit && p\.kitType === 'stock_componentes'\)/);
+  assert.match(inventory, /Los kits que descuentan componentes se cuentan por sus componentes/);
+});
