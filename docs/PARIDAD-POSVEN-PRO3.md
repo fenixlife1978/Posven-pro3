@@ -373,5 +373,6 @@ Corrección:
 - Se agrega `Utils.roundUSD6` para normalizar importes USD a seis decimales sin cambiar el redondeo general de importes monetarios de caja.
 - El promedio ponderado `(stock actual × costo actual + cantidad nueva × costo nuevo) / stock total` se guarda con seis decimales.
 - La escritura del costo y el movimiento de inventario sigue ocurriendo en una única transacción SQLite.
+- El backend de recepción de Compras también recalcula el costo ponderado con seis decimales; ya no trunca el resultado a cuatro antes de persistir el producto.
 - Prueba de regresión: 3 unidades a USD 1,234567 más 2 unidades a USD 2,345678 deben producir un costo promedio USD 1,679011, persistido íntegramente en SQLite.
 
