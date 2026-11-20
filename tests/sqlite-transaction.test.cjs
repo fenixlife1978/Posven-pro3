@@ -2234,7 +2234,7 @@ test('compra recalcula y persiste costo promedio ponderado con seis decimales', 
     proveedor: 'Proveedor Costo 6D', numeroFactura: 'FAC-COSTO-6D-001',
     montoUSD: 4.691356, pagadoUSD: 4.691356, saldoUSD: 0, items: [],
   };
-  const items = [{ productoId, nombre: 'Producto Compra Costo 6D', cantidad: 2, costoUnitarioUSD: 2.345678, subtotalUSD: 4.691356 }];
+  const items = [{ productoId: productId, nombre: 'Producto Compra Costo 6D', cantidad: 2, costoUnitarioUSD: 2.345678, subtotalUSD: 4.691356 }];
   const result = await posStore.createPurchaseTransaction({
     operationId: 'PURCHASE-WEIGHTED-COST-6DP-OP', purchase, items,
     purchaseDate: '2026-11-20', purchaseDateTime: at,
