@@ -605,7 +605,7 @@ function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movim
 
           <div className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
             <span className="text-[10px] font-bold text-gray-500 uppercase">COSTO ACTUAL (PONDERADO)</span>
-            <span className="text-[#2563EB] font-mono font-black text-lg">{Number(m.costoUnitarioUSD ?? 0).toFixed(6)}</span>
+            <span className="text-[#2563EB] font-mono font-black text-lg">{format4(producto.costoUSD)}</span>
           </div>
 
           <div className="space-y-3">
@@ -619,7 +619,7 @@ function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movim
                     <div key={m.id} className="space-y-1.5">
                       <div className="flex justify-between items-baseline text-[10px] font-bold text-gray-600">
                         <span>{Utils.fmtFecha(m.fecha)}</span>
-                        <span className="font-mono">{format4(producto.costoUSD)}</span>
+                        <span className="font-mono">{Number(m.costoUnitarioUSD ?? 0).toFixed(6)}</span>
                         <span className="text-gray-400">x{Math.abs(m.cantidad)} uds</span>
                       </div>
                     </div>
