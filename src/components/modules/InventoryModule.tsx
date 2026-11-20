@@ -972,9 +972,15 @@ function ReporteConsumo({ state }: { state: AppState }) {
     .filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
     .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
+  // La pérdida se valora con el costo guardado al registrar cada salida.
+  // No consultar el CPP actual: hacerlo cambiaría el valor de consumos pasados.
+  const missingHistoricalCostLines = consumos.filter(m =>
+    m.costoUnitarioUSD === undefined || m.costoUnitarioUSD === null ||
+    !Number.isFinite(Number(m.costoUnitarioUSD)) || Number(m.costoUnitarioUSD) < 0
+  ).length;
   const totalPerdida = consumos.reduce((acc, m) => {
-    const p = state.productos.find(prod => prod.id === m.productoId);
-    return acc + (Math.abs(m.cantidad) * (p?.costoUSD || 0));
+    const cost = Number(m.costoUnitarioUSD);
+    return acc + (Number.isFinite(cost) && cost >= 0 ? Math.abs(m.cantidad) * cost : 0);
   }, 0);
 
   return (
@@ -983,8 +989,9 @@ function ReporteConsumo({ state }: { state: AppState }) {
         <div className="kpi bg-status-danger-soft border-status-danger/20 p-6 rounded-2xl shadow-sm border-l-[6px] border-l-status-danger flex items-center gap-4">
           <div className="p-3 bg-status-danger text-white rounded-xl"><AlertCircle className="w-6 h-6" /></div>
           <div>
-            <p className="text-[10px] font-black uppercase text-status-danger/70">Total Pérdida por Consumo</p>
+            <p className="text-[10px] font-black uppercase text-status-danger/70">Costo Histórico Identificado</p>
             <p className="text-2xl font-black text-status-danger">{Utils.fmtUSD(totalPerdida)}</p>
+            {missingHistoricalCostLines > 0 && <p className="text-[10px] font-bold text-status-danger mt-1">Parcial: faltan {missingHistoricalCostLines} costos históricos</p>}
           </div>
         </div>
       </div>
@@ -1014,17 +1021,20 @@ function ReporteConsumo({ state }: { state: AppState }) {
             <TableBody className="bg-white">
               {consumos.map(m => {
                 const p = state.productos.find(prod => prod.id === m.productoId);
-                const costo = p?.costoUSD || 0;
-                const subtotal = Math.abs(m.cantidad) * costo;
+                const rawCost = m.costoUnitarioUSD;
+                const costo = rawCost === undefined || rawCost === null || !Number.isFinite(Number(rawCost)) || Number(rawCost) < 0
+                  ? null
+                  : Number(rawCost);
+                const subtotal = costo === null ? null : Math.abs(m.cantidad) * costo;
                 
                 return (
                   <TableRow key={m.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                     <TableCell className="text-xs font-bold text-ink">{m.fecha.slice(0,10)}</TableCell>
                     <TableCell className="font-black uppercase text-xs text-ink">{p?.nombre || 'Producto Eliminado'}</TableCell>
                     <TableCell><span className="badge badge-neutral font-black text-[9px] uppercase">{m.tipo.replace('_', ' ')}</span></TableCell>
-                    <TableCell className="text-right mono text-xs text-ink/50">{Utils.fmtUSD(costo)}</TableCell>
+                    <TableCell className="text-right mono text-xs text-ink/50">{costo === null ? 'NO DISPONIBLE' : Utils.fmtUSD(costo)}</TableCell>
                     <TableCell className={`text-center font-black text-status-danger`}>{Math.abs(m.cantidad)}</TableCell>
-                    <TableCell className="text-right mono font-black text-status-danger">{Utils.fmtUSD(subtotal)}</TableCell>
+                    <TableCell className="text-right mono font-black text-status-danger">{subtotal === null ? 'NO DISPONIBLE' : Utils.fmtUSD(subtotal)}</TableCell>
                     <TableCell className="text-[10px] uppercase font-bold opacity-40 text-ink max-w-[250px] truncate">{m.referencia}</TableCell>
                   </TableRow>
                 );
