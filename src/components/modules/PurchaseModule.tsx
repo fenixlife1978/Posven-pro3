@@ -96,7 +96,8 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     );
   }, [state.proveedores]);
 
-  const totalUSD = loteTemporal.reduce((acc, item) => acc + item.subtotalUSD, 0);
+  const roundUSD6 = (value: number) => Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+  const totalUSD = roundUSD6(loteTemporal.reduce((acc, item) => acc + item.subtotalUSD, 0));
   const tasaActual = parseFloat(tasaCompra.toString()) || 1;
 
   // ===== HISTORIAL DE COMPRAS =====
@@ -259,7 +260,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
   useEffect(() => {
     if (condicion === 'contado') {
-      setMontoPagadoUSD(totalUSD.toFixed(4));
+      setMontoPagadoUSD(totalUSD.toFixed(6));
       setMontoPagadoBS((totalUSD * tasaActual).toFixed(2));
     } else if (condicion === 'credito') {
       setMontoPagadoUSD('0');
@@ -267,8 +268,8 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     }
   }, [condicion, totalUSD, tasaActual]);
 
-  const pMontoPagadoUSD = parseFloat(montoPagadoUSD.toString()) || 0;
-  const saldoPendienteUSD = Math.max(0, totalUSD - pMontoPagadoUSD);
+  const pMontoPagadoUSD = roundUSD6(parseFloat(montoPagadoUSD.toString()) || 0);
+  const saldoPendienteUSD = roundUSD6(Math.max(0, totalUSD - pMontoPagadoUSD));
 
   const handleMontoUSDChange = (val: string) => {
     if (!/^\d*\.?\d*$/.test(val)) return;
@@ -281,7 +282,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     if (!/^\d*\.?\d*$/.test(val)) return;
     setMontoPagadoBS(val);
     const nBS = parseFloat(val) || 0;
-    setMontoPagadoUSD((nBS / tasaActual).toFixed(4));
+    setMontoPagadoUSD(roundUSD6(nBS / tasaActual).toFixed(6));
   };
 
   const matches = useMemo(() => {
@@ -325,6 +326,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
     if (!proveedor) return alert('Seleccione un proveedor');
     if (!numeroFactura) return alert('Ingrese el número de factura');
     if (loteTemporal.length === 0 || isProcessing || processingRef.current) return alert('Agregue productos a la lista');
+    if (pMontoPagadoUSD > totalUSD + 0.0000005) return alert('El pago inicial no puede superar el total de la compra.');
 
     processingRef.current = true;
     setIsProcessing(true);
@@ -340,14 +342,14 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
       const purchaseId = 'COMP-' + Store.uid().toUpperCase().slice(0, 8);
       const purchaseItems = loteTemporal.map(i => ({ ...i }));
-      const paidUSD = pMontoPagadoUSD;
+      const paidUSD = roundUSD6(pMontoPagadoUSD);
       const saldoUSD = saldoPendienteUSD;
 
-      const paymentId = paidUSD > 0.0001 ? 'PAY-' + Store.uid().toUpperCase().slice(0, 8) : '';
-      const journalId = paidUSD > 0.0001 ? 'ACC-' + Store.uid().toUpperCase().slice(0, 8) : '';
-      const nuevaDeudaId = saldoUSD > 0.0001 ? 'CXP-' + Store.uid().slice(0, 6).toUpperCase() : '';
+      const paymentId = paidUSD > 0 ? 'PAY-' + Store.uid().toUpperCase().slice(0, 8) : '';
+      const journalId = paidUSD > 0 ? 'ACC-' + Store.uid().toUpperCase().slice(0, 8) : '';
+      const nuevaDeudaId = saldoUSD > 0 ? 'CXP-' + Store.uid().slice(0, 6).toUpperCase() : '';
 
-      const initialHistory = paidUSD > 0.0001 ? [{
+      const initialHistory = paidUSD > 0 ? [{
         id: paymentId,
         asientoId: journalId,
         fecha: ahoraStr,
@@ -357,7 +359,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         reciboId: 'INICIAL-CONTADO'
       }] : [];
 
-      const nuevaDeuda: Debt | undefined = saldoUSD > 0.0001 ? {
+      const nuevaDeuda: Debt | undefined = saldoUSD > 0 ? {
         id: nuevaDeudaId,
         fecha: fecha,
         fechaVencimiento: fechaVencimiento,
@@ -366,7 +368,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         montoUSD: totalUSD,
         abonadoUSD: paidUSD,
         saldoUSD: saldoUSD,
-        estado: paidUSD > 0.0001 ? 'parcial' : 'pendiente',
+        estado: paidUSD > 0 ? 'parcial' : 'pendiente',
         items: purchaseItems,
         numeroFactura: numeroFactura,
         historialPagos: initialHistory
@@ -386,7 +388,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
         terminalId: 'ADMIN'
       };
 
-      const asientoCompra: LibroDiarioEntry | undefined = paidUSD > 0.0001 ? {
+      const asientoCompra: LibroDiarioEntry | undefined = paidUSD > 0 ? {
         id: journalId,
         fecha: ahoraStr,
         tipo: 'egreso',
@@ -445,9 +447,9 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
   const revertirAsiento = (diario: LibroDiarioEntry[], asientoId: string, montoUSD: number, montoBS: number): LibroDiarioEntry[] => {
     const asiento = diario.find(e => e.id === asientoId);
     if (!asiento) return diario;
-    const resto = Math.round((asiento.montoUSD - montoUSD + Number.EPSILON) * 100) / 100;
+    const resto = roundUSD6(asiento.montoUSD - montoUSD);
     const restoBS = Math.round((asiento.montoBS - montoBS + Number.EPSILON) * 100) / 100;
-    if (resto <= 0.001) return diario.filter(e => e.id !== asientoId);
+    if (resto <= 0.0000005) return diario.filter(e => e.id !== asientoId);
     return diario.map(e => e.id === asientoId ? { ...e, montoUSD: resto, montoBS: Math.max(0, restoBS) } : e);
   };
 
@@ -920,7 +922,7 @@ export default function PurchaseModule({ state, updateState }: PurchaseModulePro
 
               <p className="text-[10px] font-black text-ink/60 leading-relaxed">
                 ¿Confirma que desea finalizar el proceso? Al confirmar se importará el inventario,
-                se recalcularán los costos CPP y {saldoPendienteUSD > 0.0001 ? 'se generará la cuenta por pagar' : 'no se generará saldo pendiente'}.
+                se recalcularán los costos CPP y {saldoPendienteUSD > 0 ? 'se generará la cuenta por pagar' : 'no se generará saldo pendiente'}.
               </p>
 
               <div className="flex gap-3 pt-1">
