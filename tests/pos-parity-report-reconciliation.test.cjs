@@ -123,3 +123,21 @@ test('el costo histórico de kits refleja sus componentes y el margen excluye IV
   assert.match(reports, /Margen Bruto/);
   assert.doesNotMatch(reports, /Margen de Ganancia Neta/);
 });
+
+test('los informes de ajustes y consumos usan el costo histórico del movimiento', () => {
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  const adjustmentsStart = inventory.indexOf('function HistorialAjustes');
+  const consumptionStart = inventory.indexOf('function ReporteConsumo', adjustmentsStart);
+  const nextSection = inventory.indexOf('function ', consumptionStart + 1);
+  assert.ok(adjustmentsStart >= 0 && consumptionStart > adjustmentsStart && nextSection > consumptionStart);
+  const adjustments = inventory.slice(adjustmentsStart, consumptionStart);
+  const consumption = inventory.slice(consumptionStart, nextSection);
+  for (const section of [adjustments, consumption]) {
+    assert.match(section, /m\.costoUnitarioUSD/);
+    assert.match(section, /missingHistoricalCostMovements/);
+    assert.match(section, /sin costo histórico/);
+    assert.doesNotMatch(section, /p\?\.costoUSD/);
+  }
+  assert.match(consumption, /NO REGISTRADO/);
+  assert.match(consumption, /NO DISPONIBLE/);
+});
