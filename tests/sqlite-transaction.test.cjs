@@ -275,6 +275,7 @@ test('devolver y anular un kit repone sus componentes, no el artículo padre', a
   });
 
   assert.equal(saleResult.sale.id, 'KITBOX-V-000000001');
+  assert.equal(saleResult.sale.items[0].costoUnitarioUSD, 2, 'el costo del kit debe sumar dos componentes a USD 1 cada uno');
   let parent = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-PACK'] });
   let component = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: ['KIT-COMP'] });
   assert.equal(JSON.parse(parent.rows[0].data_json).stock, 5);

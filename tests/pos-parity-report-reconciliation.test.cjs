@@ -111,3 +111,15 @@ test('rentabilidad usa el costo histórico capturado en la venta y no el costo a
   assert.match(reports, /NO DISPONIBLE/);
   assert.match(reports, /líneas con costo histórico/);
 });
+
+test('el costo histórico de kits refleja sus componentes y el margen excluye IVA', () => {
+  const store = read('src/lib/sqlite/pos-store.ts');
+  const reports = read('src/components/modules/ReportsModule.tsx');
+  assert.match(store, /product\.kitType === 'stock_componentes'/);
+  assert.match(store, /kitItem\.cantidad/);
+  assert.match(store, /unitCostUSD/);
+  assert.match(reports, /Number\(sale\.totalUSD\)[\s\S]{0,100}Number\(sale\.ivaUSD\)/);
+  assert.match(reports, /Ganancia Bruta/);
+  assert.match(reports, /Margen Bruto/);
+  assert.doesNotMatch(reports, /Margen de Ganancia Neta/);
+});

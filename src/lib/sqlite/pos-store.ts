@@ -1411,7 +1411,19 @@ export async function createSaleTransaction(params: {
       .reduce((s, p) => s + (Number(p.montoUSD) || 0) * 0.03, 0);
 
     const sale = {
-      id: reciboId, fecha: now, cliente: clientName, items: cart.map((x: any) => { const product = products.get(String(x.productoId)); return { ...x, ...(product && !x.ventaLibreBS ? { costoUnitarioUSD: Number(product.costoUSD) || 0, costoUnitarioBs: (Number(product.costoUSD) || 0) * Number(tasa), tasaBCV: Number(tasa) } : {}) }; }),
+      id: reciboId, fecha: now, cliente: clientName, items: cart.map((x: any) => {
+        const product = products.get(String(x.productoId));
+        if (!product || x.ventaLibreBS) return { ...x };
+        // Un kit que descuenta componentes debe capturar el costo agregado de
+        // esos componentes, no el costo independiente del artículo padre.
+        const unitCostUSD = product.isKit && product.kitType === 'stock_componentes' && Array.isArray(product.kitItems)
+          ? product.kitItems.reduce((sum: number, kitItem: any) => {
+              const component = products.get(String(kitItem.productoId));
+              return sum + (Number(component?.costoUSD) || 0) * (Number(kitItem.cantidad) || 0);
+            }, 0)
+          : Number(product.costoUSD) || 0;
+        return { ...x, costoUnitarioUSD: unitCostUSD, costoUnitarioBs: unitCostUSD * Number(tasa), tasaBCV: Number(tasa) };
+      }),
       subtotalUSD: totals.total, descuentoUSD: 0, totalUSD: totals.total, totalBS: totals.total * tasa,
       metodoPago: credit ? 'credito' : (payments.length > 1 ? 'mixto' : (payments[0]?.metodo || 'efectivo_usd')),
       estado: 'completada', type: saleType, received: totalPaid,
