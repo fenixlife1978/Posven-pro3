@@ -123,3 +123,23 @@ test('el costo histórico de kits refleja sus componentes y el margen excluye IV
   assert.match(reports, /Margen Bruto/);
   assert.doesNotMatch(reports, /Margen de Ganancia Neta/);
 });
+
+
+test('los informes de ajustes y consumos usan snapshots históricos y no el costo actual del catálogo', () => {
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  assert.match(inventory, /function costoHistoricoMovimiento\\(m: Movimiento\\): number \\| null/);
+  assert.match(inventory, /const costo = costoHistoricoMovimiento\\(m\\);/);
+  assert.match(inventory, /SIN HISTÓRICO/);
+  assert.match(inventory, /movimientosSinCostoHistorico/);
+  assert.match(inventory, /consumosSinCostoHistorico/);
+  assert.match(inventory, /Utils\\.roundUSD6\\(ajustes\\.reduce/);
+  assert.match(inventory, /Utils\\.roundUSD6\\(consumos\\.reduce/);
+  assert.match(inventory, /movimientoTipo === 'ajuste_entrada' \\? pCosto/);
+  assert.match(inventory, /Number\\(m\\.costoUnitarioUSD \\?\\? 0\\)\\.toFixed\\(6\\)/);
+});
+
+test('el conteo físico excluye kits que descuentan componentes y dirige el conteo a existencias reales', () => {
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  assert.match(inventory, /!\\(p\\.isKit && p\\.kitType === 'stock_componentes'\\)/);
+  assert.match(inventory, /Los kits que descuentan componentes se cuentan por sus componentes/);
+});
