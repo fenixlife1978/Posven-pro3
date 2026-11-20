@@ -2198,7 +2198,7 @@ test('costo promedio ponderado de inventario conserva seis decimales en ajustes 
     operationId: 'INV-WEIGHTED-COST-6DP-OP',
     operationType: 'AJUSTE_INVENTARIO',
     movements: [{
-      id: 'INV-WEIGHTED-COST-6DP-MOV', productoId, tipo: 'ajuste_entrada',
+      id: 'INV-WEIGHTED-COST-6DP-MOV', productoId: productId, tipo: 'ajuste_entrada',
       cantidad: cantidadNueva, fecha: at, referencia: 'ENTRADA CON COSTO PROMEDIO',
     }],
     productPatches: { [productId]: { costoUSD: costoPonderado } },
