@@ -1524,7 +1524,7 @@ test('eliminar la primera compra reconstruye el Kardex desde el saldo anterior a
   assert.equal(deleted.deletedPurchase, 1);
   const after = await posStore.getRecord('productos', 'PURCHASE-DELETE-BASE', { id: 'admin-purchase-delete-test', rol: 'administrador' });
   assert.equal(after.stock, 7);
-  assert.equal(after.costoUSD, Math.round((64 / 7 + Number.EPSILON) * 10000) / 10000);
+  assert.equal(after.costoUSD, Math.round((64 / 7 + Number.EPSILON) * 1000000) / 1000000);
   const remaining = await sqliteExecute({
     sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",
     args: ['PURCHASE-DELETE-BASE'],
