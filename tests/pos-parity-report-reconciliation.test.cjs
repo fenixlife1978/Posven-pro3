@@ -95,3 +95,19 @@ test('importación de catálogos es exclusiva, administrativa y no sustituye la 
   assert.match(settings, /Importar solo catálogos/);
   assert.match(settings, /Productos, existencias, movimientos, ventas, compras, CxC, CxP y caja no serán modificados/);
 });
+
+test('rentabilidad usa el costo histórico capturado en la venta y no el costo actual del catálogo', () => {
+  const reports = read('src/components/modules/ReportsModule.tsx');
+  const start = reports.indexOf('// Rentabilidad histórica:');
+  const end = reports.indexOf('const reportesZFiltrados', start);
+  assert.ok(start >= 0 && end > start, 'debe existir el bloque de rentabilidad histórica');
+  const profitability = reports.slice(start, end);
+  assert.match(profitability, /item\?\.costoUnitarioUSD/);
+  assert.match(profitability, /unitCost \* quantity/);
+  assert.doesNotMatch(profitability, /state\.productos\.find/);
+  assert.match(profitability, /missingHistoricalCostLines/);
+  assert.match(profitability, /costoHistoricoCompleto/);
+  assert.match(profitability, /ventaLibreBS/);
+  assert.match(reports, /NO DISPONIBLE/);
+  assert.match(reports, /líneas con costo histórico/);
+});
