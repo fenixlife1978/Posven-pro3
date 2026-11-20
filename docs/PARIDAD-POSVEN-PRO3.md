@@ -396,3 +396,14 @@ Corrección:
 - El informe de rentabilidad calcula el ingreso sin IVA, ya que el impuesto cobrado no es ingreso propio.
 - El resultado se denomina ganancia bruta y margen bruto; no se presenta como ganancia neta porque este informe no descuenta gastos operativos ni otros egresos.
 - Se añade regresión para el costo de kit y para evitar incluir IVA en el margen bruto.
+
+### Kardex: valoración histórica de ajustes, consumos y colaboraciones
+
+Los informes de ajustes, consumo y colaboración deben usar el snapshot `costoUnitarioUSD` guardado en cada movimiento. Consultar `productos.costoUSD` actual cambia retroactivamente la valoración de operaciones pasadas cuando el costo promedio del artículo cambia.
+
+Corrección:
+- El efecto de ajustes y variaciones se valora con el costo histórico de cada movimiento.
+- Consumos y colaboraciones calculan su pérdida con el costo histórico guardado en el movimiento.
+- Los movimientos antiguos sin snapshot se identifican como "Sin histórico" y se excluyen del subtotal identificado; el informe advierte cuántos registros faltan.
+- No se sustituye un costo histórico ausente por el costo vigente del catálogo.
+- Se añade regresión para impedir el uso del CPP actual en ambos informes.
