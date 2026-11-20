@@ -407,3 +407,12 @@ Regla de integridad:
 - Si existe una salida o ajuste posterior a la fecha de la compra, la transacción se rechaza antes de persistir factura, deuda, asiento, movimiento o cambios de stock.
 - El mensaje explica que debe registrarse en su fecha real o solicitar una reconstrucción histórica controlada. No se modifica silenciosamente el costo de ventas ya confirmadas.
 - Se añade una regresión que comprueba el rechazo atómico y la conservación del stock, CPP y movimiento de venta.
+
+### Reporte histórico de consumo y colaboraciones
+
+El reporte de consumo interno y colaboraciones debe valorar cada salida con el costo unitario USD almacenado en su propio movimiento de Kardex. No debe consultar el CPP actual del producto, porque compras y ajustes posteriores pueden cambiarlo.
+
+Corrección:
+- El KPI de pérdida y el costo unitario/subtotal de cada fila se calculan con `movimiento.costoUnitarioUSD`.
+- Si un movimiento antiguo no conserva el snapshot, se muestra como histórico no disponible y se contabiliza en una advertencia; nunca se rellena silenciosamente con el costo actual.
+- Se añade prueba de regresión para impedir que el reporte vuelva a depender de `producto.costoUSD`.
