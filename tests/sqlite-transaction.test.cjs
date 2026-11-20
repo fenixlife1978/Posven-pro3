@@ -2107,3 +2107,69 @@ test('CxP global Bs payment preserves sub-cent USD application across supplier i
   assert.equal(saved.saldoUSD, 0.000075);
   assert.equal(saved.historialPagos[0].montoUSD, 0.000025);
 });
+
+
+test('compra registra pagos iniciales sub-centavo y CxP con seis decimales en SQLite', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-20T12:00:00.000Z';
+  const productId = 'PURCHASE-SUBCENT-PRODUCT';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({
+      id: productId, nombre: 'Producto Compra Subcentavo', stock: 0, costoUSD: 0,
+    }), at],
+    wantRows: false,
+  });
+
+  const purchase = {
+    id: 'PURCHASE-SUBCENT-001', fecha: '2026-11-20', fechaHora: at,
+    proveedor: 'Proveedor Subcentavo', numeroFactura: 'FAC-SUBCENT-001',
+    condicion: 'mixto', montoUSD: 0.0001, pagadoUSD: 0.000025,
+    saldoUSD: 0.000075,
+    items: [{ productoId: productId, nombre: 'Producto Compra Subcentavo', cantidad: 1, costoUnitarioUSD: 0.0001, subtotalUSD: 0.0001 }],
+  };
+  const debt = {
+    id: 'CXP-PURCHASE-SUBCENT-001', fecha: '2026-11-20',
+    proveedor: 'Proveedor Subcentavo', numeroFactura: 'FAC-SUBCENT-001',
+    montoUSD: 0.0001, abonadoUSD: 0.000025, saldoUSD: 0.000075,
+    estado: 'parcial',
+    historialPagos: [{
+      id: 'PAY-PURCHASE-SUBCENT-001', montoUSD: 0.000025,
+      montoBS: 0.01, metodo: 'efectivo_bs', tasaAplicada: 400,
+    }],
+  };
+  const journal = {
+    id: 'ACC-PURCHASE-SUBCENT-001', fecha: at, tipo: 'egreso',
+    categoria: 'COMPRA', montoUSD: 0.000025, montoBS: 0.01,
+    metodo: 'efectivo_bs', referencia: 'FAC-SUBCENT-001',
+  };
+  const result = await posStore.createPurchaseTransaction({
+    operationId: 'PURCHASE-SUBCENT-OP-001',
+    purchase, items: purchase.items,
+    purchaseDate: '2026-11-20', purchaseDateTime: at,
+    supplier: 'Proveedor Subcentavo', invoiceNumber: 'FAC-SUBCENT-001',
+    exchangeRate: 400, paidUSD: 0.000025, debt, journal,
+  });
+
+  assert.equal(result.purchase.pagadoUSD, 0.000025);
+  assert.equal(result.purchase.saldoUSD, 0.000075);
+  assert.equal(result.debt.abonadoUSD, 0.000025);
+  assert.equal(result.debt.saldoUSD, 0.000075);
+  assert.equal(result.journal.montoUSD, 0.000025);
+  assert.equal(result.journal.montoBS, 0.01);
+
+  const savedDebt = await posStore.getRecord('cxp', debt.id, { id: 'admin-purchase-subcent', rol: 'administrador' });
+  assert.equal(savedDebt.historialPagos[0].montoUSD, 0.000025);
+  assert.equal(savedDebt.saldoUSD, 0.000075);
+});
+
+test('formulario de compras conserva seis decimales y no descarta pagos o saldos sub-centavo', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/modules/PurchaseModule.tsx'), 'utf8');
+  assert.match(source, /setMontoPagadoUSD\(totalUSD\.toFixed\(6\)\)/);
+  assert.match(source, /roundUSD6\(nBS \/ tasaActual\)\.toFixed\(6\)/);
+  assert.match(source, /const paidUSD = roundUSD6\(pMontoPagadoUSD\)/);
+  assert.match(source, /paidUSD > 0 \?/);
+  assert.match(source, /saldoUSD > 0 \?/);
+  assert.match(source, /saldoPendienteUSD > 0 \?/);
+  assert.doesNotMatch(source, /paidUSD > 0\.0001|saldoUSD > 0\.0001|saldoPendienteUSD > 0\.0001/);
+});

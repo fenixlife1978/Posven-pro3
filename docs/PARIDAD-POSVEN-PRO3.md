@@ -347,3 +347,19 @@ Se trasladó y adaptó a SQLite local la lógica de precisión monetaria de POSV
 Se añadieron pruebas transaccionales SQLite para CxC individual, CxC global y CxP individual con tasa 400 Bs/USD: Bs. 0,01 equivale a USD 0,000025; el saldo parcial y el cierre de la deuda se verifican con precisión de seis decimales. También se mantienen las pruebas existentes de CxP global.
 
 La persistencia continúa siendo exclusivamente SQLite local. No se incorporan Turso, Firebase, Firestore ni Vercel.
+
+
+### Compras: precisión del pago inicial y saldo CxP sub-centavo
+
+La captura de compras también debe conservar la precisión monetaria que ya utiliza CxC/CxP. El formulario convertía los bolívares a USD con cuatro decimales y usaba un umbral de USD 0,0001 para decidir si creaba el abono inicial, el asiento y la deuda. Eso podía descartar pagos o saldos menores.
+
+Corrección en `fix/purchase-initial-payment-decimal-precision`:
+- Conversión Bs. → USD y normalización de pago/saldo con seis decimales.
+- Un pago inicial positivo, aunque sea inferior a USD 0,0001, genera su historial y asiento contable.
+- Cualquier saldo positivo genera la cuenta por pagar; no se pierde por un umbral arbitrario.
+- El formulario impide que el pago inicial supere el total de la compra.
+- Al revertir un asiento, el remanente USD se conserva a seis decimales; el importe en Bs. mantiene dos.
+- La compra, el abono inicial, el asiento y la CxP siguen guardándose juntos en una transacción SQLite.
+
+Pruebas añadidas: persistencia transaccional de una compra de USD 0,0001 con pago inicial Bs. 0,01 (USD 0,000025) y saldo CxP USD 0,000075; prueba del formulario para impedir regresiones a cuatro decimales y umbrales que descarten importes pequeños.
+
