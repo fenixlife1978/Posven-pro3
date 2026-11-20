@@ -767,6 +767,12 @@ function ReporteDevoluciones({ state, updateState }: { state: AppState, updateSt
   const totalUSD = devoluciones.reduce((acc, d) => acc + d.totalUSD, 0);
   return (
     <div className="space-y-4">
+      {ajustesSinCostoHistorico > 0 && (
+        <div className="rounded-xl border border-status-warning/30 bg-status-warning-soft p-4 text-sm text-status-warning">
+          <strong>{ajustesSinCostoHistorico} movimiento(s) sin costo histórico.</strong> El efecto neto mostrado suma únicamente movimientos con costo guardado al registrarlos; no se sustituye por el costo actual del catálogo.
+        </div>
+      )}
+
       <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
         <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR DEVOLUCIONES POR PERÍODO</label>
         <DateRangeFilter value={rango} onChange={setRango} />
@@ -877,10 +883,11 @@ function HistorialAjustes({ state }: { state: AppState }) {
   ).filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
   .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
+  const tieneCostoHistorico = (m: Movimiento) => m.costoUnitarioUSD !== undefined && m.costoUnitarioUSD !== null && Number.isFinite(Number(m.costoUnitarioUSD));
+  const ajustesSinCostoHistorico = ajustes.filter(m => !tieneCostoHistorico(m)).length;
   const totalVariacionUSD = ajustes.reduce((acc, m) => {
-    const p = state.productos.find(prod => prod.id === m.productoId);
-    const costo = p?.costoUSD || 0;
-    return acc + (m.cantidad * costo);
+    if (!tieneCostoHistorico(m)) return acc;
+    return acc + (Number(m.cantidad) * Number(m.costoUnitarioUSD));
   }, 0);
 
   return (
@@ -946,7 +953,7 @@ function HistorialAjustes({ state }: { state: AppState }) {
                         {m.cantidad > 0 ? '+' : ''}{m.cantidad}
                       </TableCell>
                       <TableCell className="text-right mono text-xs font-bold text-ink/40">
-                        {Utils.fmtUSD(p?.costoUSD || 0)}
+                        {tieneCostoHistorico(m) ? Utils.fmtUSD(Number(m.costoUnitarioUSD)) : <span className="text-status-warning">SIN HISTÓRICO</span>}
                       </TableCell>
                       <TableCell>
                         <div className="text-[10px] opacity-60 italic uppercase text-ink max-w-[250px] truncate" title={m.referencia}>
@@ -972,10 +979,10 @@ function ReporteConsumo({ state }: { state: AppState }) {
     .filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
     .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
-  const totalPerdida = consumos.reduce((acc, m) => {
-    const p = state.productos.find(prod => prod.id === m.productoId);
-    return acc + (Math.abs(m.cantidad) * (p?.costoUSD || 0));
-  }, 0);
+  const tieneCostoHistorico = (m: Movimiento) => m.costoUnitarioUSD !== undefined && m.costoUnitarioUSD !== null && Number.isFinite(Number(m.costoUnitarioUSD));
+  const consumosSinCostoHistorico = consumos.filter(m => !tieneCostoHistorico(m)).length;
+  const totalPerdida = consumos.reduce((acc, m) =>
+    acc + (tieneCostoHistorico(m) ? Math.abs(Number(m.cantidad)) * Number(m.costoUnitarioUSD) : 0), 0);
 
   return (
     <div className="space-y-6">
@@ -989,6 +996,11 @@ function ReporteConsumo({ state }: { state: AppState }) {
         </div>
       </div>
 
+      {consumosSinCostoHistorico > 0 && (
+        <div className="rounded-xl border border-status-warning/30 bg-status-warning-soft p-4 text-sm text-status-warning">
+          <strong>{consumosSinCostoHistorico} consumo(s) sin costo histórico.</strong> La pérdida total excluye esos movimientos pendientes de revisión; no utiliza el costo actual del catálogo para reconstruir importes pasados.
+        </div>
+      )}
       <Card className="p-5 bg-white border-line shadow-sm rounded-xl no-print">
         <label className="text-[10px] font-black uppercase text-ink/40 block mb-2">CONSULTAR CONSUMO Y COLABORACIONES POR PERÍODO</label>
         <DateRangeFilter value={rango} onChange={setRango} />
@@ -1014,17 +1026,18 @@ function ReporteConsumo({ state }: { state: AppState }) {
             <TableBody className="bg-white">
               {consumos.map(m => {
                 const p = state.productos.find(prod => prod.id === m.productoId);
-                const costo = p?.costoUSD || 0;
-                const subtotal = Math.abs(m.cantidad) * costo;
+                const costoDisponible = tieneCostoHistorico(m);
+                const costo = costoDisponible ? Number(m.costoUnitarioUSD) : null;
+                const subtotal = costoDisponible ? Math.abs(Number(m.cantidad)) * Number(costo) : null;
                 
                 return (
                   <TableRow key={m.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                     <TableCell className="text-xs font-bold text-ink">{m.fecha.slice(0,10)}</TableCell>
                     <TableCell className="font-black uppercase text-xs text-ink">{p?.nombre || 'Producto Eliminado'}</TableCell>
                     <TableCell><span className="badge badge-neutral font-black text-[9px] uppercase">{m.tipo.replace('_', ' ')}</span></TableCell>
-                    <TableCell className="text-right mono text-xs text-ink/50">{Utils.fmtUSD(costo)}</TableCell>
+                    <TableCell className="text-right mono text-xs text-ink/50">{costo !== null ? Utils.fmtUSD(costo) : <span className="text-status-warning">SIN HISTÓRICO</span>}</TableCell>
                     <TableCell className={`text-center font-black text-status-danger`}>{Math.abs(m.cantidad)}</TableCell>
-                    <TableCell className="text-right mono font-black text-status-danger">{Utils.fmtUSD(subtotal)}</TableCell>
+                    <TableCell className="text-right mono font-black text-status-danger">{subtotal !== null ? Utils.fmtUSD(subtotal) : <span className="text-status-warning">PENDIENTE</span>}</TableCell>
                     <TableCell className="text-[10px] uppercase font-bold opacity-40 text-ink max-w-[250px] truncate">{m.referencia}</TableCell>
                   </TableRow>
                 );
