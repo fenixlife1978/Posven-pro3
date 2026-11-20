@@ -3494,7 +3494,30 @@ export async function createPurchaseTransaction(params:any){
     const statements:SQLiteStatement[]=[rowStatement('compras',purchase)];
     const updatedProducts:any[]=[];
     for(const pid of ids){const p=rowFromDb((await tx.execute(txSelect('productos',pid))).rows[0]);if(!p)throw new Error('El producto '+pid+' ya no existe en SQLite local.');const i=itemBy.get(pid),qty=Number(i.cantidad),cost=qty>0?Number(i.costoTotalUSD)/qty:0,oldStock=Number(p.stock)||0,oldCost=Number(p.costoUSD)||0,newStock=oldStock+qty,newCost=newStock>0?Math.round((((oldStock*oldCost)+(qty*cost))/newStock+Number.EPSILON)*1000000)/1000000:cost;
-      const latestRow=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha DESC,id DESC LIMIT 1",args:[pid]})).rows[0]; const latest=latestRow?rowFromDb(latestRow):null; const movementId=String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID())); if((await tx.execute(txSelect('movimientos',movementId))).rows.length) throw new Error('El identificador del movimiento '+movementId+' ya existe en el Kardex.'); const mv={id:movementId,productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')}; const latestFecha=String(latest?.fecha||''); const compraEsCronologicamenteUltima=!latestFecha||String(purchaseDateTime||'')>=latestFecha; if(compraEsCronologicamenteUltima){mv.stockAntes=oldStock;mv.stockDespues=newStock;statements.push(rowStatement('movimientos',mv));}else{const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb); const combined=[...rows.map((d:any)=>({id:d.id,data:d})),{id:mv.id,data:mv}].sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))); let running=rows.length?Number(rows[0].stockAntes)||0:0; for(const e of combined){const before=running;running=before+(Number(e.data.cantidad)||0);statements.push(rowStatement('movimientos',{...e.data,id:e.id,stockAntes:before,stockDespues:running}));}} const persistedProduct={...p,id:pid,stock:newStock,costoUSD:newCost}; statements.push(rowStatement('productos',persistedProduct)); updatedProducts.push(persistedProduct);}
+      const movementId=String(items.find((x:any)=>String(x.productoId)===pid)?.movementId||('MOV-'+crypto.randomUUID()));
+      if((await tx.execute(txSelect('movimientos',movementId))).rows.length) throw new Error('El identificador del movimiento '+movementId+' ya existe en el Kardex.');
+      const mv={id:movementId,productoId:pid,tipo:'compra',cantidad:qty,costoUnitarioUSD:cost,subtotalUSD:Number(i.subtotalUSD)||qty*cost,stockAntes:0,stockDespues:0,fecha:purchaseDateTime,referencia:`COMPRA FACT: ${invoiceNumber} - PROV: ${supplier}`,terminalId:String(purchase.terminalId||'ADMIN')};
+      const rows=(await tx.execute({sql:"SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",args:[pid]})).rows.map(rowFromDb);
+      const combined=[...rows.map((d:any)=>({id:String(d.id),data:d})),{id:mv.id,data:mv}]
+        .sort((a:any,b:any)=>String(a.data.fecha||'').localeCompare(String(b.data.fecha||''))||a.id.localeCompare(b.id));
+      const insertedIndex=combined.findIndex((entry:any)=>entry.id===movementId);
+      const compraEsCronologicamenteUltima=insertedIndex===combined.length-1;
+      if(compraEsCronologicamenteUltima){
+        mv.stockAntes=oldStock;mv.stockDespues=newStock;
+        statements.push(rowStatement('movimientos',mv));
+      }else{
+        const laterNonPurchase=combined.slice(insertedIndex+1).find((entry:any)=>String(entry.data.tipo||'')!=='compra');
+        if(laterNonPurchase){
+          throw new Error('No se puede registrar esta compra con fecha anterior porque existen movimientos posteriores de tipo '+String(laterNonPurchase.data.tipo||'inventario')+' para este producto. Incorporarla cambiaría el costo histórico de esas salidas y su rentabilidad. Registre la compra en la fecha real del movimiento o solicite una reconstrucción histórica controlada.');
+        }
+        let running=rows.length?Number(rows[0].stockAntes)||0:0;
+        for(const entry of combined){
+          const before=running;running=before+(Number(entry.data.cantidad)||0);
+          statements.push(rowStatement('movimientos',{...entry.data,id:entry.id,stockAntes:before,stockDespues:running}));
+        }
+      }
+      const persistedProduct={...p,id:pid,stock:newStock,costoUSD:newCost};
+      statements.push(rowStatement('productos',persistedProduct));updatedProducts.push(persistedProduct);}
     if(debt?.id) statements.push(rowStatement('cxp',debt)); if(journal?.id) statements.push(rowStatement('libroDiario',journal)); statements.push({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['COMPRA-'+opId,'COMPRA',opId,JSON.stringify({tipo:'COMPRA',operationId:opId,referencia:purchase.id})],wantRows:false}); if(statements.length>450)throw new Error('La compra tiene demasiados movimientos históricos para una sola transacción.'); for(const s of statements)await tx.execute(s); return {purchase,journal:journal||null,debt:debt||null,products:updatedProducts};
   });
 }
