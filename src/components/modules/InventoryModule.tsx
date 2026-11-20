@@ -1144,7 +1144,7 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
   const [departamento, setDepartamento] = useState(departamentoInicial);
   const [drafts, setDrafts] = useState<Record<string, { nuevoStock: string; motivo: string }>>({});
   const disponibles = useMemo(() => (productos || [])
-    .filter(p => p.activo && (departamento ? p.departamento === departamento : true))
+    .filter(p => p.activo && !(p.isKit && p.kitType === 'stock_componentes') && (departamento ? p.departamento === departamento : true))
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')), [productos, departamento]);
   const updateDraft = (id: string, field: 'nuevoStock' | 'motivo', value: string) => setDrafts(prev => ({
     ...prev, [id]: { ...(prev[id] || { nuevoStock: '', motivo: 'Ajuste por Conteo / Inventario Físico' }), [field]: value }
@@ -1165,7 +1165,7 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
       <div className="modal-box bg-white max-w-6xl w-[96vw] border-2 border-line rounded-xl overflow-hidden shadow-2xl">
         <div className="modal-head px-5 py-4 border-b border-line bg-ink text-white flex items-center justify-between">
           <div><h3 className="font-black uppercase text-sm">Inventario físico por departamento</h3>
-          <p className="text-[10px] text-white/60 font-bold uppercase mt-1">Ingrese el Nuevo Stock contado físicamente. La diferencia se calcula automáticamente.</p></div>
+          <p className="text-[10px] text-white/60 font-bold uppercase mt-1">Ingrese el Nuevo Stock contado físicamente. La diferencia se calcula automáticamente. Los kits que descuentan componentes se cuentan por sus componentes, no como existencias independientes.</p></div>
           <button onClick={onClose}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5 space-y-4 bg-white">
