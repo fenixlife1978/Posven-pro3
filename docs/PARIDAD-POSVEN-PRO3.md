@@ -386,3 +386,13 @@ Corrección:
 - Los registros antiguos que no tengan snapshot se contabilizan como líneas sin costo histórico; no se sustituye el dato faltante por el costo vigente del producto.
 - Mientras falte al menos un costo histórico, el informe muestra el costo identificado como parcial y no presenta ganancia ni porcentaje de margen como si fueran exactos.
 - Se añade una regresión para impedir que el informe vuelva a depender del costo actual del catálogo.
+
+### Rentabilidad: kits y tratamiento del IVA
+
+La captura del costo histórico debe representar el costo real de los componentes consumidos por cada kit de tipo `stock_componentes`. El costo del artículo padre no es necesariamente igual a la suma del costo de sus componentes.
+
+Corrección:
+- Al confirmar la venta, el snapshot unitario del kit se calcula sumando el CPP histórico vigente de cada componente multiplicado por la cantidad requerida por kit.
+- El informe de rentabilidad calcula el ingreso sin IVA, ya que el impuesto cobrado no es ingreso propio.
+- El resultado se denomina ganancia bruta y margen bruto; no se presenta como ganancia neta porque este informe no descuenta gastos operativos ni otros egresos.
+- Se añade regresión para el costo de kit y para evitar incluir IVA en el margen bruto.
