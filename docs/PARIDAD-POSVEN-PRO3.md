@@ -407,3 +407,13 @@ Regla de integridad:
 - Si existe una salida o ajuste posterior a la fecha de la compra, la transacción se rechaza antes de persistir factura, deuda, asiento, movimiento o cambios de stock.
 - El mensaje explica que debe registrarse en su fecha real o solicitar una reconstrucción histórica controlada. No se modifica silenciosamente el costo de ventas ya confirmadas.
 - Se añade una regresión que comprueba el rechazo atómico y la conservación del stock, CPP y movimiento de venta.
+
+### Conteo físico y kits con descuento por componentes
+
+Los kits de tipo `stock_componentes` no representan una existencia física independiente: al venderlos o ajustarlos, el inventario real se descuenta de sus componentes. Incluir el kit padre en el conteo físico permitiría modificar una existencia virtual que no corresponde a unidades almacenadas.
+
+Regla:
+- El conteo físico por departamento excluye los kits `stock_componentes`.
+- El usuario cuenta las existencias reales de cada componente individual.
+- La pantalla informa expresamente esta regla para evitar confusiones.
+- Se agrega una regresión que protege el filtro y el mensaje explicativo.
