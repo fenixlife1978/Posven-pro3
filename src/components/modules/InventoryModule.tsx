@@ -972,9 +972,15 @@ function ReporteConsumo({ state }: { state: AppState }) {
     .filter(m => m.fecha && m.fecha.slice(0, 10) >= rango.desde && m.fecha.slice(0, 10) <= rango.hasta)
     .sort((a,b) => b.fecha.localeCompare(a.fecha));
 
+  // La pérdida histórica usa el costo capturado en cada movimiento, no el CPP vigente.
+  const movimientosSinCostoHistorico = consumos.filter(m =>
+    m.costoUnitarioUSD === undefined || m.costoUnitarioUSD === null || m.costoUnitarioUSD === ''
+  ).length;
   const totalPerdida = consumos.reduce((acc, m) => {
-    const p = state.productos.find(prod => prod.id === m.productoId);
-    return acc + (Math.abs(m.cantidad) * (p?.costoUSD || 0));
+    const costoHistorico = Number(m.costoUnitarioUSD);
+    return Number.isFinite(costoHistorico) && costoHistorico >= 0
+      ? acc + Math.abs(Number(m.cantidad) || 0) * costoHistorico
+      : acc;
   }, 0);
 
   return (
@@ -985,6 +991,7 @@ function ReporteConsumo({ state }: { state: AppState }) {
           <div>
             <p className="text-[10px] font-black uppercase text-status-danger/70">Total Pérdida por Consumo</p>
             <p className="text-2xl font-black text-status-danger">{Utils.fmtUSD(totalPerdida)}</p>
+            {movimientosSinCostoHistorico > 0 && <p className="text-[10px] font-bold text-status-danger mt-1">{movimientosSinCostoHistorico} movimiento(s) sin costo histórico; no se sustituyen por el costo actual</p>}
           </div>
         </div>
       </div>
@@ -1014,17 +1021,18 @@ function ReporteConsumo({ state }: { state: AppState }) {
             <TableBody className="bg-white">
               {consumos.map(m => {
                 const p = state.productos.find(prod => prod.id === m.productoId);
-                const costo = p?.costoUSD || 0;
-                const subtotal = Math.abs(m.cantidad) * costo;
+                const costoDisponible = m.costoUnitarioUSD !== undefined && m.costoUnitarioUSD !== null && m.costoUnitarioUSD !== '';
+                const costo = costoDisponible ? Number(m.costoUnitarioUSD) : null;
+                const subtotal = costo !== null && Number.isFinite(costo) ? Math.abs(Number(m.cantidad) || 0) * costo : null;
                 
                 return (
                   <TableRow key={m.id} className="border-b border-line/30 hover:bg-surface-warm/20 transition-colors">
                     <TableCell className="text-xs font-bold text-ink">{m.fecha.slice(0,10)}</TableCell>
                     <TableCell className="font-black uppercase text-xs text-ink">{p?.nombre || 'Producto Eliminado'}</TableCell>
                     <TableCell><span className="badge badge-neutral font-black text-[9px] uppercase">{m.tipo.replace('_', ' ')}</span></TableCell>
-                    <TableCell className="text-right mono text-xs text-ink/50">{Utils.fmtUSD(costo)}</TableCell>
+                    <TableCell className="text-right mono text-xs text-ink/50">{costo === null ? 'Histórico no disponible' : Utils.fmtUSD(costo)}</TableCell>
                     <TableCell className={`text-center font-black text-status-danger`}>{Math.abs(m.cantidad)}</TableCell>
-                    <TableCell className="text-right mono font-black text-status-danger">{Utils.fmtUSD(subtotal)}</TableCell>
+                    <TableCell className="text-right mono font-black text-status-danger">{subtotal === null ? '—' : Utils.fmtUSD(subtotal)}</TableCell>
                     <TableCell className="text-[10px] uppercase font-bold opacity-40 text-ink max-w-[250px] truncate">{m.referencia}</TableCell>
                   </TableRow>
                 );
