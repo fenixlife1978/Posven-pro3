@@ -490,7 +490,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
     p.activo && (deptFilter ? p.departamento === deptFilter : true)
   );
 
-  const totalCosto = Utils.round(filteredProducts.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0));
+  const totalCosto = Utils.roundUSD6(filteredProducts.reduce((acc, p) => acc + (p.costoUSD * p.stock), 0));
   const totalVenta = Utils.round(filteredProducts.reduce((acc, p) => acc + (p.precioUSD * p.stock), 0));
 
   return (
@@ -558,7 +558,7 @@ function ReporteGeneral({ state, onAction }: { state: AppState, onAction: (type:
                     <TableCell className="mono text-right text-xs font-bold text-ink/60">{Utils.fmtUSD(p.costoUSD)}</TableCell>
                     <TableCell className="mono text-right text-brand-gold-deep font-black">{Utils.fmtUSD(p.precioUSD)}</TableCell>
                     <TableCell className="text-center py-3 px-4"><span className="badge badge-neutral font-black">{p.stock}</span></TableCell>
-                    <TableCell className="mono text-right font-black text-ink">{Utils.fmtUSD(Utils.round(p.costoUSD * p.stock))}</TableCell>
+                    <TableCell className="mono text-right font-black text-ink">{Utils.fmtUSD(Utils.roundUSD6(p.costoUSD * p.stock))}</TableCell>
                     <TableCell>
                       <div className="flex justify-center gap-1">
                         <button className="btn-icon h-8 w-8 text-ink hover:text-brand-gold" title="Editar" onClick={() => onAction('edit', p.id)}><Edit2 className="w-4 h-4" /></button>
@@ -605,7 +605,7 @@ function ModalCPP({ producto, movimientos, onClose }: { producto: Product, movim
 
           <div className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
             <span className="text-[10px] font-bold text-gray-500 uppercase">COSTO ACTUAL (PONDERADO)</span>
-            <span className="text-[#2563EB] font-mono font-black text-lg">{format4(Number(m.costoUnitarioUSD ?? 0))}</span>
+            <span className="text-[#2563EB] font-mono font-black text-lg">{Number(m.costoUnitarioUSD ?? 0).toFixed(6)}</span>
           </div>
 
           <div className="space-y-3">
