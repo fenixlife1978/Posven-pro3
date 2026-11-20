@@ -2215,3 +2215,30 @@ test('costo promedio ponderado de inventario conserva seis decimales en ajustes 
   assert.match(utilitySource, /roundUSD6: \(v: any\) =>[\s\S]*?Math\.round\(\(n \+ Number\.EPSILON\) \* 1000000\) \/ 1000000/);
   assert.doesNotMatch(inventorySource, /Utils\.round\(\(\(stockActual \* costoActual\)/);
 });
+
+
+test('compra recalcula y persiste costo promedio ponderado con seis decimales', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-20T15:10:00.000Z';
+  const productId = 'PURCHASE-WEIGHTED-COST-6DP';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({ id: productId, nombre: 'Producto Compra Costo 6D', stock: 3, costoUSD: 1.234567 }), at],
+    wantRows: false,
+  });
+  const purchase = {
+    id: 'PURCHASE-WEIGHTED-COST-6DP-001', fecha: '2026-11-20', fechaHora: at,
+    proveedor: 'Proveedor Costo 6D', numeroFactura: 'FAC-COSTO-6D-001',
+    montoUSD: 4.691356, pagadoUSD: 4.691356, saldoUSD: 0, items: [],
+  };
+  const items = [{ productoId, nombre: 'Producto Compra Costo 6D', cantidad: 2, costoUnitarioUSD: 2.345678, subtotalUSD: 4.691356 }];
+  const result = await posStore.createPurchaseTransaction({
+    operationId: 'PURCHASE-WEIGHTED-COST-6DP-OP', purchase, items,
+    purchaseDate: '2026-11-20', purchaseDateTime: at,
+    supplier: 'Proveedor Costo 6D', invoiceNumber: 'FAC-COSTO-6D-001', exchangeRate: 400,
+  });
+  assert.equal(result.products[0].stock, 5);
+  assert.equal(result.products[0].costoUSD, 1.679011);
+  const saved = await posStore.getRecord('productos', productId, { id: 'admin-purchase-cost-6dp', rol: 'administrador' });
+  assert.equal(saved.costoUSD, 1.679011);
+});
