@@ -2246,3 +2246,63 @@ test('compra recalcula y persiste costo promedio ponderado con seis decimales', 
   const saved = await posStore.getRecord('productos', productId, { id: 'admin-purchase-cost-6dp', rol: 'administrador' });
   assert.equal(saved.costoUSD, 1.679011);
 });
+
+test('rechaza compra atrasada cuando existen ventas posteriores que exigirían recalcular su costo histórico', async () => {
+  await schema.ensureSqliteSchema();
+  const productId = 'PURCHASE-BACKDATED-SALE-GUARD';
+  const initialAt = '2026-11-19T09:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({ id: productId, nombre: 'Producto compra atrasada', stock: 5, costoUSD: 8 }), initialAt],
+    wantRows: false,
+  });
+
+  await posStore.createPurchaseTransaction({
+    operationId: 'PURCHASE-BACKDATED-BASE-OP',
+    purchase: {
+      id: 'PURCHASE-BACKDATED-BASE', fecha: '2026-11-19', fechaHora: '2026-11-19T10:00:00.000Z',
+      proveedor: 'Proveedor Base', numeroFactura: 'FAC-BACKDATED-BASE',
+      montoUSD: 30, items: [{ productoId, cantidad: 3, costoUnitarioUSD: 10 }],
+    },
+    items: [{ productoId, cantidad: 3, costoUnitarioUSD: 10, subtotalUSD: 30 }],
+    purchaseDate: '2026-11-19', purchaseDateTime: '2026-11-19T10:00:00.000Z',
+    supplier: 'Proveedor Base', invoiceNumber: 'FAC-BACKDATED-BASE', exchangeRate: 370,
+  });
+
+  const saleAt = '2026-11-19T12:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT INTO movimientos(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['PURCHASE-BACKDATED-SALE-MOV', JSON.stringify({
+      id: 'PURCHASE-BACKDATED-SALE-MOV', productoId, tipo: 'venta', cantidad: -2,
+      stockAntes: 8, stockDespues: 6, costoUnitarioUSD: 8.75,
+      fecha: saleAt, referencia: 'VENTA POSTERIOR TEST',
+    }), saleAt],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: "UPDATE productos SET data_json=json_set(data_json,'$.stock',6) WHERE id=?",
+    args: [productId],
+    wantRows: false,
+  });
+
+  await assert.rejects(
+    posStore.createPurchaseTransaction({
+      operationId: 'PURCHASE-BACKDATED-NEW-OP',
+      purchase: {
+        id: 'PURCHASE-BACKDATED-NEW', fecha: '2026-11-19', fechaHora: '2026-11-19T11:00:00.000Z',
+        proveedor: 'Proveedor Atrasado', numeroFactura: 'FAC-BACKDATED-NEW',
+        montoUSD: 48, items: [{ productoId, cantidad: 4, costoUnitarioUSD: 12 }],
+      },
+      items: [{ productoId, cantidad: 4, costoUnitarioUSD: 12, subtotalUSD: 48 }],
+      purchaseDate: '2026-11-19', purchaseDateTime: '2026-11-19T11:00:00.000Z',
+      supplier: 'Proveedor Atrasado', invoiceNumber: 'FAC-BACKDATED-NEW', exchangeRate: 370,
+    }),
+    /movimientos posteriores de tipo venta/,
+  );
+
+  const product = await posStore.getRecord('productos', productId, { id: 'admin-backdated-purchase-test', rol: 'administrador' });
+  assert.equal(product.stock, 6);
+  assert.equal(product.costoUSD, 8.75);
+  assert.equal(await posStore.getRecord('compras', 'PURCHASE-BACKDATED-NEW', { id: 'admin-backdated-purchase-test', rol: 'administrador' }), null);
+  assert.equal(await posStore.getRecord('movimientos', 'PURCHASE-BACKDATED-SALE-MOV', { id: 'admin-backdated-purchase-test', rol: 'administrador' }).then(m => m.costoUnitarioUSD), 8.75);
+});
