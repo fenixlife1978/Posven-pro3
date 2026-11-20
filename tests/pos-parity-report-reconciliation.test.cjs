@@ -123,3 +123,27 @@ test('el costo histórico de kits refleja sus componentes y el margen excluye IV
   assert.match(reports, /Margen Bruto/);
   assert.doesNotMatch(reports, /Margen de Ganancia Neta/);
 });
+
+test('consumos y colaboraciones se valorizan con el costo histórico del movimiento', () => {
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  const start = inventory.indexOf('function ReporteConsumo');
+  const end = inventory.indexOf('function ReporteKardex', start);
+  assert.ok(start >= 0 && end > start);
+  const report = inventory.slice(start, end);
+  assert.match(report, /m\.costoUnitarioUSD/);
+  assert.match(report, /missingHistoricalCostLines/);
+  assert.match(report, /NO DISPONIBLE/);
+  assert.doesNotMatch(report, /p\?\.costoUSD/);
+});
+
+test('el detalle CPP presenta el costo histórico de cada compra y no repite el CPP vigente', () => {
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  const start = inventory.indexOf('function ModalCPP');
+  const end = inventory.indexOf('function ', start + 10);
+  assert.ok(start >= 0 && end > start);
+  const modal = inventory.slice(start, end);
+  assert.match(modal, /m\.costoUnitarioUSD/);
+  assert.match(modal, /format6\(Number\(m\.costoUnitarioUSD\)\)/);
+  assert.doesNotMatch(modal, /format6\(producto\.costoUSD\).*format6\(producto\.costoUSD\)/);
+  assert.match(modal, /NO DISPONIBLE/);
+});
