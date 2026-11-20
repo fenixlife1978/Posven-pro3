@@ -407,3 +407,4 @@ Corrección:
 - Las filas antiguas sin snapshot se identifican como `SIN HISTÓRICO`; no se rellenan con el costo actual.
 - Los totales se identifican como parciales y muestran la cantidad de movimientos sin costo histórico.
 - El registro de movimientos nuevos ya captura el costo unitario y la tasa al momento de la operación.
+- Las entradas manuales que introducen un costo nuevo guardan ese costo de entrada en el snapshot del movimiento; no conservan por error el CPP anterior.
