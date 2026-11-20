@@ -419,3 +419,16 @@ Regla:
 - Al reingresar unidades con costo histórico conocido, el CPP se recalcula ponderando el stock/costo vigente con las unidades devueltas/costo original, a seis decimales.
 - En registros históricos sin snapshot, no se sustituye el dato faltante por el costo actual: el movimiento queda marcado `costoHistoricoPendiente` para revisión y el CPP no se altera por una suposición.
 - La prueba de kit cambia deliberadamente el CPP del componente después de la venta y verifica que devolución y anulación recuperan el costo original y el CPP ponderado correcto.
+
+### Reparación histórica de devoluciones/anulaciones: snapshots de costo
+
+La reparación de una devolución o anulación también debe reconstruir la trazabilidad del costo, no solo los deltas físicos del Kardex.
+
+- Al reconstruir un movimiento de devolución/anulación, se recupera el costo unitario USD, costo Bs y tasa BCV del movimiento original de venta.
+- Para productos normales se conserva como respaldo el snapshot de la línea de venta.
+- Para componentes de kits se utiliza el movimiento original del componente, sin repartir el costo del kit padre.
+- Si el registro histórico original no conserva costo, el movimiento reparado queda marcado `costoHistoricoPendiente`; no se sustituye por el CPP vigente.
+- La reparación conserva su reconstrucción física de stock y CxC en una sola transacción SQLite.
+- La regresión elimina deliberadamente el movimiento de una devolución ya registrada, ejecuta la reparación y comprueba que el movimiento reconstruido recupera USD 2, Bs 4 y tasa BCV 2, además del stock final correcto.
+
+Esta corrección restaura el snapshot histórico del movimiento reparado. La reconstrucción cronológica del CPP vigente cuando existen compras/ventas posteriores continúa como auditoría separada; no se debe recalcular desde el costo actual sin reconstruir toda la secuencia de valoración.

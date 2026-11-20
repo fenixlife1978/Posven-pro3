@@ -365,6 +365,88 @@ test('devolver y anular un kit repone sus componentes, no el artículo padre', a
 });
 
 
+test('la reparación de devoluciones reconstruye el Kardex con el costo histórico original', async () => {
+  await schema.ensureSqliteSchema();
+
+  const openedAt = '2026-11-20T12:00:00.000Z';
+  const saleAt = '2026-11-20T12:10:00.000Z';
+  const returnAt = '2026-11-20T12:20:00.000Z';
+  const terminal = {
+    id: 'REPAIRBOX', nombre: 'Caja Reparación', prefijoCaja: 'REPAIRBOX',
+    usuarioId: 'admin-repair-regression', isCashOpen: true,
+    cashData: { openDate: openedAt, openedBy: 'Prueba' },
+    proximoRecibo: 1, proximaDevolucion: 1, proximaAnulacion: 1,
+    ultimoZ: 0, fechaUltimoZ: '', acumuladoHistorico: 0,
+    fondoCajaHoyBS: 0, fondoCajaHoyUSD: 0, cashHistory: [],
+  };
+  await sqliteExecute({
+    sql: 'INSERT INTO terminales(id,data_json,fecha) VALUES(?,?,?)',
+    args: [terminal.id, JSON.stringify(terminal), openedAt],
+    wantRows: false,
+  });
+  const product = { id: 'REPAIR-PRODUCT', nombre: 'Producto reparación', stock: 5, costoUSD: 2 };
+  await sqliteExecute({
+    sql: 'INSERT INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
+    args: [product.id, JSON.stringify(product)],
+    wantRows: false,
+  });
+  const user = { id: 'admin-repair-regression', rol: 'administrador', nombre: 'Prueba' };
+  const saleResult = await posStore.createSaleTransaction({
+    operationId: 'REPAIR-SALE-REGRESSION',
+    cart: [{ productoId: product.id, nombre: product.nombre, cantidad: 1, precioUnitUSD: 4, subtotalUSD: 4 }],
+    payments: [{ metodo: 'efectivo_usd', montoUSD: 4, montoBS: 0 }],
+    clientName: 'CONTADO',
+    terminalId: terminal.id,
+    now: saleAt,
+    tasa: 2,
+    user,
+  });
+  const returnedItem = {
+    productoId: product.id, nombre: product.nombre, cantidad: 1,
+    precioUnitUSD: 4, subtotalUSD: 4, estadoProducto: 'REINTEGRADO_STOCK',
+  };
+  await posStore.processReturnOrCancellationTransaction({
+    operationId: 'REPAIR-RETURN-REGRESSION',
+    operationType: 'DEVOLUCION',
+    saleId: saleResult.sale.id,
+    operationDoc: {
+      id: 'DEV-REPAIR-TEMP', fecha: returnAt, items: [returnedItem],
+      refundPayments: [{ metodo: 'efectivo_usd', montoUSD: 4, montoBS: 0 }],
+    },
+    movements: [],
+    refundItems: [returnedItem],
+    terminalId: terminal.id,
+    user,
+  });
+
+  // Simula el caso legado: el documento de devolución existe, pero su
+  // movimiento de inventario se perdió y debe ser reconstruido por reparación.
+  await sqliteExecute({
+    sql: "DELETE FROM movimientos WHERE json_extract(data_json,'$.tipo')='devolucion' AND json_extract(data_json,'$.productoId')=?",
+    args: [product.id],
+    wantRows: false,
+  });
+  const repaired = await posStore.repairReturnInventoryAndCxcTransaction({ saleId: saleResult.sale.id });
+  assert.equal(repaired.correctedOperations, 1);
+
+  const movements = await sqliteExecute({
+    sql: "SELECT data_json FROM movimientos WHERE json_extract(data_json,'$.tipo')='devolucion' AND json_extract(data_json,'$.productoId')=?",
+    args: [product.id],
+  });
+  assert.equal(movements.rows.length, 1);
+  const restored = JSON.parse(movements.rows[0].data_json);
+  assert.equal(restored.costoUnitarioUSD, 2);
+  assert.equal(restored.costoUnitarioBs, 4);
+  assert.equal(restored.tasaBCV, 2);
+  assert.equal(restored.costoHistoricoPendiente, false);
+
+  const productAfter = await sqliteExecute({
+    sql: 'SELECT data_json FROM productos WHERE id=?',
+    args: [product.id],
+  });
+  assert.equal(JSON.parse(productAfter.rows[0].data_json).stock, 5);
+});
+
 test('devoluciones limitan reintegros al dinero cobrado y excluyen notas de crédito de caja', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T18:00:00.000Z';
