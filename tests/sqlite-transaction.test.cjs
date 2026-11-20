@@ -2306,3 +2306,13 @@ test('rechaza compra atrasada cuando existen ventas posteriores que exigirían r
   assert.equal(await posStore.getRecord('compras', 'PURCHASE-BACKDATED-NEW', { id: 'admin-backdated-purchase-test', rol: 'administrador' }), null);
   assert.equal(await posStore.getRecord('movimientos', 'PURCHASE-BACKDATED-SALE-MOV', { id: 'admin-backdated-purchase-test', rol: 'administrador' }).then(m => m.costoUnitarioUSD), 8.75);
 });
+
+test('los reportes de ajustes y consumos usan costo histórico del movimiento y advierten faltantes', () => {
+  const source = read('src/components/modules/InventoryModule.tsx');
+  assert.match(source, /m\.costoUnitarioUSD !== undefined/);
+  assert.match(source, /SIN HISTÓRICO/);
+  assert.match(source, /consumosSinCostoHistorico/);
+  assert.match(source, /ajustesSinCostoHistorico/);
+  assert.doesNotMatch(source, /Math\.abs\(m\.cantidad\) \* \(p\?\.costoUSD \|\| 0\)/);
+  assert.doesNotMatch(source, /return acc \+ \(m\.cantidad \* costo\)/);
+});
