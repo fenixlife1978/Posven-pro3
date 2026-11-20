@@ -61,14 +61,27 @@ export default function ReportsModule({ state }: { state: AppState }) {
     return Number(v.totalBS) > 0 ? Number(v.totalBS) : null;
   };
   
-  // Rentabilidad
-  const totalCostoVentas = ventasFiltradas.reduce((s, v) => {
-    return s + v.items.reduce((si, item) => {
-      const p = state.productos.find(x => x.id === item.productoId);
-      return si + (p ? p.costoUSD * item.cantidad : 0);
+  // Rentabilidad histórica: el costo se captura en cada línea al confirmar la venta.
+  // Nunca sustituir un snapshot ausente por el costo actual del catálogo, porque
+  // eso reescribe artificialmente la rentabilidad de períodos anteriores.
+  const missingHistoricalCostLines = ventasFiltradas.reduce((count, sale) => {
+    const items = Array.isArray(sale.items) ? sale.items : [];
+    return count + items.filter((item: any) =>
+      !item?.ventaLibreBS &&
+      (item?.costoUnitarioUSD === undefined || item?.costoUnitarioUSD === null || item?.costoUnitarioUSD === '')
+    ).length;
+  }, 0);
+  const totalCostoVentas = ventasFiltradas.reduce((sum, sale) => {
+    const items = Array.isArray(sale.items) ? sale.items : [];
+    return sum + items.reduce((saleCost: number, item: any) => {
+      if (item?.ventaLibreBS) return saleCost;
+      const unitCost = Number(item?.costoUnitarioUSD);
+      const quantity = Number(item?.cantidad) || 0;
+      return saleCost + (Number.isFinite(unitCost) ? unitCost * quantity : 0);
     }, 0);
   }, 0);
-  const gananciaNeta = totalVentasUSD - totalCostoVentas;
+  const costoHistoricoCompleto = missingHistoricalCostLines === 0;
+  const gananciaNeta = costoHistoricoCompleto ? totalVentasUSD - totalCostoVentas : null;
 
   const reportesZFiltrados = (state.reportesZ || [])
     .filter(z => {
@@ -323,14 +336,17 @@ export default function ReportsModule({ state }: { state: AppState }) {
                    <div className="text-3xl font-black text-ink">{Utils.fmtUSD(totalVentasUSD)}</div>
                  </div>
                  <div className="kpi bg-surface-soft border-line p-6 rounded-2xl shadow-inner border-t-4 border-t-status-danger text-center">
-                   <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Costo de Inversión (CPP)</div>
+                   <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Costo Histórico Identificado (CPP)</div>
                    <div className="text-3xl font-black text-status-danger">{Utils.fmtUSD(totalCostoVentas)}</div>
+                   {!costoHistoricoCompleto && <div className="text-status-danger text-[10px] font-bold mt-2">Valor parcial: faltan costos históricos</div>}
                  </div>
                  <div className="kpi bg-surface-soft border-line p-6 rounded-2xl shadow-inner border-t-4 border-t-status-success text-center">
                    <div className="text-ink text-[10px] font-black uppercase mb-2 tracking-wider">Margen de Ganancia Neta</div>
-                   <div className="text-4xl font-black text-status-success">{Utils.fmtUSD(gananciaNeta)}</div>
+                   <div className="text-4xl font-black text-status-success">{costoHistoricoCompleto ? Utils.fmtUSD(gananciaNeta as number) : 'NO DISPONIBLE'}</div>
                    <div className="text-ink text-[11px] font-black mt-2 uppercase opacity-60">
-                     Margen Real: {totalVentasUSD > 0 ? ((gananciaNeta/totalVentasUSD)*100).toFixed(2) : 0}%
+                     {costoHistoricoCompleto
+                       ? `Margen Real: ${totalVentasUSD > 0 ? (((gananciaNeta as number)/totalVentasUSD)*100).toFixed(2) : 0}%`
+                       : `Faltan ${missingHistoricalCostLines} líneas con costo histórico`}
                    </div>
                  </div>
                </div>
