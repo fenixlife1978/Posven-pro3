@@ -428,6 +428,13 @@ test('devoluciones limitan reintegros al dinero cobrado y excluyen notas de cré
   assert.equal(first.journal.montoUSD, 6);
   assert.equal(first.debt.saldoUSD, 4);
   assert.equal(first.operationDoc.refundPayments.length, 2);
+  const legacyReturnMovement = await sqliteExecute({
+    sql: "SELECT data_json FROM movimientos WHERE json_extract(data_json,'$.tipo')='devolucion' AND json_extract(data_json,'$.productoId')=?",
+    args: [product.id],
+  });
+  assert.equal(JSON.parse(legacyReturnMovement.rows[0].data_json).costoHistoricoPendiente, true, 'un registro legado sin costo no debe heredar el CPP actual como si fuera histórico');
+  const productAfterLegacyReturn = await sqliteExecute({ sql: 'SELECT data_json FROM productos WHERE id=?', args: [product.id] });
+  assert.equal(JSON.parse(productAfterLegacyReturn.rows[0].data_json).costoUSD, 2);
 
   const secondItem = { ...firstItem, cantidad: 1 };
   await assert.rejects(
