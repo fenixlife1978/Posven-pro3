@@ -2620,6 +2620,10 @@ export const Utils = {
     const n = parseFloat(v);
     return isNaN(n) ? 0 : Math.round((n + Number.EPSILON) * 100) / 100;
   },
+  roundUSD6: (v: any) => {
+    const n = parseFloat(v);
+    return isNaN(n) ? 0 : Math.round((n + Number.EPSILON) * 1000000) / 1000000;
+  },
   fmtUSD: (v: number) => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   fmtBS: (v: number, symbol = true) => (symbol ? 'Bs. ' : '') + Number(v).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   fmtMono: (v: number, prefix = false) => (prefix ? '$' : '') + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),

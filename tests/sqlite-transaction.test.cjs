@@ -1524,7 +1524,7 @@ test('eliminar la primera compra reconstruye el Kardex desde el saldo anterior a
   assert.equal(deleted.deletedPurchase, 1);
   const after = await posStore.getRecord('productos', 'PURCHASE-DELETE-BASE', { id: 'admin-purchase-delete-test', rol: 'administrador' });
   assert.equal(after.stock, 7);
-  assert.equal(after.costoUSD, Math.round((64 / 7 + Number.EPSILON) * 10000) / 10000);
+  assert.equal(after.costoUSD, Math.round((64 / 7 + Number.EPSILON) * 1000000) / 1000000);
   const remaining = await sqliteExecute({
     sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.productoId')=? ORDER BY fecha ASC,id ASC",
     args: ['PURCHASE-DELETE-BASE'],
@@ -2172,4 +2172,76 @@ test('formulario de compras conserva seis decimales y no descarta pagos o saldos
   assert.match(source, /saldoUSD > 0 \?/);
   assert.match(source, /saldoPendienteUSD > 0 \?/);
   assert.doesNotMatch(source, /paidUSD > 0\.0001|saldoUSD > 0\.0001|saldoPendienteUSD > 0\.0001/);
+});
+
+
+test('costo promedio ponderado de inventario conserva seis decimales en ajustes y SQLite', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-20T15:00:00.000Z';
+  const productId = 'INV-WEIGHTED-COST-6DP';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({
+      id: productId, nombre: 'Producto Costo Ponderado 6D', stock: 3, costoUSD: 1.234567,
+    }), at],
+    wantRows: false,
+  });
+
+  const stockActual = 3;
+  const costoActual = 1.234567;
+  const cantidadNueva = 2;
+  const nuevoCosto = 2.345678;
+  const costoPonderado = Math.round((((stockActual * costoActual) + (cantidadNueva * nuevoCosto)) / (stockActual + cantidadNueva) + Number.EPSILON) * 1000000) / 1000000;
+  assert.equal(costoPonderado, 1.679011);
+
+  const result = await posStore.applyInventoryMovementsTransaction({
+    operationId: 'INV-WEIGHTED-COST-6DP-OP',
+    operationType: 'AJUSTE_INVENTARIO',
+    movements: [{
+      id: 'INV-WEIGHTED-COST-6DP-MOV', productoId: productId, tipo: 'ajuste_entrada',
+      cantidad: cantidadNueva, fecha: at, referencia: 'ENTRADA CON COSTO PROMEDIO',
+    }],
+    productPatches: { [productId]: { costoUSD: costoPonderado } },
+  });
+
+  assert.equal(result.products[0].stock, 5);
+  assert.equal(result.products[0].costoUSD, 1.679011);
+  const saved = await posStore.getRecord('productos', productId, { id: 'admin-weighted-cost-test', rol: 'administrador' });
+  assert.equal(saved.costoUSD, 1.679011);
+
+  const inventorySource = fs.readFileSync(path.join(process.cwd(), 'src/components/modules/InventoryModule.tsx'), 'utf8');
+  const utilitySource = fs.readFileSync(path.join(process.cwd(), 'src/lib/db-store.ts'), 'utf8');
+  assert.match(inventorySource, /Utils\.roundUSD6\(\(\(stockActual \* costoActual\) \+ \(cantidadNueva \* Number\(nuevoCosto\)\)\) \/ stockTotal\)/);
+  assert.match(utilitySource, /roundUSD6: \(v: any\) =>[\s\S]*?Math\.round\(\(n \+ Number\.EPSILON\) \* 1000000\) \/ 1000000/);
+  assert.doesNotMatch(inventorySource, /Utils\.round\(\(\(stockActual \* costoActual\)/);
+  const storeSource = fs.readFileSync(path.join(process.cwd(), 'src/lib/sqlite/pos-store.ts'), 'utf8');
+  assert.match(storeSource, /Math\.round\(\(\(\(oldStock\*oldCost\)\+\(qty\*cost\)\)\/newStock\+Number\.EPSILON\)\*1000000\)\/1000000/);
+  assert.match(storeSource, /Math\.round\(\(beforeValue\/beforeStock\+Number\.EPSILON\)\*1000000\)\/1000000/);
+});
+
+
+test('compra recalcula y persiste costo promedio ponderado con seis decimales', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-20T15:10:00.000Z';
+  const productId = 'PURCHASE-WEIGHTED-COST-6DP';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)',
+    args: [productId, JSON.stringify({ id: productId, nombre: 'Producto Compra Costo 6D', stock: 3, costoUSD: 1.234567 }), at],
+    wantRows: false,
+  });
+  const purchase = {
+    id: 'PURCHASE-WEIGHTED-COST-6DP-001', fecha: '2026-11-20', fechaHora: at,
+    proveedor: 'Proveedor Costo 6D', numeroFactura: 'FAC-COSTO-6D-001',
+    montoUSD: 4.691356, pagadoUSD: 4.691356, saldoUSD: 0, items: [],
+  };
+  const items = [{ productoId: productId, nombre: 'Producto Compra Costo 6D', cantidad: 2, costoUnitarioUSD: 2.345678, subtotalUSD: 4.691356 }];
+  const result = await posStore.createPurchaseTransaction({
+    operationId: 'PURCHASE-WEIGHTED-COST-6DP-OP', purchase, items,
+    purchaseDate: '2026-11-20', purchaseDateTime: at,
+    supplier: 'Proveedor Costo 6D', invoiceNumber: 'FAC-COSTO-6D-001', exchangeRate: 400,
+  });
+  assert.equal(result.products[0].stock, 5);
+  assert.equal(result.products[0].costoUSD, 1.679011);
+  const saved = await posStore.getRecord('productos', productId, { id: 'admin-purchase-cost-6dp', rol: 'administrador' });
+  assert.equal(saved.costoUSD, 1.679011);
 });

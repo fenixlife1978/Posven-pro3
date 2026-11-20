@@ -458,7 +458,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 const costoActual = Number(productoOriginal.costoUSD) || 0;
                 const stockTotal = stockActual + cantidadNueva;
                 patch.costoUSD = stockTotal > 0
-                  ? Utils.round(((stockActual * costoActual) + (cantidadNueva * Number(nuevoCosto))) / stockTotal)
+                  ? Utils.roundUSD6(((stockActual * costoActual) + (cantidadNueva * Number(nuevoCosto))) / stockTotal)
                   : Number(nuevoCosto);
               }
               productPatches[mov.productoId] = patch;
