@@ -957,6 +957,12 @@ test('el alta del primer administrador acepta correos válidos y rechaza sólo f
     backup,
   });
   assert.equal(restore.preservedAdminId, valid.id);
+  const restoredProduct = await posStore.getRecord('productos', 'ROUNDTRIP-PRODUCT', { id: valid.id, rol: 'administrador' });
+  assert.equal(restoredProduct.stock, 23);
+  assert.equal(restoredProduct.costoUSD, 4.25);
+  const restoredMovement = await posStore.getRecord('movimientos', 'ROUNDTRIP-MOV', { id: valid.id, rol: 'administrador' });
+  assert.equal(restoredMovement.productoId, 'ROUNDTRIP-PRODUCT');
+  assert.equal(restoredMovement.cantidad, 23);
   const preserved = await auth.findUser(valid.username);
   assert.equal(preserved.isSeedAdmin, true);
 
