@@ -2485,7 +2485,9 @@ test('exportación aborta ante JSON SQLite corrupto en vez de emitir respaldo in
   await assert.rejects(posStore.exportBackupSnapshot(), /contenido JSON inválido/);
   await sqliteExecute({ sql: 'DELETE FROM ventas WHERE id=?', args: [corruptId], wantRows: false });
 });
-\n\ntest('eliminar compra no borra asiento COMPRA de otro proveedor con la misma factura', async () => {
+
+
+test('eliminar compra no borra asiento COMPRA de otro proveedor con la misma factura', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-21T16:00:00.000Z';
   const invoice = 'FACT-COLLISION-001';
