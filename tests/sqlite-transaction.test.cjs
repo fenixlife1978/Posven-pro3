@@ -2439,7 +2439,7 @@ test('reversión de compra elimina CxP y asientos vinculados y restaura stock y 
   const openingAt = '2026-11-21T13:00:00.000Z';
   const openingMovement = { id: 'MOV-REVERSAL-OPENING-001', productoId: productId, tipo: 'entrada-inicial', cantidad: 10, stockAntes: 0, stockDespues: 10, costoUnitarioUSD: 5, fecha: openingAt, referencia: 'Stock inicial de prueba' };
   const movement = { id: 'MOV-REVERSAL-CXP-001', productoId: productId, tipo: 'compra', cantidad: 4, stockAntes: 10, stockDespues: 14, costoUnitarioUSD: 8, fecha: at, referencia: 'COMPRA FACT: '+invoice+' - PROV: Proveedor Reversión' };
-  const purchaseJournal = { id: purchaseJournalId, fecha: at, tipo: 'egreso', categoria: 'COMPRA', montoUSD: 32, referencia: invoice };
+  const purchaseJournal = { id: purchaseJournalId, fecha: at, tipo: 'egreso', categoria: 'COMPRA', montoUSD: 32, referencia: invoice, concepto: 'COMPRA MERCANCIA FACT #'+invoice+' - PROV: Proveedor Reversión' };
   const paymentJournal = { id: paymentJournalId, fecha: at, tipo: 'egreso', categoria: 'PAGO-CXP', montoUSD: 10, referencia: invoice };
   for (const [table, record, dateColumn, storedAt] of [['compras', purchase, 'fecha', at], ['cxp', debt, 'fecha', at], ['movimientos', openingMovement, 'fecha', openingAt], ['movimientos', movement, 'fecha', at], ['libro_diario', purchaseJournal, 'fecha', at], ['libro_diario', paymentJournal, 'fecha', at]]) {
     await sqliteExecute({ sql: 'INSERT OR REPLACE INTO '+table+'(id,data_json,'+dateColumn+') VALUES(?,?,?)', args: [record.id, JSON.stringify(record), storedAt], wantRows: false });
