@@ -40,7 +40,7 @@ Module._resolveFilename = function resolveTypeScript(request, parent, isMain, op
 
 const { sqliteExecute, sqliteInteractiveTransaction, assertSQLiteReady } = require('../src/lib/sqlite/client.ts');
 const schema = require('../src/lib/sqlite/schema-init.ts');
-const { listProductsPage } = require('../src/lib/sqlite/pos-store.ts');
+const { listProductsPage, listRecords } = require('../src/lib/sqlite/pos-store.ts');
 
 after(() => {
   try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
@@ -111,4 +111,18 @@ test('el catálogo SQLite pagina más de 5.000 productos y calcula filtros y sto
   const beyondEnd = await listProductsPage({ page: 502, pageSize: 10 });
   assert.equal(beyondEnd.total, 5005);
   assert.equal(beyondEnd.records.length, 0);
+
+  // La hidratación operativa completa usa el mismo endpoint de lectura
+  // paginada, no una ventana fija de 5.000 registros.
+  const [batch1, batch2, batch3] = await Promise.all([
+    listRecords('productos', { limit: 2000, offset: 0 }),
+    listRecords('productos', { limit: 2000, offset: 2000 }),
+    listRecords('productos', { limit: 2000, offset: 4000 }),
+  ]);
+  assert.equal(batch1.length, 2000);
+  assert.equal(batch2.length, 2000);
+  assert.equal(batch3.length, 1006, 'incluye los 5.005 activos y el registro inactivo');
+  const hydratedIds = [...batch1, ...batch2, ...batch3].map(product => product.id);
+  assert.equal(new Set(hydratedIds).size, 5006);
+  assert.ok(hydratedIds.includes('PAGE-INACTIVE'));
 });
