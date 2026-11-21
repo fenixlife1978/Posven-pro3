@@ -63,7 +63,9 @@ test('los respaldos exportan y restauran todas las operaciones sin topes de cant
   assert.match(sqliteStore, /export function getMaxBackupBytes\(\)/);
   assert.match(sqliteStore, /Buffer\.byteLength\(JSON\.stringify\(snapshot\), 'utf8'\) > getMaxBackupBytes\(\)/);
 });
-\n\ntest('ruta de restauración limita también cuerpos chunked sin Content-Length', () => {
+
+
+test('ruta de restauración limita también cuerpos chunked sin Content-Length', () => {
   const route = fs.readFileSync(path.join(process.cwd(), 'src/app/api/pos/backup/route.ts'), 'utf8');
   assert.match(route, /request\.body\.getReader\(\)/);
   assert.match(route, /totalBytes \+= value\.byteLength/);
