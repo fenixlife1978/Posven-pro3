@@ -2414,3 +2414,48 @@ test('rechaza compra atrasada cuando existen ventas posteriores que exigirían r
   assert.equal(await posStore.getRecord('compras', 'PURCHASE-BACKDATED-NEW', { id: 'admin-backdated-purchase-test', rol: 'administrador' }), null);
   assert.equal(await posStore.getRecord('movimientos', 'PURCHASE-BACKDATED-SALE-MOV', { id: 'admin-backdated-purchase-test', rol: 'administrador' }).then(m => m.costoUnitarioUSD), 8.75);
 });
+
+test('reversión de compra elimina CxP y asientos vinculados y restaura stock y CPP', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-21T14:00:00.000Z';
+  const productId = 'PURCHASE-REVERSAL-CXP-PRODUCT';
+  const invoice = 'FAC-REVERSAL-CXP-001';
+  const purchaseId = 'PURCHASE-REVERSAL-CXP-001';
+  const debtId = 'CXP-REVERSAL-CXP-001';
+  const paymentJournalId = 'JOURNAL-REVERSAL-PAYMENT-001';
+  const purchaseJournalId = 'JOURNAL-REVERSAL-PURCHASE-001';
+  const initialProduct = { id: productId, nombre: 'Producto prueba reversión CxP', stock: 14, costoUSD: 5.857143 };
+  await sqliteExecute({ sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)', args: [productId, JSON.stringify(initialProduct), at], wantRows: false });
+  const purchase = {
+    id: purchaseId, fecha: '2026-11-21', fechaHora: at, proveedor: 'Proveedor Reversión', numeroFactura: invoice,
+    montoUSD: 32, pagadoUSD: 10, saldoUSD: 22,
+    items: [{ productoId: productId, cantidad: 4, costoUnitarioUSD: 8, subtotalUSD: 32 }],
+  };
+  const debt = {
+    id: debtId, fecha: '2026-11-21', proveedor: 'Proveedor Reversión', numeroFactura: invoice,
+    montoUSD: 32, abonadoUSD: 10, saldoUSD: 22, estado: 'parcial',
+    historialPagos: [{ id: 'PAY-REVERSAL-CXP-001', montoUSD: 10, montoBS: 0, metodo: 'efectivo_usd', tasaAplicada: 1, asientoId: paymentJournalId }],
+  };
+  const openingAt = '2026-11-21T13:00:00.000Z';
+  const openingMovement = { id: 'MOV-REVERSAL-OPENING-001', productoId: productId, tipo: 'entrada-inicial', cantidad: 10, stockAntes: 0, stockDespues: 10, costoUnitarioUSD: 5, fecha: openingAt, referencia: 'Stock inicial de prueba' };
+  const movement = { id: 'MOV-REVERSAL-CXP-001', productoId: productId, tipo: 'compra', cantidad: 4, stockAntes: 10, stockDespues: 14, costoUnitarioUSD: 8, fecha: at, referencia: 'COMPRA FACT: '+invoice+' - PROV: Proveedor Reversión' };
+  const purchaseJournal = { id: purchaseJournalId, fecha: at, tipo: 'egreso', categoria: 'COMPRA', montoUSD: 32, referencia: invoice };
+  const paymentJournal = { id: paymentJournalId, fecha: at, tipo: 'egreso', categoria: 'PAGO-CXP', montoUSD: 10, referencia: invoice };
+  for (const [table, record, dateColumn, storedAt] of [['compras', purchase, 'fecha', at], ['cxp', debt, 'fecha', at], ['movimientos', openingMovement, 'fecha', openingAt], ['movimientos', movement, 'fecha', at], ['libro_diario', purchaseJournal, 'fecha', at], ['libro_diario', paymentJournal, 'fecha', at]]) {
+    await sqliteExecute({ sql: 'INSERT OR REPLACE INTO '+table+'(id,data_json,'+dateColumn+') VALUES(?,?,?)', args: [record.id, JSON.stringify(record), storedAt], wantRows: false });
+  }
+  const result = await posStore.deletePurchaseTransaction({ operationId: 'PURCHASE-REVERSAL-CXP-OP', purchaseId, invoiceNumber: invoice, supplier: 'Proveedor Reversión', purchaseDate: '2026-11-21' });
+  assert.equal(result.deletedPurchase, 1);
+  assert.equal(result.deletedMovements, 1);
+  assert.equal(result.deletedDebts, 1);
+  assert.equal(result.deletedJournals, 2);
+  const restored = await posStore.getRecord('productos', productId, { id: 'admin-purchase-reversal-test', rol: 'administrador' });
+  assert.equal(restored.stock, 10);
+  assert.equal(restored.costoUSD, 5);
+  for (const table of ['compras', 'cxp', 'movimientos']) {
+    const row = await sqliteExecute({ sql: 'SELECT id FROM '+table+' WHERE id=?', args: [table === 'compras' ? purchaseId : table === 'cxp' ? debtId : movement.id] });
+    assert.equal(row.rows.length, 0, table+' debe quedar sin el registro revertido');
+  }
+  const journals = await sqliteExecute({ sql: 'SELECT id FROM libro_diario WHERE id IN (?,?)', args: [purchaseJournalId, paymentJournalId] });
+  assert.equal(journals.rows.length, 0, 'los asientos de compra y pago deben eliminarse juntos');
+});
