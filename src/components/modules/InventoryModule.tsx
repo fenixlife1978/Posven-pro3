@@ -462,9 +462,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
           departamentos={cleanDepartamentos}
           departamentoInicial={deptFilter}
           onClose={() => setShowConteoFisico(false)}
-          onSave={async (ajustes) => {
+          onSave={async (ajustes, productosActualizados) => {
             const movimientos = ajustes.map(a => {
-              const producto = state.productos.find(p => p.id === a.productoId);
+              const producto = productosActualizados.find(p => p.id === a.productoId) || state.productos.find(p => p.id === a.productoId);
               if (!producto) return null;
               const stockAntes = Number(producto.stock) || 0;
               const nuevoStock = Math.max(0, Number(a.nuevoStock) || 0);
@@ -1238,7 +1238,7 @@ type ConteoFisicoAjuste = { productoId: string; nuevoStock: number; motivo: stri
 
 function ModalConteoFisico({ productos, departamentos, departamentoInicial, onClose, onSave }: {
   productos: Product[]; departamentos: string[]; departamentoInicial: string;
-  onClose: () => void; onSave: (ajustes: ConteoFisicoAjuste[]) => Promise<void>;
+  onClose: () => void; onSave: (ajustes: ConteoFisicoAjuste[], productosActualizados: Product[]) => Promise<void>;
 }) {
   const [departamento, setDepartamento] = useState(departamentoInicial);
   const [drafts, setDrafts] = useState<Record<string, { nuevoStock: string; motivo: string }>>({});
@@ -1256,7 +1256,7 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
       motivo: d!.motivo || 'Ajuste por Conteo / Inventario Físico'
     }));
     if (ajustes.some(a => !Number.isFinite(a.nuevoStock))) { alert('Revise los valores de Nuevo Stock.'); return; }
-    await onSave(ajustes);
+    await onSave(ajustes, disponibles);
   };
   return (
     <div className="modal show">
@@ -1278,6 +1278,8 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
             </div>
             <div className="text-[10px] font-black uppercase text-ink/40">{disponibles.length} productos · {pendientes.length} ajustes pendientes</div>
           </div>
+          {cargandoCatalogo && <p className="text-sm p-4 font-bold">Cargando catálogo completo desde SQLite...</p>}
+          {errorCatalogo && <p className="text-sm p-4 text-status-danger font-bold">{errorCatalogo}</p>}
           <div className="max-h-[55vh] overflow-auto border border-line rounded-lg">
             <Table><TableHeader><TableRow className="bg-surface-soft sticky top-0 z-10">
               <TableHead className="font-black text-ink uppercase text-[10px]">Código</TableHead>
@@ -1295,7 +1297,7 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
                   <TableCell className="mono text-xs font-black">{p.codigo}</TableCell>
                   <TableCell className="font-bold uppercase text-xs">{p.nombre}</TableCell>
                   <TableCell className="text-center font-black">{actual}</TableCell>
-                  <TableCell className="w-36"><Input type="number" min="0" step="1" className="h-9 text-center font-black bg-white" placeholder={String(actual)} value={d?.nuevoStock ?? ''} onChange={e => updateDraft(p.id, 'nuevoStock', e.target.value)} /></TableCell>
+                  <TableCell className="w-36"><Input type="number" min="0" step="any" className="h-9 text-center font-black bg-white" placeholder={String(actual)} value={d?.nuevoStock ?? ''} onChange={e => updateDraft(p.id, 'nuevoStock', e.target.value)} /></TableCell>
                   <TableCell className={`text-center font-black ${diferencia > 0 ? 'text-status-success' : diferencia < 0 ? 'text-status-danger' : 'text-ink/30'}`}>{diferencia === 0 ? 'Sin cambio' : `${diferencia > 0 ? '+' : ''}${diferencia} unid.`}</TableCell>
                   <TableCell className="min-w-64"><select className="form-select h-9 text-[10px] font-bold uppercase w-full" value={d?.motivo || 'Ajuste por Conteo / Inventario Físico'} onChange={e => updateDraft(p.id, 'motivo', e.target.value)}>
                     <option>Ajuste por Conteo / Inventario Físico</option><option>Merma / Pérdida</option><option>Faltante / Robo</option><option>Sobrante</option><option>Consumo Interno / Uso Operativo</option><option>Entrada de Proveedor / Devolución</option>
@@ -1307,7 +1309,7 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={onClose} className="font-black uppercase text-[10px]">Cancelar</Button>
-            <Button onClick={guardar} disabled={pendientes.length === 0} className="font-black uppercase text-[10px] bg-brand-gold hover:bg-brand-gold-deep text-ink"><Check className="w-4 h-4" /> Guardar Ajustes de Conteo</Button>
+            <Button onClick={guardar} disabled={cargandoCatalogo || Boolean(errorCatalogo) || pendientes.length === 0} className="font-black uppercase text-[10px] bg-brand-gold hover:bg-brand-gold-deep text-ink"><Check className="w-4 h-4" /> Guardar Ajustes de Conteo</Button>
           </div>
         </div>
       </div>
