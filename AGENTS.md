@@ -67,3 +67,20 @@ POSVEN-PRO3 **no necesita Vercel y no debe utilizarlo bajo ninguna circunstancia
 - La presencia accidental de una integración GitHub/Vercel o de un check externo no convierte a Vercel en dependencia. No adaptar código ni arquitectura para satisfacerla.
 - La compilación, pruebas y empaquetado se realizan localmente o mediante GitHub Actions compatibles con Windows, sin despliegues externos. Los artefactos instalables se generan y distribuyen por los mecanismos autorizados del proyecto.
 - No solicitar autorización para evitar Vercel ni detener el trabajo por advertencias de Vercel: su exclusión es una decisión arquitectónica permanente ya establecida.
+
+## Alcance funcional confirmado por el usuario — POSVEN2 → POSVEN-PRO3 (20-11-2026)
+
+El encargo de esta etapa es comparar el comportamiento real de POSVEN2 (fenixlife1978/posven-pro) con POSVEN-PRO3 (fenixlife1978/Posven-pro3) e implementar en POSVEN-PRO3 las funciones que existan en POSVEN2 y estén ausentes, incompletas o se comporten de forma distinta. La meta es entregar la versión corregida 3.0.1 y su instalador Windows .exe.
+
+- La referencia funcional es POSVEN2; el producto que se modifica es POSVEN-PRO3. Auditar ambos repositorios directamente, módulo por módulo y proceso por proceso.
+- La comparación debe cubrir navegación y menú, pantallas, botones, acciones, formularios, validaciones, reglas de negocio, cálculos, permisos, reportes, impresión, mensajes y rutas completas de ejecución (UI, API, persistencia y pruebas).
+- No basta con comparar nombres de archivos ni elaborar una lista. Cada diferencia funcional comprobada debe resolverse en POSVEN-PRO3 cuando sea aplicable, adaptándola a Electron + Next.js local + SQLite local y operación autenticada por LAN.
+- Seguir el orden real de navegación/menú de POSVEN2, comenzando por el primer módulo y avanzando cronológicamente. Registrar cada módulo antes de pasar al siguiente; no saltar hallazgos antiguos ni dejar defectos confirmados sin decisión.
+- Para cada módulo, registrar en docs/PARIDAD-POSVEN-PRO3.md: origen POSVEN2, implementación equivalente en POSVEN-PRO3, botones/acciones y casos de uso comparados, diferencias concretas, clasificación, archivos afectados, pruebas necesarias, resultado de ejecución y estado. Distinguir equivalente de ausente con evidencia de código y pruebas.
+- Implementar únicamente paridad funcional con POSVEN2 y ajustes técnicos indispensables para que esa paridad opere correctamente en la arquitectura de escritorio. No agregar módulos, motores, procesos contables ni capacidades nuevas que no formen parte del comportamiento existente en POSVEN2.
+- NO desarrollar un motor independiente de reconstrucción cronológica del CPP ni ampliar el alcance contable. Los cambios de CPP/Kardex solo se justifican si la comparación demuestra una diferencia funcional real respecto de POSVEN2 o si son necesarios para corregir un defecto dentro de una función existente que se está igualando. No convertir hallazgos de costos en un proyecto separado.
+- Las correcciones ya integradas y verificadas en POSVEN-PRO3 se conservan; no revertirlas por esta rectificación de alcance.
+- No copiar infraestructura de POSVEN2. SQLite local sigue siendo la única fuente de verdad de POSVEN-PRO3; no introducir Turso, Firebase, Firestore, nube ni Vercel.
+- Agrupar los cambios por módulo cuando sea seguro. Añadir pruebas de regresión, ejecutar suite, TypeScript, build y workflow de instalador Windows; corregir y repetir los checks fallidos. Fusionar PRs solo con verificaciones satisfactorias y SHA esperado confirmado.
+- No trabajar en Linux para este repositorio ni usar Vercel en ninguna fase. Utilizar GitHub Actions compatibles con Windows y las verificaciones disponibles del proyecto.
+- Al completar toda la matriz y verificar la paridad, actualizar versión a 3.0.1, producir y validar el instalador Windows .exe y publicar GitHub Release v3.0.1 con el artefacto y notas. La autorización para esa Release aplica únicamente cuando la auditoría, correcciones, pruebas e instalador estén completos; no publicar antes.
