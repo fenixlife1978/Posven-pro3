@@ -2459,3 +2459,29 @@ test('reversión de compra elimina CxP y asientos vinculados y restaura stock y 
   const journals = await sqliteExecute({ sql: 'SELECT id FROM libro_diario WHERE id IN (?,?)', args: [purchaseJournalId, paymentJournalId] });
   assert.equal(journals.rows.length, 0, 'los asientos de compra y pago deben eliminarse juntos');
 });
+
+test('respaldo SQLite exporta registros reales y manifiesto completo sin truncar', async () => {
+  await schema.ensureSqliteSchema();
+  const stamp = new Date().toISOString();
+  const product = { id: 'BACKUP-SNAPSHOT-REGRESSION-PRODUCT', nombre: 'Producto respaldo', stock: 7, costoUSD: 1.25 };
+  const sale = { id: 'BACKUP-SNAPSHOT-REGRESSION-SALE', fecha: stamp, estado: 'completada', totalUSD: 3.5 };
+  await sqliteExecute({ sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)', args: [product.id, JSON.stringify(product), stamp], wantRows: false });
+  await sqliteExecute({ sql: 'INSERT OR REPLACE INTO ventas(id,data_json,fecha) VALUES(?,?,?)', args: [sale.id, JSON.stringify(sale), stamp], wantRows: false });
+  const snapshot = await posStore.exportBackupSnapshot();
+  assert.equal(snapshot.app, 'posven-pro');
+  assert.equal(snapshot.version, 3);
+  assert.equal(snapshot.meta.source, 'sqlite-local');
+  assert.equal(snapshot.meta.complete, true);
+  assert.equal(snapshot.meta.sqliteTables.productos, (await posStore.countRecords('productos')) );
+  assert.equal(snapshot.meta.sqliteTables.ventas, (await posStore.countRecords('ventas')) );
+  assert.ok(snapshot.data.productos.some(p => p.id === product.id && p.stock === 7));
+  assert.ok(snapshot.data.ventas.some(v => v.id === sale.id && v.totalUSD === 3.5));
+});
+
+test('exportación aborta ante JSON SQLite corrupto en vez de emitir respaldo incompleto', async () => {
+  await schema.ensureSqliteSchema();
+  const corruptId = 'BACKUP-SNAPSHOT-CORRUPT-JSON';
+  await sqliteExecute({ sql: 'INSERT OR REPLACE INTO ventas(id,data_json,fecha) VALUES(?,?,?)', args: [corruptId, '{not-json', '2026-11-21'], wantRows: false });
+  await assert.rejects(posStore.exportBackupSnapshot(), /contenido JSON inválido/);
+  await sqliteExecute({ sql: 'DELETE FROM ventas WHERE id=?', args: [corruptId], wantRows: false });
+});
