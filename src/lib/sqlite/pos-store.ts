@@ -583,6 +583,94 @@ export async function listRecords(
   return result.rows.map(rowFromDb).filter(Boolean);
 }
 
+
+function normalizedProductTextSql(jsonPath: 'nombre' | 'codigo' | 'departamento' | 'categoria'): string {
+  let expression = `COALESCE(json_extract(r.data_json,'$.${jsonPath}'),'')`;
+  for (const [from, to] of [
+    ['Á', 'A'], ['É', 'E'], ['Í', 'I'], ['Ó', 'O'], ['Ú', 'U'], ['Ü', 'U'], ['Ñ', 'N'],
+    ['á', 'a'], ['é', 'e'], ['í', 'i'], ['ó', 'o'], ['ú', 'u'], ['ü', 'u'], ['ñ', 'n'],
+  ]) expression = `replace(${expression},'${from}','${to}')`;
+  expression = `replace(replace(replace(${expression},'  ',' '),'  ',' '),'  ',' ')`;
+  return `lower(trim(${expression}))`;
+}
+
+function normalizeProductFilter(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('es');
+}
+
+/**
+ * Página del catálogo administrativo. Filtrado, total y stock bajo se calculan
+ * en SQLite; la pantalla nunca necesita hidratar todos los productos en memoria.
+ */
+export async function listProductsPage(options: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  departamento?: string;
+  categoria?: string;
+} = {}): Promise<{ records: any[]; total: number; lowStockTotal: number; page: number; pageSize: number }> {
+  assertSQLiteReady();
+  const pageSize = Math.min(100, Math.max(1, Math.floor(Number(options.pageSize) || 10)));
+  const page = Math.max(1, Math.floor(Number(options.page) || 1));
+  const offset = (page - 1) * pageSize;
+  const filters = ["COALESCE(json_extract(r.data_json,'$.activo'),1)=1"];
+  const args: any[] = [];
+
+  const search = normalizeProductFilter(options.search);
+  if (search) {
+    filters.push(`(instr(${normalizedProductTextSql('nombre')},?)>0 OR instr(${normalizedProductTextSql('codigo')},?)>0)`);
+    args.push(search, search);
+  }
+
+  const departamento = normalizeProductFilter(options.departamento);
+  if (departamento) {
+    filters.push(normalizedProductTextSql('departamento') + '=?');
+    args.push(departamento);
+  }
+
+  const categoria = normalizeProductFilter(options.categoria);
+  if (categoria) {
+    filters.push(normalizedProductTextSql('categoria') + '=?');
+    args.push(categoria);
+  }
+
+  const where = filters.join(' AND ');
+  const result = await sqliteExecute({
+    sql: `WITH filtered AS (
+        SELECT r.id,r.data_json,r.updated_at
+        FROM productos r
+        WHERE ${where}
+      ),
+      page_rows AS (
+        SELECT id,data_json,updated_at
+        FROM filtered
+        ORDER BY updated_at DESC,id DESC
+        LIMIT ? OFFSET ?
+      )
+      SELECT page_rows.id,page_rows.data_json,
+        (SELECT COUNT(*) FROM filtered) AS total,
+        (SELECT COUNT(*) FROM filtered f WHERE
+          COALESCE(CAST(json_extract(f.data_json,'$.stock') AS REAL),0)
+          <= COALESCE(CAST(json_extract(f.data_json,'$.stockMinimo') AS REAL),0)
+        ) AS low_stock_total
+      FROM (SELECT 1 AS singleton) AS metadata
+      LEFT JOIN page_rows ON 1=1
+      ORDER BY page_rows.updated_at DESC,page_rows.id DESC`,
+    args: [...args, pageSize, offset],
+  });
+
+  const total = Number(result.rows[0]?.total ?? 0);
+  const lowStockTotal = Number(result.rows[0]?.low_stock_total ?? 0);
+  const records = result.rows.filter((row: any) => row.id != null).map(rowFromDb).filter(Boolean);
+  return { records, total, lowStockTotal, page, pageSize };
+}
+
 export async function countRecords(table: SQLiteStoreTable, user?: ReadScopeUser): Promise<number> {
   assertSQLiteReady();
   const scope = await readScope(table, user);
@@ -2794,7 +2882,7 @@ export async function processReturnOrCancellationTransaction(params:any){
 
     // El límite de reintegro se calcula en SQLite con pagos reales de la venta
     // menos reintegros anteriores. Crédito y nota de crédito nunca son efectivo.
-    const normalizeRefundMethod=(value:any)=>String(value||'otros').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/\\s+/g,'_');
+    const normalizeRefundMethod=(value:any)=>String(value||'otros').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_');
     const isActualRefundMethod=(value:any)=>!['credito','nota_credito','mixto'].includes(normalizeRefundMethod(value));
     const paymentUsd=(part:any)=>{
       const explicit=Number(part?.montoUSD??part?.montoUsd??part?.amountUSD??0);

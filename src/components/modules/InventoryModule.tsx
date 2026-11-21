@@ -48,6 +48,7 @@ import {
   exportarPDFDevoluciones
 } from '@/lib/pdf-generator';
 import { ProductFormModal } from '@/components/inventory/ProductFormModal';
+import { Pagination } from '@/components/ui/pagination';
 import { PriceLabelsModal } from '@/components/inventory/PriceLabelsModal';
 import { DateRangeFilter, DateRange } from '@/components/ui/date-range-filter';
 import PeriodicInventoryExitsReport from '@/components/modules/PeriodicInventoryExitsReport';
@@ -72,6 +73,12 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   const [selectedKardexId, setSelectedKardexId] = useState<string | null>(null);
   const [selectedCPPId, setSelectedCPPId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [serverProducts, setServerProducts] = useState<Product[]>([]);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverLowStock, setServerLowStock] = useState(0);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState('');
+  const productRequestId = useRef(0);
 
   const stockKardexSyncDone = useRef(false);
 
@@ -98,6 +105,55 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   useEffect(() => {
     setPage(1);
   }, [search, catFilter, deptFilter]);
+
+  // La consulta del catálogo se ejecuta en SQLite local. Solo se descarga
+  // la página visible; total, filtros y stock bajo se calculan en el servidor.
+  useEffect(() => {
+    if (activeTab !== 'productos') return;
+    const requestId = ++productRequestId.current;
+    const timer = window.setTimeout(async () => {
+      setProductsLoading(true);
+      setProductsError('');
+      try {
+        const params = new URLSearchParams({
+          special: 'products-page',
+          page: String(page),
+          pageSize: '10',
+          search: search.trim(),
+          departamento: deptFilter,
+          categoria: catFilter,
+        });
+        const response = await fetch('/api/pos/store?' + params.toString(), {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(12000),
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok || body?.ok !== true) {
+          throw new Error(String(body?.error || 'No se pudo consultar el catálogo en SQLite local.'));
+        }
+        if (requestId !== productRequestId.current) return;
+        setServerProducts(Array.isArray(body.records) ? body.records : []);
+        setServerTotal(Number(body.total) || 0);
+        setServerLowStock(Number(body.lowStockTotal) || 0);
+        const pages = Math.max(1, Math.ceil((Number(body.total) || 0) / 10));
+        if (page > pages) setPage(pages);
+      } catch (error: any) {
+        if (requestId === productRequestId.current) {
+          setProductsError(String(error?.message || error));
+          setServerProducts([]);
+          setServerTotal(0);
+          setServerLowStock(0);
+        }
+      } finally {
+        if (requestId === productRequestId.current) setProductsLoading(false);
+      }
+    }, search.trim() ? 300 : 0);
+    return () => {
+      window.clearTimeout(timer);
+      if (productRequestId.current === requestId) productRequestId.current += 1;
+    };
+  }, [activeTab, page, search, catFilter, deptFilter, state.productos]);
   
   const [showAjuste, setShowAjuste] = useState<string | null>(null);
   const [showProducto, setShowProducto] = useState<string | null | 'nuevo'>(null);
@@ -129,6 +185,17 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     return Array.from(unique.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   }, [state.categorias, state.productos]);
 
+  // Incluye la página consultada además del cache operativo, que puede estar
+  // limitado a 5.000 productos. Las acciones de la página usan el registro real
+  // sin reemplazar el cache ni convertirlo en fuente de autoridad.
+  const knownProducts = useMemo(() => {
+    const byId = new Map<string, Product>();
+    (state.productos || []).forEach(product => byId.set(String(product.id), product));
+    // La lectura recién consultada en SQLite prevalece sobre el cache operativo.
+    (serverProducts || []).forEach(product => byId.set(String(product.id), product));
+    return Array.from(byId.values());
+  }, [serverProducts, state.productos]);
+
   const normalizedSearch = normalizeCatalogFilter(search);
   const prods = (state.productos || []).filter(p =>
     p.activo &&
@@ -138,16 +205,15 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
-  const lowStockCount = prods.filter(p => p.stock <= (p.stockMinimo || 0)).length;
-
   const pageSize = 10;
-  const totalPages = Math.max(1, Math.ceil(prods.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(serverTotal / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pageProds = prods.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pageProds = serverProducts;
+  const lowStockCount = serverLowStock;
 
   const eliminar = (id: string) => {
     if (!confirm('¿Seguro que desea eliminar este producto?')) return;
-    const nuevos = state.productos.map(p => p.id === id ? { ...p, activo: false } : p);
+    const nuevos = knownProducts.map(p => p.id === id ? { ...p, activo: false } : p);
     updateState({ productos: nuevos });
   };
 
@@ -160,7 +226,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
               <div className="p-3 bg-brand-gold-soft rounded-xl"><PackageCheck className="w-6 h-6 text-brand-gold-deep" /></div>
               <div>
                 <p className="text-[10px] font-black uppercase text-ink/40">Total Productos</p>
-                <p className="text-2xl font-black text-ink">{prods.length}</p>
+                <p className="text-2xl font-black text-ink">{serverTotal}</p>
               </div>
             </div>
             <div className={`kpi p-6 rounded-2xl shadow-sm border-l-[6px] flex items-center gap-4 ${lowStockCount > 0 ? 'bg-status-danger-soft border-l-status-danger' : 'bg-white border-line'}`}>
@@ -190,7 +256,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 <select 
                   className="form-select h-11 bg-white border-line text-xs font-black uppercase"
                   value={deptFilter} 
-                  onChange={e => setDeptFilter(e.target.value)}
+                  onChange={e => { setDeptFilter(e.target.value); setCatFilter(''); }}
                 >
                   <option value="">DEPARTAMENTO</option>
                   {cleanDepartamentos.map((d, index) => (
@@ -245,7 +311,11 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   </TableRow>
                 </TableHeader>
                 <TableBody className="bg-white">
-                  {prods.length === 0 ? (
+                  {productsLoading ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-12 text-ink/40 font-black uppercase text-xs">Consultando productos en SQLite local...</TableCell></TableRow>
+                  ) : productsError ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-12 text-status-danger font-black text-xs">{productsError}</TableCell></TableRow>
+                  ) : serverTotal === 0 ? (
                     <TableRow><TableCell colSpan={7} className="text-center py-20 text-ink/20 font-black italic uppercase">No se encontraron productos coincidentes</TableCell></TableRow>
                   ) : (
                     pageProds.map(p => (
@@ -279,6 +349,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 </TableBody>
               </Table>
             </div>
+            <Pagination page={safePage} totalPages={totalPages} total={serverTotal} pageSize={pageSize} onPageChange={setPage} />
           </Card>
         </div>
       );
@@ -332,7 +403,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
       {showProducto && (
         <ProductFormModal 
           state={state}
-          producto={showProducto === 'nuevo' ? undefined : state.productos.find(p => p.id === showProducto)}
+          producto={showProducto === 'nuevo' ? undefined : knownProducts.find(p => p.id === showProducto)}
           onClose={() => setShowProducto(null)}
           onUpdateLists={(lists) => updateState(lists)}
           onSave={(datos) => {
@@ -352,7 +423,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 tasaInicialBCVReconstruccion,
                 fechaInicialReconstruccion
               };
-              nuevosProds = [...state.productos, nuevo];
+              nuevosProds = [...knownProducts, nuevo];
               if (nuevo.stock > 0) {
                 const mov: Movimiento = {
                   id: Store.uid(),
@@ -375,7 +446,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                 updateState({ productos: nuevosProds });
               }
             } else {
-              nuevosProds = state.productos.map(p => p.id === showProducto ? { ...p, ...datos } : p);
+              nuevosProds = knownProducts.map(p => p.id === showProducto ? { ...p, ...datos } : p);
               updateState({ productos: nuevosProds });
             }
             setShowProducto(null);
@@ -430,11 +501,11 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
 
       {showAjuste && (
         <ModalAjuste 
-          producto={state.productos.find(p => p.id === showAjuste)!}
+          producto={knownProducts.find(p => p.id === showAjuste)!}
           tasaBCV={Number(state.tasa) || 0}
           onClose={() => setShowAjuste(null)}
           onSave={async (mov, nuevoCosto) => {
-            const productoOriginal = state.productos.find(p => p.id === mov.productoId);
+            const productoOriginal = knownProducts.find(p => p.id === mov.productoId);
             if (!productoOriginal) return;
 
             const ahora = mov.fecha || Utils.ahora();
