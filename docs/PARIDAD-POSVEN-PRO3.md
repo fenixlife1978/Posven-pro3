@@ -497,3 +497,15 @@ La auditoría seguirá el menú de administrador observado en ambos repositorios
 - `InventoryModule` ahora consulta la página solicitada en `/api/pos/store`, presenta los totales devueltos por SQLite, muestra estados de carga/error y usa el componente de paginación ya existente. Las acciones de edición/eliminación/ajuste consideran también los registros de la página consultada que no estén en el cache operativo.
 - Se añadió `tests/inventory-products-page.test.cjs` con más de 5.000 registros: primera/última página, ausencia de solapamiento, exclusión de inactivos, stock bajo, búsqueda por nombre y código, filtros normalizados con acentos y página posterior al final.
 - **Estado de validación:** código y prueba agregados en la rama; pendiente ejecutar los workflows Windows (suite, TypeScript, Next build y empaquetado EXE) antes de integrar. La auditoría del módulo Inventario sigue abierta: quedan por contrastar los demás flujos auxiliares (PDF, habladores, conteo físico, alta/edición, ajustes y reportes) y sus diferencias reales frente a POSVEN2.
+
+#### Hallazgo adicional — hidratación completa del catálogo (20-11-2026)
+
+La comparación del flujo completo reveló una segunda diferencia respecto de POSVEN2: su `loadCollection('productos')` recorre todas las páginas de 2.000 registros; POSVEN-PRO3 inicializaba y actualizaba `state.productos` con un solo `GET` limitado a 5.000. Además, el `loadCollection` de Pro3 solo leía una página (500 por defecto). Aunque el listado principal ya estaba paginado por SQLite, esto dejaba incompletos los datos usados por el POS, selección de componentes de kits, conteo físico, reportes y otras pantallas que consumen `state.productos`.
+
+**Corrección aplicada en la rama `fix/inventory-full-sqlite-product-hydration`:**
+- `bootstrapProductos` ahora usa `tryLocalServerReadAll('productos', {}, 2000)`.
+- `loadCollection('productos')` recorre todas las páginas de SQLite en lotes de 2.000, sin cambiar la carga de las demás colecciones.
+- El polling de productos de todas las terminales también recorre el catálogo completo en lotes de 2.000, de modo que una actualización posterior no vuelva a truncar el cache a 5.000.
+- La prueba de regresión valida que 5.006 registros (5.005 activos y uno inactivo) se recuperan en lotes 2.000 + 2.000 + 1.006 sin omisiones ni duplicados.
+
+**Estado:** implementación y regresión añadidas; pendientes workflows Windows de suite, TypeScript, Next.js e instalador antes de integrar. La auditoría de Inventario seguirá abierta hasta contrastar los flujos auxiliares y reportes con POSVEN2.
