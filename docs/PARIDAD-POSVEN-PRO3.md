@@ -446,3 +446,29 @@ Las entradas manuales que introducen un costo nuevo guardan ese importe como sna
 Todo producto creado desde esta versión conserva, desde el alta, un baseline explícito de stock, costo unitario USD, tasa BCV disponible y fecha/hora de apertura. El baseline no se recalcula al editar nombre, precio, categoría u otros atributos del producto. Cuando el stock inicial es positivo, el movimiento Kardex de tipo `inicial` lleva además el snapshot de costo USD y, si había tasa válida al crear el producto, su equivalente Bs y tasa histórica.
 
 Estos campos constituyen el punto de partida verificable para futuras reconstrucciones cronológicas. No se deben inferir retrospectivamente para productos antiguos que carezcan de evidencia; esos historiales deben identificarse como incompletos hasta una regularización documentada.
+
+## Rectificación del alcance y orden de auditoría (20-11-2026)
+
+Esta sección rectifica y prevalece sobre cualquier nota histórica anterior que pudiera interpretarse como autorización para desarrollar una reconstrucción cronológica general del CPP. El objetivo actual y único es la paridad funcional POSVEN2 → POSVEN-PRO3: identificar funciones existentes en POSVEN2 que falten, estén incompletas o se comporten distinto en POSVEN-PRO3 e implementarlas adaptadas a SQLite local. No se desarrollará un motor independiente de reconstrucción del CPP ni se ampliará el alcance contable. Los cambios anteriores ya integrados se conservan; solo se tocarán costos/Kardex cuando la comparación funcional lo justifique.
+
+La auditoría seguirá el menú de administrador observado en ambos repositorios, en este orden: 1) Dashboard, 2) Inventario, 3) Entradas (Compras), 4) Proveedores, 5) Contabilidad, 6) Cuentas por Cobrar, 7) Cuentas por Pagar, 8) Reportes, 9) Configuración, 10) Usuarios y 11) Global Control. El módulo POS/Ventas se audita como flujo operativo de cajero, separado del menú administrativo. Cada módulo debe quedar comparado y documentado antes de avanzar; las diferencias reales aplicables se implementarán y probarán.
+
+### Módulo 1 — Dashboard (auditoría inicial 20-11-2026)
+
+**Archivos comparados:**
+- POSVEN2: src/components/modules/DashboardModule.tsx (SHA 72d2de8f724aa919125ddc51cca71da0fba1ccf5).
+- POSVEN-PRO3: src/components/modules/DashboardModule.tsx (SHA c9fc68022471d78afbab5cc937d434b28ee06425).
+- Navegación: src/app/page.tsx en ambos repositorios. Dashboard es el primer elemento del grupo Operaciones y el módulo administrativo predeterminado.
+- API de conteo: POSVEN2 src/app/api/turso/store/route.ts; POSVEN-PRO3 src/app/api/pos/store/route.ts.
+
+**Comparación de capacidades y acciones:**
+- Ambos dashboards presentan el resumen de ventas, indicadores operativos y el estado informativo del sistema; no se encontró una tarjeta/acción funcional de POSVEN2 ausente en POSVEN-PRO3.
+- POSVEN2 muestra el número de ventas desde state.ventas.length. POSVEN-PRO3 mejora la lectura al consultar el conteo histórico real de ventas mediante /api/pos/store?special=count&table=ventas, con credenciales, no-cache, fallback al estado cargado y cancelación lógica de la actualización al desmontar el componente. La ruta SQLite valida sesión y aplica el ámbito del usuario al conteo.
+- El acceso rápido a Inventario en POSVEN2 aparece como botón sin callback de navegación. POSVEN-PRO3 incorpora onNavigate y conecta el botón al módulo Inventario; es una mejora existente en el destino.
+- El texto de sincronización heredado de Firebase en POSVEN2 está adaptado en POSVEN-PRO3 para describir SQLite local. No se trasladan dependencias remotas.
+
+**Clasificación:** equivalente mediante otra implementación / POSVEN-PRO3 mejorado. No se detectó omisión funcional de POSVEN2 que requiera código adicional en este módulo. No se justifica modificar CPP, contabilidad ni persistencia.
+
+**Verificación realizada:** comparación directa de ambos componentes, navegación y rutas de conteo. No se ejecutó build ni suite porque este módulo no requirió cambios de código en esta pasada. La existencia de la consulta de conteo en el backend está verificada por lectura de código; no se afirma una prueba de ejecución de escritorio.
+
+**Estado:** auditoría funcional del Dashboard completada; sin brecha de paridad identificada. Siguiente módulo según menú: Inventario.
