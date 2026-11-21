@@ -3745,7 +3745,16 @@ export async function deletePurchaseTransaction(params:any){
     const purchaseJournals=(await tx.execute({
       sql:"SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
       args:[String(invoiceNumber)]
-    })).rows.map(rowFromDb).filter((d:any)=>String(d.categoria||'')==='COMPRA');
+    })).rows.map(rowFromDb).filter((d:any)=>{
+      if(String(d.categoria||'')!=='COMPRA') return false;
+      // La factura puede repetirse entre proveedores. Los asientos de compra
+      // nuevos identifican al proveedor en concepto; no eliminar asientos de
+      // otra compra con el mismo número. Si el registro legado no lo identifica,
+      // se conserva por seguridad y se evita una eliminación ambigua.
+      const supplierTag='PROV: '+String(supplier||'').trim().replace(/\s+/g,' ').toUpperCase();
+      const concept=String(d.concepto||'').trim().replace(/\s+/g,' ').toUpperCase();
+      return Boolean(supplierTag.length>5 && concept.includes(supplierTag));
+    });
 
     // Si la compra generó una CxP y luego recibió abonos, esos abonos también
     // generaron asientos contables. Al eliminar la compra se eliminan esos
