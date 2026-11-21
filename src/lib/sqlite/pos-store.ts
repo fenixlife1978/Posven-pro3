@@ -1295,11 +1295,14 @@ export async function createSaleTransaction(params: {
         : null;
       if (!savedSale) throw new Error('La venta ya fue procesada, pero no se pudo recuperar su comprobante. No repita el cobro; consulte el historial.');
       const savedDebt = rowFromDb((await tx.execute(txSelect('cxc', 'CRD-' + String(saved.referencia)))).rows[0]);
-      const savedTerminal = terminalId
-        ? rowFromDb((await tx.execute(txSelect('terminales', terminalId))).rows[0])
+      // La recuperación debe devolver la terminal original persistida en el comprobante,
+      // nunca la terminal desde la que llega el reintento (puede ser otra en caso de admin).
+      const originalTerminalId = String(savedSale.terminalId || '');
+      const savedTerminal = originalTerminalId
+        ? rowFromDb((await tx.execute(txSelect('terminales', originalTerminalId))).rows[0])
         : null;
-      if(terminalId&&!savedTerminal)throw new Error('La terminal de la venta ya no existe.');
-      if(terminalId&&savedTerminal)assertTerminalAccess(params.user,savedTerminal);
+      if(originalTerminalId&&!savedTerminal)throw new Error('La terminal original de la venta ya no existe.');
+      if(originalTerminalId&&savedTerminal)assertTerminalAccess(params.user,savedTerminal);
       if(params.user?.rol==='cajero'&&String(savedSale.terminalId||'')!==String(terminalId||''))throw new Error('El cajero solo puede recuperar ventas de su propia terminal.');
       const savedMovements = (await tx.execute({
         sql: "SELECT id,data_json FROM movimientos WHERE json_extract(data_json,'$.referencia') LIKE ?",
@@ -1318,7 +1321,7 @@ export async function createSaleTransaction(params: {
       }
       const savedJournals = (await tx.execute({
         sql: "SELECT id,data_json FROM libro_diario WHERE json_extract(data_json,'$.referencia')=?",
-        args: [String(saved.referencia)+'-'+String(terminalId||'GLOBAL')],
+        args: [String(saved.referencia)+'-'+String(savedSale.terminalId||'GLOBAL')],
       })).rows.map(rowFromDb).filter(Boolean);
       return {
         sale: savedSale, debt: savedDebt, journals: savedJournals, journal: savedJournals,
