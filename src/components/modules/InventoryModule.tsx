@@ -338,11 +338,19 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
           onSave={(datos) => {
             let nuevosProds;
             if (showProducto === 'nuevo') {
+              const fechaInicialReconstruccion = Utils.ahora();
+              const stockInicialReconstruccion = Math.max(0, Number(datos.stock) || 0);
+              const costoInicialUSDReconstruccion = Math.max(0, Number(datos.costoUSD) || 0);
+              const tasaInicialBCVReconstruccion = Number(state.tasa) > 0 ? Number(state.tasa) : undefined;
               const nuevo: Product = {
                 ...datos,
                 id: Store.uid(),
                 fechaCreacion: Utils.hoy(),
-                activo: true
+                activo: true,
+                stockInicialReconstruccion,
+                costoInicialUSDReconstruccion,
+                tasaInicialBCVReconstruccion,
+                fechaInicialReconstruccion
               };
               nuevosProds = [...state.productos, nuevo];
               if (nuevo.stock > 0) {
@@ -353,9 +361,14 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
                   cantidad: nuevo.stock,
                   stockAntes: 0,
                   stockDespues: nuevo.stock,
-                  fecha: Utils.ahora(),
+                  fecha: fechaInicialReconstruccion,
                   referencia: 'INICIAL',
-                  terminalId: 'SISTEMA'
+                  terminalId: 'SISTEMA',
+                  costoUnitarioUSD: costoInicialUSDReconstruccion,
+                  ...(tasaInicialBCVReconstruccion ? {
+                    tasaBCV: tasaInicialBCVReconstruccion,
+                    costoUnitarioBs: costoInicialUSDReconstruccion * tasaInicialBCVReconstruccion
+                  } : {})
                 };
                 updateState({ productos: nuevosProds, movimientos: [...state.movimientos, mov] });
               } else {

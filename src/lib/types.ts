@@ -37,6 +37,11 @@ export interface Product {
   permiteVentaLibreBS?: boolean;
   stock: number;
   stockMinimo: number;
+  /** Baseline verificable para reconstrucción cronológica del CPP. Se fija al crear el producto y no se altera al editarlo. */
+  stockInicialReconstruccion?: number;
+  costoInicialUSDReconstruccion?: number;
+  tasaInicialBCVReconstruccion?: number;
+  fechaInicialReconstruccion?: string;
   fechaCreacion: string;
   activo: boolean;
   aplicaIVA?: boolean;

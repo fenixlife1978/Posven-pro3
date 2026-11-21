@@ -439,3 +439,10 @@ Esta corrección restaura el snapshot histórico del movimiento reparado. La rec
 Los informes de ajustes, consumos y colaboraciones valoran cada movimiento con su snapshot `costoUnitarioUSD` o, cuando está disponible, con el costo Bs dividido por la tasa BCV histórica. Los registros antiguos sin costo verificable se muestran como `SIN HISTÓRICO` y se excluyen de los totales; nunca se sustituyen por el CPP actual. El detalle CPP muestra el costo unitario de cada compra/entrada y el inventario actual conserva seis decimales en sus cálculos internos.
 
 Las entradas manuales que introducen un costo nuevo guardan ese importe como snapshot del movimiento. El conteo físico excluye los kits `stock_componentes` porque sus existencias reales están representadas por sus componentes, que son las unidades que deben contarse.
+
+
+### Baseline de apertura para reconstrucción cronológica del CPP
+
+Todo producto creado desde esta versión conserva, desde el alta, un baseline explícito de stock, costo unitario USD, tasa BCV disponible y fecha/hora de apertura. El baseline no se recalcula al editar nombre, precio, categoría u otros atributos del producto. Cuando el stock inicial es positivo, el movimiento Kardex de tipo `inicial` lleva además el snapshot de costo USD y, si había tasa válida al crear el producto, su equivalente Bs y tasa histórica.
+
+Estos campos constituyen el punto de partida verificable para futuras reconstrucciones cronológicas. No se deben inferir retrospectivamente para productos antiguos que carezcan de evidencia; esos historiales deben identificarse como incompletos hasta una regularización documentada.
