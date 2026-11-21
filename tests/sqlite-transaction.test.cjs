@@ -2485,3 +2485,24 @@ test('exportación aborta ante JSON SQLite corrupto en vez de emitir respaldo in
   await assert.rejects(posStore.exportBackupSnapshot(), /contenido JSON inválido/);
   await sqliteExecute({ sql: 'DELETE FROM ventas WHERE id=?', args: [corruptId], wantRows: false });
 });
+\n\ntest('eliminar compra no borra asiento COMPRA de otro proveedor con la misma factura', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-21T16:00:00.000Z';
+  const invoice = 'FACT-COLLISION-001';
+  const suppliers = ['Proveedor Alfa', 'Proveedor Beta'];
+  for (const supplier of suppliers) {
+    const purchaseId = 'PURCHASE-COLLISION-'+supplier.split(' ').pop().toUpperCase();
+    const debtId = 'DEBT-COLLISION-'+supplier.split(' ').pop().toUpperCase();
+    const journalId = 'JOURNAL-COLLISION-'+supplier.split(' ').pop().toUpperCase();
+    const purchase = { id: purchaseId, fecha: '2026-11-21', fechaHora: at, proveedor: supplier, numeroFactura: invoice, montoUSD: 10, pagadoUSD: 10, saldoUSD: 0, items: [] };
+    const debt = { id: debtId, fecha: '2026-11-21', proveedor: supplier, numeroFactura: invoice, montoUSD: 10, abonadoUSD: 0, saldoUSD: 10, estado: 'pendiente', historialPagos: [] };
+    const journal = { id: journalId, fecha: at, tipo: 'egreso', categoria: 'COMPRA', montoUSD: 10, montoBS: 0, referencia: invoice, concepto: 'COMPRA MERCANCIA FACT #'+invoice+' - PROV: '+supplier.toUpperCase() };
+    for (const [table, record] of [['compras',purchase],['cxp',debt],['libro_diario',journal]]) {
+      await sqliteExecute({sql:'INSERT OR REPLACE INTO '+table+'(id,data_json,fecha) VALUES(?,?,?)',args:[record.id,JSON.stringify(record),at],wantRows:false});
+    }
+  }
+  const result=await posStore.deletePurchaseTransaction({operationId:'DELETE-COLLISION-ALFA',purchaseId:'PURCHASE-COLLISION-ALFA',invoiceNumber:invoice,supplier:'Proveedor Alfa',purchaseDate:'2026-11-21'});
+  assert.equal(result.deletedJournals,1);
+  assert.equal((await sqliteExecute({sql:'SELECT id FROM libro_diario WHERE id=?',args:['JOURNAL-COLLISION-ALFA']})).rows.length,0);
+  assert.equal((await sqliteExecute({sql:'SELECT id FROM libro_diario WHERE id=?',args:['JOURNAL-COLLISION-BETA']})).rows.length,1,'el asiento de proveedor Beta debe preservarse');
+});
