@@ -446,3 +446,45 @@ Las entradas manuales que introducen un costo nuevo guardan ese importe como sna
 Todo producto creado desde esta versión conserva, desde el alta, un baseline explícito de stock, costo unitario USD, tasa BCV disponible y fecha/hora de apertura. El baseline no se recalcula al editar nombre, precio, categoría u otros atributos del producto. Cuando el stock inicial es positivo, el movimiento Kardex de tipo `inicial` lleva además el snapshot de costo USD y, si había tasa válida al crear el producto, su equivalente Bs y tasa histórica.
 
 Estos campos constituyen el punto de partida verificable para futuras reconstrucciones cronológicas. No se deben inferir retrospectivamente para productos antiguos que carezcan de evidencia; esos historiales deben identificarse como incompletos hasta una regularización documentada.
+
+## Rectificación del alcance y orden de auditoría (20-11-2026)
+
+Esta sección rectifica y prevalece sobre cualquier nota histórica anterior que pudiera interpretarse como autorización para desarrollar una reconstrucción cronológica general del CPP. El objetivo actual y único es la paridad funcional POSVEN2 → POSVEN-PRO3: identificar funciones existentes en POSVEN2 que falten, estén incompletas o se comporten distinto en POSVEN-PRO3 e implementarlas adaptadas a SQLite local. No se desarrollará un motor independiente de reconstrucción del CPP ni se ampliará el alcance contable. Los cambios anteriores ya integrados se conservan; solo se tocarán costos/Kardex cuando la comparación funcional lo justifique.
+
+La auditoría seguirá el menú de administrador observado en ambos repositorios, en este orden: 1) Dashboard, 2) Inventario, 3) Entradas (Compras), 4) Proveedores, 5) Contabilidad, 6) Cuentas por Cobrar, 7) Cuentas por Pagar, 8) Reportes, 9) Configuración, 10) Usuarios y 11) Global Control. El módulo POS/Ventas se audita como flujo operativo de cajero, separado del menú administrativo. Cada módulo debe quedar comparado y documentado antes de avanzar; las diferencias reales aplicables se implementarán y probarán.
+
+### Módulo 1 — Dashboard (auditoría inicial 20-11-2026)
+
+**Archivos comparados:**
+- POSVEN2: src/components/modules/DashboardModule.tsx (SHA 72d2de8f724aa919125ddc51cca71da0fba1ccf5).
+- POSVEN-PRO3: src/components/modules/DashboardModule.tsx (SHA c9fc68022471d78afbab5cc937d434b28ee06425).
+- Navegación: src/app/page.tsx en ambos repositorios. Dashboard es el primer elemento del grupo Operaciones y el módulo administrativo predeterminado.
+- API de conteo: POSVEN2 src/app/api/turso/store/route.ts; POSVEN-PRO3 src/app/api/pos/store/route.ts.
+
+**Comparación de capacidades y acciones:**
+- Ambos dashboards presentan el resumen de ventas, indicadores operativos y el estado informativo del sistema; no se encontró una tarjeta/acción funcional de POSVEN2 ausente en POSVEN-PRO3.
+- POSVEN2 muestra el número de ventas desde state.ventas.length. POSVEN-PRO3 mejora la lectura al consultar el conteo histórico real de ventas mediante /api/pos/store?special=count&table=ventas, con credenciales, no-cache, fallback al estado cargado y cancelación lógica de la actualización al desmontar el componente. La ruta SQLite valida sesión y aplica el ámbito del usuario al conteo.
+- El acceso rápido a Inventario en POSVEN2 aparece como botón sin callback de navegación. POSVEN-PRO3 incorpora onNavigate y conecta el botón al módulo Inventario; es una mejora existente en el destino.
+- El texto de sincronización heredado de Firebase en POSVEN2 está adaptado en POSVEN-PRO3 para describir SQLite local. No se trasladan dependencias remotas.
+
+**Clasificación:** equivalente mediante otra implementación / POSVEN-PRO3 mejorado. No se detectó omisión funcional de POSVEN2 que requiera código adicional en este módulo. No se justifica modificar CPP, contabilidad ni persistencia.
+
+**Verificación realizada:** comparación directa de ambos componentes, navegación y rutas de conteo. No se ejecutó build ni suite porque este módulo no requirió cambios de código en esta pasada. La existencia de la consulta de conteo en el backend está verificada por lectura de código; no se afirma una prueba de ejecución de escritorio.
+
+**Estado:** auditoría funcional del Dashboard completada; sin brecha de paridad identificada. Siguiente módulo según menú: Inventario.
+
+### Módulo 2 — Inventario (primera comparación funcional 20-11-2026; auditoría abierta)
+
+**Archivos comparados:** POSVEN2 src/components/modules/InventoryModule.tsx (SHA b8090d034d656a40f1e7fb85ae53cd73cf8ed1cd) y POSVEN-PRO3 src/components/modules/InventoryModule.tsx (SHA 8727b302f2a6900ab963ef11382cf3abfc832d77). Se revisaron también src/lib/db-store.ts y src/app/api/pos/store/route.ts de Pro3 para confirmar la carga del catálogo.
+
+**Capacidades y acciones identificadas en ambos:** listado/búsqueda de productos, filtros de departamento y categoría, exportación PDF simple, conteo físico, alta de producto, edición, Kardex, ajustes y desactivación; pestañas de Inventario CPP, ventas, devoluciones, Kardex Fiscal, ajustes y consumo/colaboraciones. Los controles equivalentes están presentes en Pro3.
+
+**Mejoras ya presentes en POSVEN-PRO3:** botón Habladores/etiquetas de precios y reporte de salidas periódicas; normalización de búsqueda y etiquetas; opciones de departamento/categoría derivadas de los datos reales en lugar de sembrar listas de otro comercio; costo histórico de movimientos sin sustituir datos faltantes por CPP actual; conteo de componentes de kits; snapshots de costo/tasa y mayor precisión decimal. Se conservan como mejoras propias del destino. No son motivo para ampliar la tarea hacia un motor de reconstrucción CPP.
+
+**Brecha técnica/funcional confirmada para corregir:** POSVEN2 solicita el catálogo por páginas al servidor con filtros de búsqueda/departamento/categoría y devuelve total y bajo stock. POSVEN-PRO3 presenta la página desde state.productos, pero el arranque y la actualización periódica de esa colección consultan SQLite con limit=5000 (src/lib/db-store.ts, bootstrapProductos e init). La paginación de Pro3 es solo local sobre esos registros. Por tanto, un catálogo que supere 5.000 productos no puede recorrerse completo desde Inventario, mientras POSVEN2 no depende de descargar el catálogo entero al navegador. El endpoint SQLite actual no ofrece la operación equivalente products-page; listRecords admite un máximo de 10.000 por consulta y no resuelve la paginación/filtrado completo de esta pantalla.
+
+**Acción requerida:** implementar consulta SQLite local paginada para Inventario, con búsqueda normalizada, filtros de departamento/categoría, total y conteo de stock bajo; conectarla al componente conservando SQLite como autoridad y sin depender de servicios cloud. Añadir regresiones que creen más de 5.000 productos y comprueben navegación entre páginas, filtros, total, stock bajo y límites de permisos. Esta tarea es paridad de Inventario, no una ampliación de CPP.
+
+**Otras diferencias observadas que requieren completar revisión antes de cerrar el módulo:** Pro3 elimina departamentos/categorías predeterminados específicos del respaldo de un comercio de POSVEN2 y utiliza catálogos reales de SQLite; esta decisión evita contaminar instalaciones nuevas y se conserva salvo evidencia de que exista una función genérica de catálogo que se haya perdido. Se debe terminar la inspección de formularios de alta/edición, importación, acciones de ajuste, reportes y transacciones SQLite antes de declarar el módulo cerrado.
+
+**Estado:** brecha de paginación SQLite identificada y pendiente de implementación/pruebas; auditoría de Inventario abierta. No se afirma paridad completa ni se ha ejecutado build por esta inspección sin cambios de código. Siguiente módulo se mantiene en espera hasta cerrar Inventario.
