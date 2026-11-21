@@ -204,8 +204,6 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
     (deptFilter ? normalizeCatalogFilter(p.departamento) === normalizeCatalogFilter(deptFilter) : true)
   );
 
-  const lowStockCount = prods.filter(p => p.stock <= (p.stockMinimo || 0)).length;
-
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(serverTotal / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -227,7 +225,7 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
               <div className="p-3 bg-brand-gold-soft rounded-xl"><PackageCheck className="w-6 h-6 text-brand-gold-deep" /></div>
               <div>
                 <p className="text-[10px] font-black uppercase text-ink/40">Total Productos</p>
-                <p className="text-2xl font-black text-ink">{prods.length}</p>
+                <p className="text-2xl font-black text-ink">{serverTotal}</p>
               </div>
             </div>
             <div className={`kpi p-6 rounded-2xl shadow-sm border-l-[6px] flex items-center gap-4 ${lowStockCount > 0 ? 'bg-status-danger-soft border-l-status-danger' : 'bg-white border-line'}`}>
