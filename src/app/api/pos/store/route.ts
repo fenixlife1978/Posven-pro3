@@ -5,6 +5,7 @@ import {
   getRecord,
   listRecords,
   countRecords,
+  listProductsPage,
   upsertRecords,
   syncProductChanges,
   syncRecords,
@@ -62,6 +63,17 @@ export async function GET(request: Request) {
     const user = await requireUser(request);
     const url = new URL(request.url);
     const special = url.searchParams.get('special');
+    if (special === 'products-page') {
+      if (user.rol !== 'administrador') throw new Error('Se requiere administrador.');
+      const result = await listProductsPage({
+        page: Number(url.searchParams.get('page') || 1),
+        pageSize: Number(url.searchParams.get('pageSize') || 10),
+        search: url.searchParams.get('search') || '',
+        departamento: url.searchParams.get('departamento') || '',
+        categoria: url.searchParams.get('categoria') || '',
+      });
+      return NextResponse.json({ ...result, ok: true });
+    }
     if (special === 'config') {
       const config = await getAppConfig();
       return NextResponse.json({ ok: true, config: configVisibleToRole(config, user.rol) });
