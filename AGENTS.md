@@ -84,3 +84,30 @@ El encargo de esta etapa es comparar el comportamiento real de POSVEN2 (fenixlif
 - Agrupar los cambios por módulo cuando sea seguro. Añadir pruebas de regresión, ejecutar suite, TypeScript, build y workflow de instalador Windows; corregir y repetir los checks fallidos. Fusionar PRs solo con verificaciones satisfactorias y SHA esperado confirmado.
 - No trabajar en Linux para este repositorio ni usar Vercel en ninguna fase. Utilizar GitHub Actions compatibles con Windows y las verificaciones disponibles del proyecto.
 - Al completar toda la matriz y verificar la paridad, actualizar versión a 3.0.1, producir y validar el instalador Windows .exe y publicar GitHub Release v3.0.1 con el artefacto y notas. La autorización para esa Release aplica únicamente cuando la auditoría, correcciones, pruebas e instalador estén completos; no publicar antes.
+
+
+## Registro de avance de auditoría POSVEN2 → POSVEN-PRO3 (21-11-2026)
+
+### Módulos revisados en esta ronda
+- [x] Inventario: correcciones de paginación y carga de catálogo completo integradas (PR #65 y #66); CI Windows y artefacto de instalador verificados.
+- [x] Ventas/POS: comparación estática de módulo principal, modales de cobro/crédito y devoluciones; no se encontró omisión estática. Falta validación manual completa en Windows con scanner/impresora y casos reales.
+- [x] Entradas/Compras: comparación estática; flujo, deuda CxP, asiento y entrada de stock conservados, Pro3 mantiene precisión/filtros/deduplicación.
+- [x] Proveedores: handlers y labels principales comparados; no se observó diferencia funcional.
+- [x] Contabilidad: handlers/acciones comparados; diferencias sintácticas menores sin cambio de función.
+- [x] CxC: revisión estática; detalle inline de POSVEN2 encapsulado en CreditDetailModal de Pro3, con paginación/búsqueda adicional.
+- [x] CxP: handlers y acciones de pagos individuales/globales, liquidación cronológica, cronología y deuda directa comparados.
+- [x] Reportes: Pro3 conserva ventas, Z, PDF e impresión y añade métodos de pago, costos históricos faltantes, equivalencia Bs y reimpresión.
+- [x] Configuración: revisada; respaldos/restauración, catálogos, seguridad, datos empresa y reparaciones adaptados a SQLite local; se añadió LAN.
+- [x] Usuarios: handlers principales de creación/edición/bloqueo/eliminación comparados.
+- [x] Global Control: terminales y gestión de identidades/operadores comparados.
+- [x] Dashboard: comparación estática de los resúmenes y acciones principales.
+
+### Estado de evidencia (no confundir con cierre de pruebas manuales)
+
+Las casillas anteriores significan **revisión estática comparativa inicial**, no certificación exhaustiva de cada flujo con datos reales ni pruebas manuales de hardware. La auditoría de paridad funcional detallada sigue abierta hasta:
+1. Profundizar en casos de extremo a extremo POS, devoluciones/anulaciones, cobros y arqueo X/Z, CxC/CxP, compras, reportes e importación/restauración.
+2. Convertir cada diferencia/defecto descubierto en corrección y prueba automatizada, ejecutar workflows Windows y verificar artefacto de instalador.
+3. Auditar casos límite, permisos y transacciones (duplicados, doble envío, datos históricos incompletos, reversión, fallos de SQLite y concurrencia LAN).
+4. Completar la matriz de pruebas por módulo y resolver cualquier brecha antes de versionar 3.0.1.
+
+PRs de documentación integrados durante esta ronda: #67 (Inventario/Ventas), #68 (Compras), #69 (Proveedores/Finanzas), #70 (Reportes/Configuración/Administración). La auditoría funcional no se considera finalizada y no se autoriza publicar v3.0.1 hasta completar la evidencia pendiente.
