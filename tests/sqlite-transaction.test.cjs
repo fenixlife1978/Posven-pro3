@@ -930,7 +930,23 @@ test('el alta del primer administrador acepta correos válidos y rechaza sólo f
   // Reproduce installations created before is_seed_admin was set correctly:
   // restore must adopt the authenticated local administrator, not fail or
   // trust a user record supplied by the imported backup.
+  // A backup must round-trip real operational records, not merely its metadata.
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
+    args: ['ROUNDTRIP-PRODUCT', JSON.stringify({ id: 'ROUNDTRIP-PRODUCT', nombre: 'Producto de prueba', stock: 23, costoUSD: 4.25 })],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO movimientos(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['ROUNDTRIP-MOV', JSON.stringify({ id: 'ROUNDTRIP-MOV', productoId: 'ROUNDTRIP-PRODUCT', tipo: 'entrada', cantidad: 23 }), '2026-11-20T10:00:00.000Z'],
+    wantRows: false,
+  });
   const backup = await posStore.exportBackupSnapshot();
+  assert.equal(backup.meta.complete, true);
+  assert.equal(backup.meta.sqliteTables.productos, backup.data.productos.length);
+  assert.equal(backup.meta.sqliteTables.movimientos, backup.data.movimientos.length);
+  assert.ok(backup.data.productos.some(row => row.id === 'ROUNDTRIP-PRODUCT'));
+  assert.ok(backup.data.movimientos.some(row => row.id === 'ROUNDTRIP-MOV'));
   await sqliteExecute({
     sql: 'UPDATE users SET is_seed_admin=0 WHERE id=?',
     args: [valid.id],
@@ -941,6 +957,12 @@ test('el alta del primer administrador acepta correos válidos y rechaza sólo f
     backup,
   });
   assert.equal(restore.preservedAdminId, valid.id);
+  const restoredProduct = await posStore.getRecord('productos', 'ROUNDTRIP-PRODUCT', { id: valid.id, rol: 'administrador' });
+  assert.equal(restoredProduct.stock, 23);
+  assert.equal(restoredProduct.costoUSD, 4.25);
+  const restoredMovement = await posStore.getRecord('movimientos', 'ROUNDTRIP-MOV', { id: valid.id, rol: 'administrador' });
+  assert.equal(restoredMovement.productoId, 'ROUNDTRIP-PRODUCT');
+  assert.equal(restoredMovement.cantidad, 23);
   const preserved = await auth.findUser(valid.username);
   assert.equal(preserved.isSeedAdmin, true);
 
