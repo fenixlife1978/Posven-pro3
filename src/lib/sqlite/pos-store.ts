@@ -3751,8 +3751,8 @@ export async function deletePurchaseTransaction(params:any){
       // nuevos identifican al proveedor en concepto; no eliminar asientos de
       // otra compra con el mismo número. Si el registro legado no lo identifica,
       // se conserva por seguridad y se evita una eliminación ambigua.
-      const supplierTag='PROV: '+String(supplier||'').trim().replace(/\\s+/g,' ').toUpperCase();
-      const concept=String(d.concepto||'').trim().replace(/\\s+/g,' ').toUpperCase();
+      const supplierTag='PROV: '+String(supplier||'').trim().replace(/\s+/g,' ').toUpperCase();
+      const concept=String(d.concepto||'').trim().replace(/\s+/g,' ').toUpperCase();
       return Boolean(supplierTag.length>5 && concept.includes(supplierTag));
     });
 
