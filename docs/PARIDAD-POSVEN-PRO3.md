@@ -522,3 +522,15 @@ Se compararon los archivos funcionales principales de POSVEN2 (src/components/po
 - Resultado de comparación estática: no se encontró una omisión funcional que justifique un cambio de código en Sales/POS en esta ronda; se conservan las diferencias de Pro3 que amplían POSVEN2. Esto no sustituye pruebas manuales de flujo completo con hardware real (scanner/impresora) y datos de instalación.
 
 Estado: auditoría estática comparativa de Sales/POS cerrada; no se abrió PR de código porque no se encontró una brecha funcional. Próximo módulo: Compras, siguiendo la navegación principal.
+
+
+## Auditoría de Entradas (Compras) — 21-11-2026
+
+Se compararon los componentes PurchaseModule.tsx de POSVEN2 y POSVEN-PRO3.
+
+- Ambas versiones mantienen el flujo de agregar productos a una compra, cantidad/costo unitario, retirar líneas, validar pagos, procesar compra, generar deuda CxP, asiento contable y movimiento/entrada de inventario, además de eliminar/revertir compras.
+- Pro3 mantiene el historial paginado y añade/fortalece filtros por rango de fecha, normalización de proveedor/factura, combinación deduplicada de compras canónicas e históricas, y precisión USD de seis decimales.
+- Se comprobó que los nombres de handlers y la estructura central de los procesos de compras coinciden, mientras Pro3 agrega helpers de deduplicación, manejo de rango, normalización y precisión; no se identificó una acción del módulo de POSVEN2 perdida en Pro3.
+- No se importan componentes cloud del sistema de referencia. Las operaciones siguen respaldadas por SQLite local.
+
+**Resultado:** auditoría estática de Compras cerrada sin cambio funcional; las diferencias observadas son mejoras/adaptaciones de Pro3. Esta revisión estática no sustituye un flujo de compra completo manual en Windows.
