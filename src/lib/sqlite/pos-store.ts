@@ -597,9 +597,9 @@ function normalizedProductTextSql(jsonPath: 'nombre' | 'codigo' | 'departamento'
 function normalizeProductFilter(value: unknown): string {
   return String(value ?? '')
     .normalize('NFD')
-    .replace(/[\\u0300-\\u036f]/g, '')
-    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-    .replace(/\\s+/g, ' ')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLocaleLowerCase('es');
 }
@@ -2882,7 +2882,7 @@ export async function processReturnOrCancellationTransaction(params:any){
 
     // El límite de reintegro se calcula en SQLite con pagos reales de la venta
     // menos reintegros anteriores. Crédito y nota de crédito nunca son efectivo.
-    const normalizeRefundMethod=(value:any)=>String(value||'otros').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/\\s+/g,'_');
+    const normalizeRefundMethod=(value:any)=>String(value||'otros').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_');
     const isActualRefundMethod=(value:any)=>!['credito','nota_credito','mixto'].includes(normalizeRefundMethod(value));
     const paymentUsd=(part:any)=>{
       const explicit=Number(part?.montoUSD??part?.montoUsd??part?.amountUSD??0);
