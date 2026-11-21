@@ -190,8 +190,9 @@ export function InventoryModule({ state, updateState }: { state: AppState, updat
   // sin reemplazar el cache ni convertirlo en fuente de autoridad.
   const knownProducts = useMemo(() => {
     const byId = new Map<string, Product>();
-    (serverProducts || []).forEach(product => byId.set(String(product.id), product));
     (state.productos || []).forEach(product => byId.set(String(product.id), product));
+    // La lectura recién consultada en SQLite prevalece sobre el cache operativo.
+    (serverProducts || []).forEach(product => byId.set(String(product.id), product));
     return Array.from(byId.values());
   }, [serverProducts, state.productos]);
 
