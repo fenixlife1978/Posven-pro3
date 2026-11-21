@@ -2436,11 +2436,13 @@ test('reversión de compra elimina CxP y asientos vinculados y restaura stock y 
     montoUSD: 32, abonadoUSD: 10, saldoUSD: 22, estado: 'parcial',
     historialPagos: [{ id: 'PAY-REVERSAL-CXP-001', montoUSD: 10, montoBS: 0, metodo: 'efectivo_usd', tasaAplicada: 1, asientoId: paymentJournalId }],
   };
+  const openingAt = '2026-11-21T13:00:00.000Z';
+  const openingMovement = { id: 'MOV-REVERSAL-OPENING-001', productoId: productId, tipo: 'entrada-inicial', cantidad: 10, stockAntes: 0, stockDespues: 10, costoUnitarioUSD: 5, fecha: openingAt, referencia: 'Stock inicial de prueba' };
   const movement = { id: 'MOV-REVERSAL-CXP-001', productoId: productId, tipo: 'compra', cantidad: 4, stockAntes: 10, stockDespues: 14, costoUnitarioUSD: 8, fecha: at, referencia: 'COMPRA FACT: '+invoice+' - PROV: Proveedor Reversión' };
   const purchaseJournal = { id: purchaseJournalId, fecha: at, tipo: 'egreso', categoria: 'COMPRA', montoUSD: 32, referencia: invoice };
   const paymentJournal = { id: paymentJournalId, fecha: at, tipo: 'egreso', categoria: 'PAGO-CXP', montoUSD: 10, referencia: invoice };
-  for (const [table, record, dateColumn] of [['compras', purchase, 'fecha'], ['cxp', debt, 'fecha'], ['movimientos', movement, 'fecha'], ['libro_diario', purchaseJournal, 'fecha'], ['libro_diario', paymentJournal, 'fecha']]) {
-    await sqliteExecute({ sql: 'INSERT OR REPLACE INTO '+table+'(id,data_json,'+dateColumn+') VALUES(?,?,?)', args: [record.id, JSON.stringify(record), at], wantRows: false });
+  for (const [table, record, dateColumn, storedAt] of [['compras', purchase, 'fecha', at], ['cxp', debt, 'fecha', at], ['movimientos', openingMovement, 'fecha', openingAt], ['movimientos', movement, 'fecha', at], ['libro_diario', purchaseJournal, 'fecha', at], ['libro_diario', paymentJournal, 'fecha', at]]) {
+    await sqliteExecute({ sql: 'INSERT OR REPLACE INTO '+table+'(id,data_json,'+dateColumn+') VALUES(?,?,?)', args: [record.id, JSON.stringify(record), storedAt], wantRows: false });
   }
   const result = await posStore.deletePurchaseTransaction({ operationId: 'PURCHASE-REVERSAL-CXP-OP', purchaseId, invoiceNumber: invoice, supplier: 'Proveedor Reversión', purchaseDate: '2026-11-21' });
   assert.equal(result.deletedPurchase, 1);
