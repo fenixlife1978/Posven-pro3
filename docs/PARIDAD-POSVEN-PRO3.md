@@ -551,3 +551,23 @@ Comparación de CxCModule.tsx: conserva carga de deuda inicial/directa, filtros 
 Comparación de CxPModule.tsx: ambos mantienen pagos individuales, pagos globales por proveedor, liquidación cronológica de deudas, historial de pagos, cronología, deuda directa y eliminación de pagos. Los handlers principales coinciden; Pro3 mantiene ajustes de precisión, validaciones y transacciones SQLite que ya fueron implementados en correcciones anteriores.
 
 **Resultado:** auditorías estáticas de Proveedores, Contabilidad, CxC y CxP cerradas sin una brecha que requiera portación de código. Las pruebas manuales con recibos, PDF e impresora siguen siendo parte de la verificación final de Windows.
+
+
+## Auditoría de Reportes, Configuración, Usuarios, Global Control y Dashboard (21-11-2026)
+
+### Reportes
+POSVEN-Pro3 ReportsModule es más extenso que el de POSVEN2: conserva listado detallado de ventas, historial Z, análisis de rentabilidad, exportación PDF e impresión; añade detalle por pagos Bs/USD, equivalencia Bs basada en historial disponible, tratamiento de costos históricos faltantes y reimpresión de consolidado. No se encontró una función exclusiva de POSVEN2 ausente.
+
+### Configuración
+Pro3 conserva tasa BCV, PIN/seguridad, datos fiscales/empresa, respaldo y restauración, importación de catálogos, reparación de CxC migrado y limpieza del sistema. Adapta mantenimiento a SQLite local y añade configuración LAN, selección de respaldo mediante Electron. No trasladar mantenimiento Turso/cloud.
+
+### Usuarios
+Los dos módulos mantienen los handlers principales de alta, edición, bloqueo y eliminación, así como las acciones visibles de creación/edición de perfil. Pro3 adapta persistencia y autorización a la sesión SQLite local.
+
+### Global Control
+Ambos conservan migración de IDs de usuario, estado de acceso de operadores, mantenimiento de identidades y terminales (crear, asignar y eliminar). Pro3 mantiene el aislamiento LAN/SQLite y ajustes propios; no se detectó una acción funcional de POSVEN2 perdida.
+
+### Dashboard
+Pro3 conserva gestión de inventario, impresión de pantalla, ventas de siete días, productos principales y métodos de pago; amplía los datos/resumen con consultas locales. Los módulos de Dashboard comparten la estructura y labels de funciones principales.
+
+**Resultado:** auditoría estática de estos módulos cerrada sin brechas funcionales identificadas. Se recomienda que la prueba final en Windows incluya respaldar/restaurar, permisos de usuario, asignación de terminales, reportes PDF/impresión y consulta de datos reales.
