@@ -697,7 +697,7 @@ function syncLegacyRealtimeProducts(prevArr: any[] | undefined, newArr: any[] | 
 
 async function bootstrapProductos(): Promise<boolean> {
   try {
-    const serverItems = await tryLocalServerRead('productos', { limit: 5000 });
+    const serverItems = await tryLocalServerReadAll('productos', {}, 2000);
     if (serverItems !== null) {
       applyPatch({ productos: serverItems });
       return true;
@@ -732,7 +732,11 @@ const loadedAll: Record<string, boolean> = {};
 const cursors: Record<string, QueryDocumentSnapshot<DocumentData> | null> = {};
 
 async function loadCollection(name: string): Promise<any[]> {
-  const serverItems = await tryLocalServerRead(name);
+  // POSVEN2 hidrata el catálogo completo por páginas. En Pro3 se conserva esa
+  // cobertura usando SQLite local; las demás colecciones mantienen su carga actual.
+  const serverItems = name === 'productos'
+    ? await tryLocalServerReadAll(name, {}, 2000)
+    : await tryLocalServerRead(name);
   if (serverItems !== null) return serverItems.map(sanitizeRecord).filter(Boolean);
   return [];
 }
@@ -1208,7 +1212,9 @@ function init() {
   }, 10000));
 
   teardownFns.push(startSqlitePolling('productos', async () => {
-    const items = await tryLocalServerRead('productos', { limit: 5000 });
+    // El catálogo se refresca completo y paginado: nunca reemplazarlo por una
+    // ventana de 5.000 registros que oculte productos de páginas posteriores.
+    const items = await tryLocalServerReadAll('productos', {}, 2000);
     if (items !== null) applyPatch({ productos: items });
   }, 5000));
 
