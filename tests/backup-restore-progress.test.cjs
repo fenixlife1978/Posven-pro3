@@ -27,8 +27,10 @@ test('la API consume el cuerpo limitado mientras espera la autenticación SQLite
   assert.match(backupRoute, /const maxRequestBytes = maxBackupBytes \+ MAX_REQUEST_OVERHEAD_BYTES/);
   assert.match(backupRoute, /content-length/);
   assert.match(backupRoute, /const authPromise = requireAdmin\(request\)/);
-  assert.match(backupRoute, /const bodyPromise = request\.json\(\)/);
+  assert.match(backupRoute, /const bodyPromise = readJsonBodyLimited\(request, maxRequestBytes\)/);
   assert.match(backupRoute, /Promise\.all\(\[authPromise, bodyPromise\]\)/);
+  assert.match(backupRoute, /request\.body\.getReader\(\)/);
+  assert.match(backupRoute, /totalBytes > maxBytes/);
   assert.match(backupRoute, /Buffer\.byteLength\(JSON\.stringify\(backup\), 'utf8'\) > maxBackupBytes/);
   assert.match(backupRoute, /getMaxBackupBytes/);
   assert.doesNotMatch(backup, /content\.length > 64 \* 1024 \* 1024/);
