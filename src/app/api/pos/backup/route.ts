@@ -9,6 +9,31 @@ export const dynamic = 'force-dynamic';
 
 const MAX_REQUEST_OVERHEAD_BYTES = 128 * 1024;
 
+async function readJsonBodyLimited(request: Request, maxBytes: number) {
+  if (!request.body) throw Object.assign(new Error('El cuerpo de la solicitud está vacío.'), { status: 400 });
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        try { await reader.cancel(); } catch {}
+        throw Object.assign(new Error('La solicitud supera el tamaño máximo permitido para restauración.'), { status: 413 });
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const payload = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) { payload.set(chunk, offset); offset += chunk.byteLength; }
+  return JSON.parse(new TextDecoder().decode(payload));
+}
+
 async function requireAdmin(request: Request) {
   assertSQLiteReady();
   const user = await getSessionUser(getRequestSessionId(request));
@@ -43,7 +68,7 @@ export async function POST(request: Request) {
       throw Object.assign(new Error('La solicitud supera el tamaño máximo permitido para restauración.'), { status: 413 });
     }
     const authPromise = requireAdmin(request);
-    const bodyPromise = request.json();
+    const bodyPromise = readJsonBodyLimited(request, maxRequestBytes);
     const [user, body] = await Promise.all([authPromise, bodyPromise]);
     if (String(body?.action || '') !== 'restore') {
       throw Object.assign(new Error('La restauración debe enviarse como un único paquete validado.'), { status: 400 });

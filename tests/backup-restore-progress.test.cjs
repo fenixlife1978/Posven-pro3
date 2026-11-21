@@ -27,8 +27,10 @@ test('la API consume el cuerpo limitado mientras espera la autenticación SQLite
   assert.match(backupRoute, /const maxRequestBytes = maxBackupBytes \+ MAX_REQUEST_OVERHEAD_BYTES/);
   assert.match(backupRoute, /content-length/);
   assert.match(backupRoute, /const authPromise = requireAdmin\(request\)/);
-  assert.match(backupRoute, /const bodyPromise = request\.json\(\)/);
+  assert.match(backupRoute, /const bodyPromise = readJsonBodyLimited\(request, maxRequestBytes\)/);
   assert.match(backupRoute, /Promise\.all\(\[authPromise, bodyPromise\]\)/);
+  assert.match(backupRoute, /request\.body\.getReader\(\)/);
+  assert.match(backupRoute, /totalBytes > maxBytes/);
   assert.match(backupRoute, /Buffer\.byteLength\(JSON\.stringify\(backup\), 'utf8'\) > maxBackupBytes/);
   assert.match(backupRoute, /getMaxBackupBytes/);
   assert.doesNotMatch(backup, /content\.length > 64 \* 1024 \* 1024/);
@@ -62,4 +64,15 @@ test('los respaldos exportan y restauran todas las operaciones sin topes de cant
   // Se conserva únicamente el límite técnico de bytes; no es un tope de operaciones.
   assert.match(sqliteStore, /export function getMaxBackupBytes\(\)/);
   assert.match(sqliteStore, /Buffer\.byteLength\(JSON\.stringify\(snapshot\), 'utf8'\) > getMaxBackupBytes\(\)/);
+});
+
+
+test('ruta de restauración limita también cuerpos chunked sin Content-Length', () => {
+  const route = fs.readFileSync(path.join(process.cwd(), 'src/app/api/pos/backup/route.ts'), 'utf8');
+  assert.match(route, /request\.body\.getReader\(\)/);
+  assert.match(route, /totalBytes \+= value\.byteLength/);
+  assert.match(route, /totalBytes > maxBytes/);
+  assert.match(route, /reader\.cancel\(\)/);
+  assert.match(route, /readJsonBodyLimited\(request, maxRequestBytes\)/);
+  assert.doesNotMatch(route, /const bodyPromise = request\.json\(\)/);
 });
