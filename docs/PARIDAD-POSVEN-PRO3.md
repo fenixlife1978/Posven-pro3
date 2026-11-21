@@ -487,7 +487,7 @@ La auditoría seguirá el menú de administrador observado en ambos repositorios
 
 **Otras diferencias observadas que requieren completar revisión antes de cerrar el módulo:** Pro3 elimina departamentos/categorías predeterminados específicos del respaldo de un comercio de POSVEN2 y utiliza catálogos reales de SQLite; esta decisión evita contaminar instalaciones nuevas y se conserva salvo evidencia de que exista una función genérica de catálogo que se haya perdido. Se debe terminar la inspección de formularios de alta/edición, importación, acciones de ajuste, reportes y transacciones SQLite antes de declarar el módulo cerrado.
 
-**Estado:** brecha de paginación SQLite identificada y pendiente de implementación/pruebas; auditoría de Inventario abierta. No se afirma paridad completa ni se ha ejecutado build por esta inspección sin cambios de código. Siguiente módulo se mantiene en espera hasta cerrar Inventario.
+**Estado histórico (actualizado tras PR #65 y #66):** las brechas de paginación y de hidratación completa se implementaron, probaron en Windows y fueron integradas en main. Se cerró la revisión de Inventario al confirmar que los flujos de consulta usan el catálogo completo de SQLite y no el límite anterior de 5.000. Las funciones auxiliares se conservaron y no se trasladó infraestructura cloud.
 
 
 #### Implementación de la brecha de paginación — rama fix/inventory-sqlite-server-pagination (20-11-2026)
@@ -496,7 +496,7 @@ La auditoría seguirá el menú de administrador observado en ambos repositorios
 - Se añadió `GET /api/pos/store?special=products-page` con autenticación y restricción explícita a rol administrador, manteniendo SQLite local como única fuente.
 - `InventoryModule` ahora consulta la página solicitada en `/api/pos/store`, presenta los totales devueltos por SQLite, muestra estados de carga/error y usa el componente de paginación ya existente. Las acciones de edición/eliminación/ajuste consideran también los registros de la página consultada que no estén en el cache operativo.
 - Se añadió `tests/inventory-products-page.test.cjs` con más de 5.000 registros: primera/última página, ausencia de solapamiento, exclusión de inactivos, stock bajo, búsqueda por nombre y código, filtros normalizados con acentos y página posterior al final.
-- **Estado de validación:** código y prueba agregados en la rama; pendiente ejecutar los workflows Windows (suite, TypeScript, Next build y empaquetado EXE) antes de integrar. La auditoría del módulo Inventario sigue abierta: quedan por contrastar los demás flujos auxiliares (PDF, habladores, conteo físico, alta/edición, ajustes y reportes) y sus diferencias reales frente a POSVEN2.
+- **Estado de validación actualizado:** PR #65 y PR #66 integrados. Workflows Windows, suite, TypeScript, Next.js, instalador y verificación de instalador pasaron. Inventario queda cerrado tras revisar los flujos auxiliares listados y confirmar la corrección de la carga completa
 
 #### Hallazgo adicional — hidratación completa del catálogo (20-11-2026)
 
@@ -508,4 +508,17 @@ La comparación del flujo completo reveló una segunda diferencia respecto de PO
 - El polling de productos de todas las terminales también recorre el catálogo completo en lotes de 2.000, de modo que una actualización posterior no vuelva a truncar el cache a 5.000.
 - La prueba de regresión valida que 5.006 registros (5.005 activos y uno inactivo) se recuperan en lotes 2.000 + 2.000 + 1.006 sin omisiones ni duplicados.
 
-**Estado:** implementación y regresión añadidas; pendientes workflows Windows de suite, TypeScript, Next.js e instalador antes de integrar. La auditoría de Inventario seguirá abierta hasta contrastar los flujos auxiliares y reportes con POSVEN2.
+**Estado final:** implementación, prueba de regresión y validación Windows completadas; PR #66 fusionado en main (a5609956a6ad75868ccb00325f5b4bd62ddcae14). Suite, TypeScript, Next build, instalador y verificación completados satisfactoriamente. Inventario cerrado.
+
+
+## Cierre de auditoría de Ventas / POS (21-11-2026)
+
+Se compararon los archivos funcionales principales de POSVEN2 (src/components/pos/PosModule.tsx) y POSVEN-PRO3 (src/components/modules/SalesModule.tsx), además de los modales de pago/venta a crédito y el módulo de devoluciones.
+
+- Cobro y venta a crédito: FloatingPaymentModal.tsx y CreditSaleModal.tsx tienen el mismo contenido/hash en ambos repositorios, por lo que no se identificó pérdida de funcionalidad en estos componentes al portar.
+- Funciones POS: ambos conservan vistas POS, historial, créditos y devoluciones, gestión de cantidades, tasa, detalle de venta, pago/abono y proceso de venta. Pro3 agrega paginación de historial, modal de crédito, movimientos de caja, ajuste desde POS, arqueo Z guiado y reporte Z de 80 mm, selector de productos fraccionados y mejoras de normalización de cédula/cliente.
+- Devoluciones: el módulo de Pro3 es más extenso y conserva reparto de reintegros, validaciones e integración con SQLite; no se detectó una función de POSVEN2 ausente que requiriera copiar.
+- Integridad: Pro3 usa procesamiento de ventas/abonos en SQLite, validaciones e idempotencia, y actualiza las vistas a partir del resultado de las operaciones. Se mantienen los controles anti doble-click y las restricciones de terminal/caja.
+- Resultado de comparación estática: no se encontró una omisión funcional que justifique un cambio de código en Sales/POS en esta ronda; se conservan las diferencias de Pro3 que amplían POSVEN2. Esto no sustituye pruebas manuales de flujo completo con hardware real (scanner/impresora) y datos de instalación.
+
+Estado: auditoría estática comparativa de Sales/POS cerrada; no se abrió PR de código porque no se encontró una brecha funcional. Próximo módulo: Compras, siguiendo la navegación principal.
