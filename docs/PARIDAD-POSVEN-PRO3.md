@@ -534,3 +534,20 @@ Se compararon los componentes PurchaseModule.tsx de POSVEN2 y POSVEN-PRO3.
 - No se importan componentes cloud del sistema de referencia. Las operaciones siguen respaldadas por SQLite local.
 
 **Resultado:** auditoría estática de Compras cerrada sin cambio funcional; las diferencias observadas son mejoras/adaptaciones de Pro3. Esta revisión estática no sustituye un flujo de compra completo manual en Windows.
+
+
+## Auditoría de Proveedores y Finanzas (21-11-2026)
+
+### Proveedores
+Comparación de SuppliersModule.tsx: mismo tamaño de archivo y mismos handlers principales (handleSave, handleEdit, handleDelete) y mismos labels de formulario/listado (registro, RIF, contacto, teléfono, dirección, edición y eliminación). No se observó una omisión funcional en la revisión estática. Pro3 conserva su persistencia local SQLite.
+
+### Contabilidad
+Comparación de AccountingModule.tsx: handlers y acciones visibles equivalentes (libro diario, exportar PDF, nuevo gasto, auditoría del movimiento y registrar egreso/asiento). Diferencias de texto son únicamente formateo sintáctico en la declaración de componente y coma de un objeto; no cambian la función. Pro3 conserva SQLite y sus transacciones.
+
+### Cuentas por Cobrar (CxC)
+Comparación de CxCModule.tsx: conserva carga de deuda inicial/directa, filtros y búsqueda, agrupación por cliente, reporte PDF, detalle de crédito y cronología. El detalle que POSVEN2 presenta inline en su módulo se encapsula en Pro3 en CreditDetailModal.tsx; se verificó el componente invocado por Pro3 para mostrar venta original y abonos. Pro3 añade paginación y filtros normalizados, por lo que la diferencia de ubicación no es una pérdida de función.
+
+### Cuentas por Pagar (CxP)
+Comparación de CxPModule.tsx: ambos mantienen pagos individuales, pagos globales por proveedor, liquidación cronológica de deudas, historial de pagos, cronología, deuda directa y eliminación de pagos. Los handlers principales coinciden; Pro3 mantiene ajustes de precisión, validaciones y transacciones SQLite que ya fueron implementados en correcciones anteriores.
+
+**Resultado:** auditorías estáticas de Proveedores, Contabilidad, CxC y CxP cerradas sin una brecha que requiera portación de código. Las pruebas manuales con recibos, PDF e impresora siguen siendo parte de la verificación final de Windows.
