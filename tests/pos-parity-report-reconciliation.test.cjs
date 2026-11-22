@@ -159,3 +159,16 @@ test('los productos nuevos conservan un baseline inmutable para reconstrucción 
   assert.match(inventory, /costoUnitarioUSD: costoInicialUSDReconstruccion/);
   assert.match(inventory, /fecha: fechaInicialReconstruccion/);
 });
+
+
+test('el conteo físico obtiene todo el catálogo SQLite, usa stock actual y permite fracciones', () => {
+  const inventory = read('src/components/modules/InventoryModule.tsx');
+  const modal = inventory.slice(inventory.indexOf('function ModalConteoFisico'), inventory.indexOf('function ModalAjuste'));
+  assert.match(modal, /special: 'products-page', page: '1', pageSize: '100'/);
+  assert.match(modal, /for \(let page = 2; page <= pages; page\+\+\)/);
+  assert.match(modal, /all\.length !== total/);
+  assert.match(modal, /setErrorCatalogo/);
+  assert.match(modal, /step="any"/);
+  assert.match(inventory, /onSave=\{async \(ajustes, productosActualizados\) =>/);
+  assert.match(inventory, /productosActualizados\.find\(p => p\.id === a\.productoId\)/);
+});
