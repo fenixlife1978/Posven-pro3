@@ -1275,6 +1275,8 @@ function ModalConteoFisico({ departamentos, departamentoInicial, onClose, onSave
           if (Number(body.total) !== total) throw new Error('El catálogo cambió durante la consulta. Abra nuevamente el conteo.');
           all.push(...body.records);
         }
+        const uniqueIds = new Set(all.map(p => String(p?.id || '')));
+        if (uniqueIds.size !== all.length || uniqueIds.has('')) throw new Error('Catálogo duplicado o con productos sin ID. No se guardará el conteo.');
         if (all.length !== total) throw new Error('Catálogo incompleto: se descargaron ' + all.length + ' de ' + total + ' productos. No se guardará el conteo.');
         if (!cancelado) setCatalogoCompleto(all);
       } catch (error: any) {
