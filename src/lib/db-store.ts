@@ -1355,7 +1355,7 @@ export const Store = {
     const fechaHasta = to + 'T23:59:59.999';
     const [movimientos, productos] = await Promise.all([
       tryLocalServerReadAll('movimientos', { fechaDesde, fechaHasta }, 500),
-      tryLocalServerReadAll('productos', {}, 500),
+      tryLocalServerReadAll('productos', {}, 2000),
     ]);
     if (movimientos === null || productos === null) {
       throw new Error('No fue posible consultar el historial completo en SQLite local. No se utilizará información parcial.');

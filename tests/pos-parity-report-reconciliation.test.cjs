@@ -159,3 +159,13 @@ test('los productos nuevos conservan un baseline inmutable para reconstrucción 
   assert.match(inventory, /costoUnitarioUSD: costoInicialUSDReconstruccion/);
   assert.match(inventory, /fecha: fechaInicialReconstruccion/);
 });
+
+
+test('el reporte de salidas carga productos paginados y no se limita a los primeros 500', () => {
+  const dbStore = read('src/lib/db-store.ts');
+  const report = read('src/components/modules/PeriodicInventoryExitsReport.tsx');
+  assert.match(dbStore, /tryLocalServerReadAll\('productos', \{\}, 2000\)/);
+  assert.match(dbStore, /while \(true\)[\s\S]{0,300}page\.length < pageSize/);
+  assert.match(report, /PRODUCTO NO LOCALIZADO/);
+  assert.match(report, /source\.productos \|\| \[\]/);
+});
