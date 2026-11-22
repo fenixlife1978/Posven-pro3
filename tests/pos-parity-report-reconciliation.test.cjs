@@ -167,6 +167,7 @@ test('el conteo físico obtiene todo el catálogo SQLite, usa stock actual y per
   assert.match(modal, /special: 'products-page', page: '1', pageSize: '100'/);
   assert.match(modal, /for \(let page = 2; page <= pages; page\+\+\)/);
   assert.match(modal, /all\.length !== total/);
+  assert.match(modal, /uniqueIds\.size !== all\.length/);
   assert.match(modal, /setErrorCatalogo/);
   assert.match(modal, /step="any"/);
   assert.match(inventory, /onSave=\{async \(ajustes, productosActualizados\) =>/);
