@@ -1236,8 +1236,8 @@ function ReporteKardex({ state, selectedId, onSelect }: { state: AppState, selec
 
 type ConteoFisicoAjuste = { productoId: string; nuevoStock: number; motivo: string };
 
-function ModalConteoFisico({ productos, departamentos, departamentoInicial, onClose, onSave }: {
-  productos: Product[]; departamentos: string[]; departamentoInicial: string;
+function ModalConteoFisico({ departamentos, departamentoInicial, onClose, onSave }: {
+  departamentos: string[]; departamentoInicial: string;
   onClose: () => void; onSave: (ajustes: ConteoFisicoAjuste[], productosActualizados: Product[]) => Promise<void>;
 }) {
   const [departamento, setDepartamento] = useState(departamentoInicial);
@@ -1253,7 +1253,6 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
       try {
         const pageSize = 100;
         const all: Product[] = [];
-        const pages = 1;
         const cargarPagina = async (page: number) => {
           const params = new URLSearchParams({ special: 'products-page', page: String(page), pageSize: String(pageSize) });
           const response = await fetch('/api/pos/store?' + params.toString(), { credentials: 'include', cache: 'no-store' });
