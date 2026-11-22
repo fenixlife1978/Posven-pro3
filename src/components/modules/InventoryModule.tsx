@@ -1253,17 +1253,24 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
       try {
         const pageSize = 100;
         const all: Product[] = [];
-        let total = 0;
-        for (let page = 1; page <= Math.max(1, Math.ceil(total / pageSize)); page++) {
+        const pages = 1;
+        const cargarPagina = async (page: number) => {
           const params = new URLSearchParams({ special: 'products-page', page: String(page), pageSize: String(pageSize) });
           const response = await fetch('/api/pos/store?' + params.toString(), { credentials: 'include', cache: 'no-store' });
           const body = await response.json().catch(() => null);
           if (!response.ok || body?.ok !== true || !Array.isArray(body.records) || !Number.isFinite(Number(body.total))) {
             throw new Error(String(body?.error || 'No se pudo cargar el catálogo completo de SQLite.'));
           }
-          total = Number(body.total);
+          return body;
+        };
+        const first = await cargarPagina(1);
+        const total = Number(first.total);
+        all.push(...first.records);
+        const pages = Math.max(1, Math.ceil(total / pageSize));
+        for (let page = 2; page <= pages; page++) {
+          const body = await cargarPagina(page);
+          if (Number(body.total) !== total) throw new Error('El catálogo cambió durante la consulta. Abra nuevamente el conteo.');
           all.push(...body.records);
-          if (all.length >= total) break;
         }
         if (all.length !== total) throw new Error('Catálogo incompleto: se descargaron ' + all.length + ' de ' + total + ' productos. No se guardará el conteo.');
         if (!cancelado) setCatalogoCompleto(all);
@@ -1278,7 +1285,7 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
   }, []);
   const disponibles = useMemo(() => (catalogoCompleto || [])
     .filter(p => p.activo && !(p.isKit && p.kitType === 'stock_componentes') && (departamento ? p.departamento === departamento : true))
-    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')), [productos, departamento]);
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')), [catalogoCompleto, departamento]);
   const updateDraft = (id: string, field: 'nuevoStock' | 'motivo', value: string) => setDrafts(prev => ({
     ...prev, [id]: { ...(prev[id] || { nuevoStock: '', motivo: 'Ajuste por Conteo / Inventario Físico' }), [field]: value }
   }));
