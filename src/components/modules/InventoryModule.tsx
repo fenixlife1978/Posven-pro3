@@ -1262,7 +1262,12 @@ function ModalConteoFisico({ departamentos, departamentoInicial, onClose, onSave
           }
           return body;
         };
-        const first = await cargarPagina(1);
+        const firstParams = new URLSearchParams({ special: 'products-page', page: '1', pageSize: '100' });
+        const firstResponse = await fetch('/api/pos/store?' + firstParams.toString(), { credentials: 'include', cache: 'no-store' });
+        const first = await firstResponse.json().catch(() => null);
+        if (!firstResponse.ok || first?.ok !== true || !Array.isArray(first.records) || !Number.isFinite(Number(first.total))) {
+          throw new Error(String(first?.error || 'No se pudo cargar el catálogo completo de SQLite.'));
+        }
         const total = Number(first.total);
         all.push(...first.records);
         const pages = Math.max(1, Math.ceil(total / pageSize));
