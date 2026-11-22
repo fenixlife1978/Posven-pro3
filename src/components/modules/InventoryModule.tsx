@@ -1242,7 +1242,41 @@ function ModalConteoFisico({ productos, departamentos, departamentoInicial, onCl
 }) {
   const [departamento, setDepartamento] = useState(departamentoInicial);
   const [drafts, setDrafts] = useState<Record<string, { nuevoStock: string; motivo: string }>>({});
-  const disponibles = useMemo(() => (productos || [])
+  const [catalogoCompleto, setCatalogoCompleto] = useState<Product[]>([]);
+  const [cargandoCatalogo, setCargandoCatalogo] = useState(true);
+  const [errorCatalogo, setErrorCatalogo] = useState('');
+  useEffect(() => {
+    let cancelado = false;
+    const cargar = async () => {
+      setCargandoCatalogo(true);
+      setErrorCatalogo('');
+      try {
+        const pageSize = 100;
+        const all: Product[] = [];
+        let total = 0;
+        for (let page = 1; page <= Math.max(1, Math.ceil(total / pageSize)); page++) {
+          const params = new URLSearchParams({ special: 'products-page', page: String(page), pageSize: String(pageSize) });
+          const response = await fetch('/api/pos/store?' + params.toString(), { credentials: 'include', cache: 'no-store' });
+          const body = await response.json().catch(() => null);
+          if (!response.ok || body?.ok !== true || !Array.isArray(body.records) || !Number.isFinite(Number(body.total))) {
+            throw new Error(String(body?.error || 'No se pudo cargar el catálogo completo de SQLite.'));
+          }
+          total = Number(body.total);
+          all.push(...body.records);
+          if (all.length >= total) break;
+        }
+        if (all.length !== total) throw new Error('Catálogo incompleto: se descargaron ' + all.length + ' de ' + total + ' productos. No se guardará el conteo.');
+        if (!cancelado) setCatalogoCompleto(all);
+      } catch (error: any) {
+        if (!cancelado) { setErrorCatalogo(String(error?.message || error)); setCatalogoCompleto([]); }
+      } finally {
+        if (!cancelado) setCargandoCatalogo(false);
+      }
+    };
+    void cargar();
+    return () => { cancelado = true; };
+  }, []);
+  const disponibles = useMemo(() => (catalogoCompleto || [])
     .filter(p => p.activo && !(p.isKit && p.kitType === 'stock_componentes') && (departamento ? p.departamento === departamento : true))
     .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')), [productos, departamento]);
   const updateDraft = (id: string, field: 'nuevoStock' | 'motivo', value: string) => setDrafts(prev => ({
