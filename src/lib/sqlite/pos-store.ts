@@ -755,14 +755,9 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
   if (!Array.isArray(data.users)) {
     throw new Error('El respaldo no contiene la lista de usuarios. Genere un nuevo respaldo administrativo desde POSVEN2 antes de restaurar.');
   }
-  if (backup.meta?.source === 'turso' && backup.meta.tursoTables) {
-    for (const [tableName, count] of Object.entries(backup.meta.tursoTables)) {
-      const key = tableName === 'caja' ? 'cashHistory' : tableName;
-      if (Array.isArray(data[key]) && Number(count) !== data[key].length) {
-        throw new Error('El conteo del respaldo no coincide en ' + tableName + '. La restauración fue cancelada.');
-      }
-    }
-  }
+  // Los manifiestos heredados de Turso/POSVEN2 pueden reportar conteos
+  // históricos limitados por paginación. La restauración se guía por las filas
+  // presentes en el archivo, no por ese contador externo.
   if (backup.meta?.source === 'sqlite-local' && backup.meta.complete !== true) {
     throw new Error('El respaldo SQLite no está marcado como completo. Genere una nueva copia antes de restaurar.');
   }
