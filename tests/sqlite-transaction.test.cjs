@@ -1507,7 +1507,7 @@ test('la restauración carga más de 10.000 movimientos con manifiesto heredado 
     app: 'posven-pro',
     version: 3,
     data: {
-      productos: [], movimientos, ventas: [], cxc: [], cxp: [], clientes: [],
+      productos: [], movimientos: movements, ventas: [], cxc: [], cxp: [], clientes: [],
       proveedores: [], devoluciones: [], anulaciones: [], terminales: [],
       libroDiario: [], reportesZ: [], compras: [], cashHistory: [], users: [],
       config: {}, ...catalogs,
