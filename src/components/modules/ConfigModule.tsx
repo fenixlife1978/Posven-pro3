@@ -5,7 +5,7 @@ import { AppState } from '@/lib/types';
 import { Store } from '@/lib/db-store';
 import { Save, AlertTriangle, RefreshCw, Database, Activity, BookOpen, PenLine, Trash2, Wifi, WifiOff, Network } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeContenido, detectarRespaldoTursoTruncado, previsualizarCatalogosDesdeArchivo, importarCatalogosDesdeArchivo, type BackupFile } from '@/lib/backup';
+import { crearRespaldo, descargarRespaldo, cargarRespaldoDesdeContenido, previsualizarCatalogosDesdeArchivo, importarCatalogosDesdeArchivo, type BackupFile } from '@/lib/backup';
 
 export default function ConfigModule({ state, updateState }: { state: AppState, updateState: (s: Partial<AppState>) => void }) {
   const [tasa, setTasa] = useState<string | number>(state.tasa);
@@ -119,38 +119,11 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     const confirmar = window.confirm('Se restaurará el sistema completo desde este respaldo. Los datos actuales serán reemplazados. ¿Desea continuar?');
     if (!confirmar) return;
 
-    let allowPartialTursoRestore = false;
-    try {
-      const partial = detectarRespaldoTursoTruncado(parsed);
-      if (partial.cappedTables.length) {
-        const oldestDate = partial.oldestMovementDate || 'no identificable en el archivo';
-        const movementCount = partial.movementCount.toLocaleString('es-VE');
-        const warning =
-          'ADVERTENCIA: RESTAURACIÓN PARCIAL DE HISTORIAL\n\n' +
-          (partial.cappedTables.includes('movimientos')
-            ? 'La tabla movimientos contiene ' + movementCount + ' registros y alcanza el límite de 10.000. El Kardex anterior al ' + oldestDate + ' podría faltar; la fecha más antigua incluida no demuestra que el historial comience allí.'
-            : 'El manifiesto alcanza el límite de 10.000 registros en: ' + partial.cappedTables.join(', ') + '. Parte del historial de esas tablas podría faltar.') + '\n\n' +
-          'La fotografía de existencias se restaurará desde los productos incluidos, pero NO se garantiza la integridad histórica del Kardex ni que estén presentes todos los movimientos anteriores.\n\n' +
-          'Tablas afectadas: ' + partial.cappedTables.join(', ') + '.\n\n' +
-          'Si continúa, acepta expresamente restaurar este respaldo incompleto. ¿Autoriza la restauración parcial?';
-        allowPartialTursoRestore = window.confirm(warning);
-        if (!allowPartialTursoRestore) {
-          setBackupError('Restauración cancelada. No se modificó SQLite local porque no se autorizó la restauración parcial.');
-          return;
-        }
-      }
-    } catch (err: any) {
-      setBackupError(err?.message || 'El respaldo no contiene JSON válido.');
-      return;
-    }
-
     setIsRestoringBackup(true);
     setBackupProgress({ percent: 0, stage: 'Preparando', detail: 'Leyendo y validando el archivo…' });
     try {
-      await cargarRespaldoDesdeContenido(content, (progress) => setBackupProgress(progress), allowPartialTursoRestore);
-      toast({ title: "Respaldo Restaurado", description: allowPartialTursoRestore
-        ? "La restauración parcial SQLite terminó. El Kardex histórico anterior a la fecha indicada puede estar incompleto."
-        : "La restauración SQLite terminó correctamente. La aplicación se actualizará ahora." });
+      await cargarRespaldoDesdeContenido(content, (progress) => setBackupProgress(progress));
+      toast({ title: "Respaldo Restaurado", description: "La restauración SQLite terminó correctamente. La aplicación se actualizará ahora." });
       setTimeout(() => window.location.reload(), 900);
     } catch (err: any) {
       console.error('❌ Error restaurando respaldo:', err);
