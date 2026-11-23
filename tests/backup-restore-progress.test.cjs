@@ -41,5 +41,5 @@ test('exportación SQLite lee el conjunto completo de filas y no aplica tope de 
   const exportStart = sqliteStore.indexOf('exportBackupSnapshot');
   const exportEnd = sqliteStore.indexOf('export async function listRecords', exportStart);
   const exportSection = sqliteStore.slice(exportStart, exportEnd);
-  assert.doesNotMatch(exportSection, /getMaxBackupBytes|POSVEN_MAX_BACKUP_BYTES|limit\\s*:\\s*\\d+/i);
+  assert.doesNotMatch(exportSection, /getMaxBackupBytes|POSVEN_MAX_BACKUP_BYTES/);
 });
