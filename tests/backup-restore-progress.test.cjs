@@ -39,7 +39,7 @@ test('el conteo de 10.000 no bloquea ni exige confirmación especial al restaura
 test('exportación SQLite lee el conjunto completo de filas y no aplica tope de operaciones', () => {
   assert.match(sqliteStore, /SELECT id,data_json FROM ' \+ entry\.table \+ ' ORDER BY rowid/);
   const exportStart = sqliteStore.indexOf('exportBackupSnapshot');
-  const exportEnd = sqliteStore.indexOf('export function listRecords', exportStart);
+  const exportEnd = sqliteStore.indexOf('export async function listRecords', exportStart);
   const exportSection = sqliteStore.slice(exportStart, exportEnd);
   assert.doesNotMatch(exportSection, /LIMIT\s+\d+|getMaxBackupBytes|POSVEN_MAX_BACKUP_BYTES/);
 });
