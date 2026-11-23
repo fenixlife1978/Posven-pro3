@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server';
 import path from 'node:path';
 import { createSession, getRequestSessionId, getSessionUser } from '@/lib/sqlite/auth';
-import { assertSQLiteReady, exportBackupSnapshot, getMaxBackupBytes, restoreBackupTransaction } from '@/lib/sqlite/pos-store';
+import { assertSQLiteReady, exportBackupSnapshot, restoreBackupTransaction } from '@/lib/sqlite/pos-store';
 import { createSqliteBackup, getSqliteDatabasePath } from '@/lib/sqlite/database';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_REQUEST_OVERHEAD_BYTES = 128 * 1024;
-
-async function readJsonBodyLimited(request: Request, maxBytes: number) {
+async function readJsonBody(request: Request) {
   if (!request.body) throw Object.assign(new Error('El cuerpo de la solicitud está vacío.'), { status: 400 });
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -19,10 +17,6 @@ async function readJsonBodyLimited(request: Request, maxBytes: number) {
       const { done, value } = await reader.read();
       if (done) break;
       totalBytes += value.byteLength;
-      if (totalBytes > maxBytes) {
-        try { await reader.cancel(); } catch {}
-        throw Object.assign(new Error('La solicitud supera el tamaño máximo permitido para restauración.'), { status: 413 });
-      }
       chunks.push(value);
     }
   } finally {
@@ -56,19 +50,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Rechaza cuerpos excesivos antes de reservar memoria. La lectura del cuerpo
-    // comienza en paralelo con la autenticación: requireAdmin consulta SQLite y
-    // puede esperar el mutex de una operación larga; no debe dejar al cliente
-    // bloqueado a mitad de la transferencia mientras el servidor no consume el body.
-    const maxBackupBytes = getMaxBackupBytes();
-    const maxRequestBytes = maxBackupBytes + MAX_REQUEST_OVERHEAD_BYTES;
-    const contentLengthHeader = request.headers.get('content-length');
-    const contentLength = contentLengthHeader ? Number(contentLengthHeader) : 0;
-    if (contentLengthHeader && (!Number.isSafeInteger(contentLength) || contentLength <= 0 || contentLength > maxRequestBytes)) {
-      throw Object.assign(new Error('La solicitud supera el tamaño máximo permitido para restauración.'), { status: 413 });
-    }
+    // Consume el archivo completo mientras se valida la sesión; no existe un límite
+    // artificial de bytes ni de cantidad de movimientos para respaldos.
     const authPromise = requireAdmin(request);
-    const bodyPromise = readJsonBodyLimited(request, maxRequestBytes);
+    const bodyPromise = readJsonBody(request);
     const [user, body] = await Promise.all([authPromise, bodyPromise]);
     if (String(body?.action || '') !== 'restore') {
       throw Object.assign(new Error('La restauración debe enviarse como un único paquete validado.'), { status: 400 });
@@ -77,9 +62,6 @@ export async function POST(request: Request) {
     if (!backup || backup.app !== 'posven-pro' || !backup.data || typeof backup.data !== 'object') {
       throw Object.assign(new Error('El archivo no es un respaldo POSVEN válido.'), { status: 400 });
     }
-    if (Buffer.byteLength(JSON.stringify(backup), 'utf8') > maxBackupBytes) {
-      throw Object.assign(new Error('El respaldo supera el límite técnico configurado de tamaño (POSVEN_MAX_BACKUP_BYTES).'), { status: 413 });
-    }
 
     const databasePath = getSqliteDatabasePath();
     const backupDirectory = path.join(path.dirname(databasePath), 'backups');
@@ -87,7 +69,7 @@ export async function POST(request: Request) {
     const safetyCopy = path.join(backupDirectory, 'antes-restauracion-' + timestamp + '.sqlite');
     await createSqliteBackup(safetyCopy);
 
-    const result = await restoreBackupTransaction({ user, backup, allowPartialTursoRestore: body?.confirmPartialTursoRestore === true });
+    const result = await restoreBackupTransaction({ user, backup });
     const session = await createSession(String(result.preservedAdminId));
     const response = NextResponse.json({
       ok: true,
