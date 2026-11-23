@@ -188,7 +188,6 @@ export async function restaurarRespaldo(backup: BackupFile): Promise<void> {
 export async function cargarRespaldoDesdeContenido(
   content: string,
   onProgress?: (progress: { percent: number; stage: string; detail: string }) => void,
-  allowPartialTursoRestore = false,
 ): Promise<void> {
   if (!content) {
     throw new Error('El respaldo está vacío.');
