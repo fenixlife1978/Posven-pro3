@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - build/windows-installer-artifact
+      - fix/login-backup-unlimited-import
 
 permissions:
   contents: read
@@ -22,6 +23,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Run regression tests
+        run: npm test
       - name: Build application
         run: npm run build
       - name: Package Windows installer without publishing
