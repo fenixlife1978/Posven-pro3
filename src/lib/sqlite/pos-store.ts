@@ -232,16 +232,6 @@ export function assertSQLiteReady() {
   if (!isSQLiteConfigured()) throw new Error('SQLite local no está configurado.');
 }
 
-const DEFAULT_MAX_BACKUP_BYTES = 64 * 1024 * 1024;
-
-/** Límite técnico de bytes configurable; nunca limita la cantidad de registros. */
-export function getMaxBackupBytes(): number {
-  const configured = Number(process.env.POSVEN_MAX_BACKUP_BYTES);
-  return Number.isSafeInteger(configured) && configured >= 1024 * 1024
-    ? configured
-    : DEFAULT_MAX_BACKUP_BYTES;
-}
-
 function clean(value: any): any {
   if (value === undefined) return null;
   if (typeof value === 'number' && !Number.isFinite(value)) return null;
@@ -527,9 +517,6 @@ export async function exportBackupSnapshot() {
       data,
       meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
     };
-    if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > getMaxBackupBytes()) {
-      throw new Error('El respaldo supera el límite técnico de tamaño configurado (POSVEN_MAX_BACKUP_BYTES). No se limitó por cantidad de operaciones.');
-    }
     return snapshot;
   });
 }
@@ -739,7 +726,7 @@ export async function factoryResetTransaction(params: { user: { rol: string } })
   });
 }
 
-export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any; allowPartialTursoRestore?: boolean }) {
+export async function restoreBackupTransaction(params: { user: { id: string; rol: string }; backup: any }) {
   assertSQLiteReady();
   // Lotes pequeños limitan la memoria temporal y el trabajo por sentencia, sin limitar el total de registros.
   const RESTORE_BATCH_SIZE = 500;
@@ -767,14 +754,6 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
   }
   if (!Array.isArray(data.users)) {
     throw new Error('El respaldo no contiene la lista de usuarios. Genere un nuevo respaldo administrativo desde POSVEN2 antes de restaurar.');
-  }
-  if (backup.meta?.source === 'turso' && backup.meta.complete !== true) {
-    const capped = Object.entries(backup.meta.tursoTables || {})
-      .filter(([, count]) => Number(count) >= 10000)
-      .map(([name]) => name);
-    if (capped.length && params.allowPartialTursoRestore !== true) {
-      throw new Error('Respaldo antiguo posiblemente truncado en: ' + capped.join(', ') + '. La restauración parcial requiere confirmación explícita del administrador.');
-    }
   }
   if (backup.meta?.source === 'turso' && backup.meta.tursoTables) {
     for (const [tableName, count] of Object.entries(backup.meta.tursoTables)) {
