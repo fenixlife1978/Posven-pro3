@@ -400,6 +400,29 @@ function createWindow(appUrl) {
   mainWindow.on('focus', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.focus();
   });
+  // Recuperación de foco después de la navegación de cierre de sesión: el evento
+  // Window focus no siempre se dispara cuando la ventana ya está activa y solo
+  // cambia su URL. Al terminar de cargar /login, habilitar y enfocar el campo.
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    let pathname = '';
+    try { pathname = new URL(mainWindow.webContents.getURL()).pathname; } catch { return; }
+    if (pathname !== '/login') return;
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+    mainWindow.webContents.executeJavaScript(`(() => {
+      const field = document.getElementById('posven-login-identifier') ||
+        document.querySelector('input[autocomplete="name"]');
+      if (!field) return;
+      field.disabled = false;
+      field.readOnly = false;
+      field.removeAttribute('disabled');
+      field.removeAttribute('readonly');
+      field.tabIndex = 0;
+      field.style.pointerEvents = 'auto';
+      field.focus({ preventScroll: true });
+    })()`).catch(() => {});
+  });
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error('did-fail-load:', errorCode, errorDescription, validatedURL);
     if (errorCode !== -3) fatalError('No se pudo cargar POSVEN3', errorDescription + ' (código ' + errorCode + ')\nURL: ' + validatedURL);
@@ -788,8 +811,8 @@ ipcMain.handle('select-backup-file', async () => {
     if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
     const selectedPath = result.filePaths[0];
     const stat = await fs.promises.stat(selectedPath);
-    if (!stat.isFile() || stat.size <= 0 || stat.size > 64 * 1024 * 1024) {
-      throw new Error('El respaldo debe ser un archivo válido y no superar 64 MB.');
+    if (!stat.isFile() || stat.size <= 0) {
+      throw new Error('El respaldo debe ser un archivo válido y no estar vacío.');
     }
     return {
       canceled: false,
