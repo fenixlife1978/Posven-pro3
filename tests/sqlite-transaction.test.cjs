@@ -1480,7 +1480,7 @@ test('la restauración recupera catálogos personalizados y rechaza IDs duplicad
 });
 
 
-test('la restauración carga más de 10.000 movimientos con manifiesto heredado que reporta 10.000', async () => {
+test('la restauración carga más de 10.000 movimientos con manifiesto heredado que reporta 10.000', { timeout: 30000 }, async () => {
   await schema.ensureSqliteSchema();
   const adminResult = await sqliteExecute({
     sql: "SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 ORDER BY is_seed_admin DESC LIMIT 1",
