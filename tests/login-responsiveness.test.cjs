@@ -49,6 +49,7 @@ test('sondeos SQLite de fondo se serializan y se suspenden con ventana oculta', 
 test('Electron devuelve el foco del teclado al contenido web al recuperar la ventana', () => {
   assert.match(desktop, /mainWindow\.on\('focus',[\s\S]*?mainWindow\.webContents\.focus\(\)/);
   assert.match(desktop, /webContents\.on\('did-finish-load'/);
+  assert.match(desktop, /new MutationObserver/);
   assert.match(desktop, /posven-login-identifier/);
   assert.match(desktop, /field\.focus\(\{ preventScroll: true \}\)/);
 });
