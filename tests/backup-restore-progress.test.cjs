@@ -30,7 +30,8 @@ test('la carga de respaldo no impone límites de bytes en selector Electron ni A
 test('el conteo de 10.000 no bloquea ni exige confirmación especial al restaurar', () => {
   assert.doesNotMatch(backup, /detectarRespaldoTursoTruncado|validarRespaldoParaRestauracion|confirmPartialTursoRestore|10000/);
   assert.doesNotMatch(config, /detectarRespaldoTursoTruncado|cappedTables|límite de 10\.000|¿Autoriza la restauración parcial\?/);
-  assert.doesNotMatch(sqliteStore, /Number\(count\) >= 10000|allowPartialTursoRestore/);
+  assert.doesNotMatch(sqliteStore, /Number\(count\) >= 10000|allowPartialTursoRestore|source === 'turso' && backup\.meta\.tursoTables/);
+  assert.doesNotMatch(sqliteStore, /El conteo del respaldo no coincide en/);
   assert.match(sqliteStore, /const RESTORE_BATCH_SIZE = 500/);
   assert.match(sqliteStore, /for \(let offset = 0; offset < rows\.length; offset \+= RESTORE_BATCH_SIZE\)/);
   assert.match(sqliteStore, /await tx\.executeBatch\(batch\.map\(\(row: any\) => rowStatement\(entry\.table, row\)\)\)/);
