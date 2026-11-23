@@ -400,9 +400,9 @@ function createWindow(appUrl) {
   mainWindow.on('focus', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.focus();
   });
-  // Recuperación de foco después de la navegación de cierre de sesión: el evento
-  // Window focus no siempre se dispara cuando la ventana ya está activa y solo
-  // cambia su URL. Al terminar de cargar /login, habilitar y enfocar el campo.
+  // Recuperación de foco después de navegar al login. La página primero muestra
+  // "checking" y monta los campos después de validar la sesión; por eso el foco
+  // se observa con MutationObserver en lugar de un único intento prematuro.
   mainWindow.webContents.on('did-finish-load', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     let pathname = '';
@@ -411,16 +411,28 @@ function createWindow(appUrl) {
     mainWindow.focus();
     mainWindow.webContents.focus();
     mainWindow.webContents.executeJavaScript(`(() => {
-      const field = document.getElementById('posven-login-identifier') ||
-        document.querySelector('input[autocomplete="name"]');
-      if (!field) return;
-      field.disabled = false;
-      field.readOnly = false;
-      field.removeAttribute('disabled');
-      field.removeAttribute('readonly');
-      field.tabIndex = 0;
-      field.style.pointerEvents = 'auto';
-      field.focus({ preventScroll: true });
+      const tryFocusLogin = () => {
+        const field = document.getElementById('posven-login-identifier') ||
+          document.querySelector('input[autocomplete="name"]');
+        if (!field) return false;
+        field.disabled = false;
+        field.readOnly = false;
+        field.removeAttribute('disabled');
+        field.removeAttribute('readonly');
+        field.tabIndex = 0;
+        field.style.pointerEvents = 'auto';
+        const active = document.activeElement;
+        if (active === document.body || active === document.documentElement || active === field) {
+          try { field.focus({ preventScroll: true }); } catch { field.focus(); }
+        }
+        return true;
+      };
+      if (tryFocusLogin()) return;
+      const observer = new MutationObserver(() => {
+        if (tryFocusLogin()) observer.disconnect();
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      setTimeout(() => observer.disconnect(), 10000);
     })()`).catch(() => {});
   });
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
