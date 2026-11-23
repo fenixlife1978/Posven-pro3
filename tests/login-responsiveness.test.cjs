@@ -29,6 +29,7 @@ test('el login enfoca una sola vez y no roba el foco durante la escritura', () =
   assert.match(login, /reactivateLoginForm/);
   assert.match(login, /posven-login-identifier/);
   assert.match(login, /posven-login-password/);
+  assert.match(login, /autoFocus/);
   assert.doesNotMatch(login, /delays = \[0, 80, 220, 450, 850\]/);
   assert.doesNotMatch(login, /setTimeout\(focusField/);
   assert.match(login, /disabled=\{false\} readOnly=\{false\} tabIndex=\{0\}/);
