@@ -1480,6 +1480,48 @@ test('la restauración recupera catálogos personalizados y rechaza IDs duplicad
 });
 
 
+test('la restauración carga más de 10.000 movimientos con manifiesto heredado que reporta 10.000', async () => {
+  await schema.ensureSqliteSchema();
+  const adminResult = await sqliteExecute({
+    sql: "SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 ORDER BY is_seed_admin DESC LIMIT 1",
+  });
+  assert.ok(adminResult.rows[0], 'la prueba requiere un administrador activo');
+  const user = { id: String(adminResult.rows[0].id), rol: 'administrador' };
+  const catalogNames = [
+    'categorias','departamentos','categoriasPorDepartamento','marcas','presentaciones',
+    'productCategories','productUnits','productColors','productSizes',
+    'brands','groups','subgroups','lines','suppliers',
+  ];
+  const catalogs = Object.fromEntries(catalogNames.map(name => [name, []]));
+  const movements = Array.from({ length: 10001 }, (_, index) => ({
+    id: 'RESTORE-OVER-10K-' + String(index + 1).padStart(5, '0'),
+    productoId: 'RESTORE-OVER-10K-PRODUCT',
+    tipo: 'movimiento-prueba',
+    cantidad: 0,
+    fecha: '2026-11-23T00:00:00.000Z',
+    stockAntes: 0,
+    stockDespues: 0,
+    referencia: 'Prueba de restauración masiva ' + (index + 1),
+  }));
+  const backup = {
+    app: 'posven-pro',
+    version: 3,
+    data: {
+      productos: [], movimientos, ventas: [], cxc: [], cxp: [], clientes: [],
+      proveedores: [], devoluciones: [], anulaciones: [], terminales: [],
+      libroDiario: [], reportesZ: [], compras: [], cashHistory: [], users: [],
+      config: {}, ...catalogs,
+    },
+    meta: { source: 'turso', complete: false, tursoTables: { movimientos: 10000 } },
+  };
+  const result = await posStore.restoreBackupTransaction({ user, backup });
+  assert.equal(result.counts.movimientos, 10001);
+  const stored = await sqliteExecute({ sql: 'SELECT COUNT(*) AS total FROM movimientos' });
+  assert.equal(Number(stored.rows[0].total), 10001);
+  const lastMovement = await posStore.getRecord('movimientos', 'RESTORE-OVER-10K-10001', user);
+  assert.equal(lastMovement.referencia, 'Prueba de restauración masiva 10001');
+});
+
 test('un cobro global CxC actualiza el saldo del cliente cuando la deuda histórica solo tiene nombre', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T14:10:00.000Z';
