@@ -458,7 +458,7 @@ test('la reparación de devoluciones reconstruye el Kardex con el costo históri
     sql: 'SELECT data_json FROM productos WHERE id=?',
     args: [product.id],
   });
-  assert.equal(JSON.parse(productAfter.rows[0].data_json).stock, 6);
+  assert.equal(JSON.parse(productAfter.rows[0].data_json).stock, 5);
 });
 
 test('devoluciones limitan reintegros al dinero cobrado y excluyen notas de crédito de caja', async () => {
