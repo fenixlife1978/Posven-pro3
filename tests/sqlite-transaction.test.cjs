@@ -393,8 +393,8 @@ test('la reparación de devoluciones reconstruye el Kardex con el costo históri
   const user = { id: 'admin-repair-regression', rol: 'administrador', nombre: 'Prueba' };
   const saleResult = await posStore.createSaleTransaction({
     operationId: 'REPAIR-SALE-REGRESSION',
-    cart: [{ productoId: product.id, nombre: product.nombre, cantidad: 1, precioUnitUSD: 4, subtotalUSD: 4 }],
-    payments: [{ metodo: 'efectivo_usd', montoUSD: 4, montoBS: 0 }],
+    cart: [{ productoId: product.id, nombre: product.nombre, cantidad: 2, precioUnitUSD: 4, subtotalUSD: 8 }],
+    payments: [{ metodo: 'efectivo_usd', montoUSD: 8, montoBS: 0 }],
     clientName: 'CONTADO',
     terminalId: terminal.id,
     now: saleAt,
@@ -419,6 +419,20 @@ test('la reparación de devoluciones reconstruye el Kardex con el costo históri
     user,
   });
 
+  await posStore.processReturnOrCancellationTransaction({
+    operationId: 'REPAIR-RETURN-REGRESSION-SECOND',
+    operationType: 'DEVOLUCION',
+    saleId: saleResult.sale.id,
+    operationDoc: {
+      id: 'DEV-REPAIR-TEMP-2', fecha: returnAt, items: [returnedItem],
+      refundPayments: [{ metodo: 'efectivo_usd', montoUSD: 4, montoBS: 0 }],
+    },
+    movements: [],
+    refundItems: [returnedItem],
+    terminalId: terminal.id,
+    user,
+  });
+
   // Simula el caso legado: el documento de devolución existe, pero su
   // movimiento de inventario se perdió y debe ser reconstruido por reparación.
   await sqliteExecute({
@@ -427,13 +441,13 @@ test('la reparación de devoluciones reconstruye el Kardex con el costo históri
     wantRows: false,
   });
   const repaired = await posStore.repairReturnInventoryAndCxcTransaction({ saleId: saleResult.sale.id });
-  assert.equal(repaired.correctedOperations, 1);
+  assert.equal(repaired.correctedOperations, 2);
 
   const movements = await sqliteExecute({
     sql: "SELECT data_json FROM movimientos WHERE json_extract(data_json,'$.tipo')='devolucion' AND json_extract(data_json,'$.productoId')=?",
     args: [product.id],
   });
-  assert.equal(movements.rows.length, 1);
+  assert.equal(movements.rows.length, 2);
   const restored = JSON.parse(movements.rows[0].data_json);
   assert.equal(restored.costoUnitarioUSD, 2);
   assert.equal(restored.costoUnitarioBs, 4);
@@ -444,7 +458,7 @@ test('la reparación de devoluciones reconstruye el Kardex con el costo históri
     sql: 'SELECT data_json FROM productos WHERE id=?',
     args: [product.id],
   });
-  assert.equal(JSON.parse(productAfter.rows[0].data_json).stock, 5);
+  assert.equal(JSON.parse(productAfter.rows[0].data_json).stock, 6);
 });
 
 test('devoluciones limitan reintegros al dinero cobrado y excluyen notas de crédito de caja', async () => {
