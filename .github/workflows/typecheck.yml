@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/posven-pro3-parity-unlimited-backups
+      - audit/fixes-posven-pro3
   pull_request:
     branches:
       - main
