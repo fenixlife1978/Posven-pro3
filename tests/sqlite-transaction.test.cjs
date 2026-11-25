@@ -2647,6 +2647,21 @@ test('exportación aborta ante JSON SQLite corrupto en vez de emitir respaldo in
 });
 
 
+test('eliminar compra con historial de abonos CxP se bloquea y conserva la deuda', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-22T16:00:00.000Z';
+  const invoice = 'FAC-CXP-PAYMENT-HISTORY-001';
+  const supplier = 'Proveedor con historial';
+  const purchase = { id: 'PURCHASE-CXP-PAYMENT-HISTORY-001', fecha: '2026-11-22', proveedor: supplier, numeroFactura: invoice, montoUSD: 12, items: [] };
+  const debt = { id: 'CXP-PAYMENT-HISTORY-001', fecha: '2026-11-22', proveedor: supplier, numeroFactura: invoice, montoUSD: 12, abonadoUSD: 4, saldoUSD: 8, estado: 'parcial', historialPagos: [{ id: 'PAY-CXP-PAYMENT-HISTORY-001', montoUSD: 4, montoBS: 0, asientoId: 'JOURNAL-CXP-PAYMENT-HISTORY-001' }] };
+  await sqliteExecute({ sql: 'INSERT OR REPLACE INTO compras(id,data_json,fecha) VALUES(?,?,?)', args: [purchase.id, JSON.stringify(purchase), at], wantRows: false });
+  await sqliteExecute({ sql: 'INSERT OR REPLACE INTO cxp(id,data_json,fecha) VALUES(?,?,?)', args: [debt.id, JSON.stringify(debt), at], wantRows: false });
+  await assert.rejects(posStore.deletePurchaseTransaction({ operationId: 'DELETE-CXP-PAYMENT-HISTORY-OP', purchaseId: purchase.id, invoiceNumber: invoice, supplier, purchaseDate: purchase.fecha }), /conserva historial de abonos/);
+  assert.ok(await posStore.getRecord('compras', purchase.id, { id: 'admin-regression', rol: 'administrador' }));
+  const preserved = await posStore.getRecord('cxp', debt.id, { id: 'admin-regression', rol: 'administrador' });
+  assert.equal(preserved.saldoUSD, 8);
+  assert.equal(preserved.historialPagos.length, 1);
+});
 test('eliminar compra no borra asiento COMPRA de otro proveedor con la misma factura', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-21T16:00:00.000Z';
