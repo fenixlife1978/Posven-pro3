@@ -1526,7 +1526,7 @@ test('la restauración carga más de 10.000 movimientos con manifiesto heredado 
       libroDiario: [], reportesZ: [], compras: [], cashHistory: [], users: [],
       config: {}, ...catalogs,
     },
-    meta: { source: 'turso', complete: false, tursoTables: { movimientos: 10000 } },
+    meta: { source: 'turso', complete: false, sqliteTables: { movimientos: 10000 } },
   };
   const result = await posStore.restoreBackupTransaction({ user, backup });
   assert.equal(result.counts.movimientos, 10001);
