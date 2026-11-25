@@ -761,7 +761,10 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
   if (backup.meta?.source === 'sqlite-local' && backup.meta.complete !== true) {
     throw new Error('El respaldo SQLite no está marcado como completo. Genere una nueva copia antes de restaurar.');
   }
-  if (backup.meta?.sqliteTables) {
+  // Solo el manifiesto generado por SQLite local es una autoridad de conteos.
+  // Respaldos heredados pueden traer cifras truncadas por paginación; se restauran
+  // las filas reales del archivo y se valida su estructura/IDs más adelante.
+  if (backup.meta?.source === 'sqlite-local' && backup.meta?.sqliteTables) {
     for (const [tableName, count] of Object.entries(backup.meta.sqliteTables)) {
       const key = tableName === 'caja' ? 'cashHistory' : tableName;
       if (Array.isArray(data[key]) && Number(count) !== data[key].length) {
@@ -788,7 +791,7 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
       if (!Array.isArray(data[name])) {
         throw new Error('El catálogo ' + name + ' declarado en el manifiesto no está presente en el respaldo.');
       }
-      if (!Number.isSafeInteger(Number(count)) || Number(count) < 0 || Number(count) !== data[name].length) {
+      if (backup.meta?.source === 'sqlite-local' && (!Number.isSafeInteger(Number(count)) || Number(count) < 0 || Number(count) !== data[name].length)) {
         throw new Error('El conteo del catálogo ' + name + ' no coincide con el manifiesto.');
       }
     }
