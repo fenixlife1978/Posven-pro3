@@ -44,7 +44,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     const message = String(error?.message || error);
     const status = Number(error?.status) || (message.includes('No autenticado') ? 401 : message.includes('Se requiere administrador') ? 403 : 400);
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return NextResponse.json({ ok: false, error: message }, { status, headers: { 'Cache-Control': 'no-store' } });
   }
 }
 
@@ -82,10 +82,10 @@ export async function POST(request: Request) {
       totalRows: result.totalRows,
       counts: result.counts,
       safetyBackupCreated: true,
-    });
+    }, { headers: { 'Cache-Control': 'no-store' } });
     response.cookies.set('posven_session', session.id, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: 'strict',
       secure: new URL(request.url).protocol === 'https:',
       path: '/',
       expires: new Date(session.expires),
@@ -97,6 +97,6 @@ export async function POST(request: Request) {
       message.includes('No autenticado') ? 401 :
       message.includes('Se requiere administrador') ? 403 : 400
     );
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return NextResponse.json({ ok: false, error: message }, { status, headers: { 'Cache-Control': 'no-store' } });
   }
 }
