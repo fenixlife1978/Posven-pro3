@@ -1522,6 +1522,38 @@ test('la restauración carga más de 10.000 movimientos con manifiesto heredado 
   assert.equal(lastMovement.referencia, 'Prueba de restauración masiva 10001');
 });
 
+test('eliminar CxC con historial de abonos se bloquea y conserva el registro', async () => {
+  await schema.ensureSqliteSchema();
+  const adminResult = await sqliteExecute({
+    sql: "SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 LIMIT 1",
+  });
+  assert.ok(adminResult.rows[0], 'la prueba requiere un administrador activo');
+  const user = { id: String(adminResult.rows[0].id), rol: 'administrador' };
+  const at = new Date().toISOString();
+  const debt = {
+    id: 'DELETE-CXC-WITH-PAYMENTS',
+    cliente: 'Cliente con abonos [V-123]',
+    montoUSD: 20, abonadoUSD: 5, saldoUSD: 15, estado: 'parcial',
+    historialPagos: [{ id: 'PAYMENT-TRACE-1', montoUSD: 5, fecha: at, asientoId: 'JOURNAL-TRACE-1' }],
+  };
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: [debt.id, JSON.stringify(debt), at], wantRows: false,
+  });
+  await assert.rejects(
+    posStore.deleteCustomerDebtTransaction({
+      operationId: 'DELETE-CXC-WITH-PAYMENTS-OP',
+      debtId: debt.id,
+      user,
+    }),
+    /conserva historial de abonos/,
+  );
+  const preserved = await posStore.getRecord('cxc', debt.id, user);
+  assert.equal(preserved.saldoUSD, 15);
+  assert.equal(preserved.historialPagos.length, 1);
+  assert.equal(preserved.historialPagos[0].id, 'PAYMENT-TRACE-1');
+});
+
 test('un cobro global CxC actualiza el saldo del cliente cuando la deuda histórica solo tiene nombre', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T14:10:00.000Z';
