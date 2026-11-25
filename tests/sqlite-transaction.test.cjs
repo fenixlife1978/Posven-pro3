@@ -2588,7 +2588,7 @@ test('reversión de compra elimina CxP y asientos vinculados y restaura stock y 
   await sqliteExecute({ sql: 'INSERT OR REPLACE INTO productos(id,data_json,updated_at) VALUES(?,?,?)', args: [productId, JSON.stringify(initialProduct), at], wantRows: false });
   const purchase = {
     id: purchaseId, fecha: '2026-11-21', fechaHora: at, proveedor: 'Proveedor Reversión', numeroFactura: invoice,
-    montoUSD: 32, pagadoUSD: 10, saldoUSD: 22,
+    montoUSD: 32, pagadoUSD: 0, saldoUSD: 32,
     items: [{ productoId: productId, cantidad: 4, costoUnitarioUSD: 8, subtotalUSD: 32 }],
   };
   const debt = {
