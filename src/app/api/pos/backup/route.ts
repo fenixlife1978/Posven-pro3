@@ -50,11 +50,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Consume el archivo completo mientras se valida la sesión; no existe un límite
-    // artificial de bytes ni de cantidad de movimientos para respaldos.
-    const authPromise = requireAdmin(request);
-    const bodyPromise = readJsonBody(request);
-    const [user, body] = await Promise.all([authPromise, bodyPromise]);
+    // Autenticar y autorizar ANTES de consumir el cuerpo potencialmente grande.
+    // Esto evita que solicitudes anónimas/no autorizadas fuerzan lectura y
+    // acumulación de respaldos en memoria.
+    const user = await requireAdmin(request);
+    const body = await readJsonBody(request);
     if (String(body?.action || '') !== 'restore') {
       throw Object.assign(new Error('La restauración debe enviarse como un único paquete validado.'), { status: 400 });
     }
