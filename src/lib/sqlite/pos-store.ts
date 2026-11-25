@@ -2980,7 +2980,7 @@ export async function processReturnOrCancellationTransaction(params:any){
         fecha:String(operationDoc?.fecha||new Date().toISOString()),
         referencia:operationType==='ANULACION'
           ? 'ANULACIÓN TOTAL FACTURA #'+String(saleId)
-          : 'DEVOLUCIÓN '+String(canonicalId)+' - REF VENTA '+String(saleId),
+          : 'DEVOLUCIÓN '+String(operationDoc?.id||operationId)+' - REF VENTA '+String(saleId),
         terminalId:terminalId||operationDoc?.terminalId||'GLOBAL',
       });
     }
@@ -3032,6 +3032,7 @@ export async function processReturnOrCancellationTransaction(params:any){
     const canonicalOperationDoc=clean({
       ...operationDoc,
       id:canonicalId,
+      movementReferenceId:String(operationDoc?.id||operationId),
       ventaId:String(saleId),
       terminalId:terminalId||operationDoc?.terminalId||'GLOBAL',
       terminalName:terminal?.nombre||operationDoc?.terminalName||'SISTEMA GLOBAL',
@@ -3253,7 +3254,7 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
         args:[operation.kind==='ANULACION'?'anulacion':'devolucion',salePattern],
       })).rows.map(rowFromDb).filter(Boolean);
 
-      const operationMarker=String(doc?.id||'').trim();
+      const operationMarker=String(doc?.movementReferenceId||doc?.id||'').trim();
       const operationRows=movementRows.filter((m:any)=>operationMarker && String(m?.referencia||'').includes(operationMarker));
       const sameDateLegacyOperations=operations.filter((candidate:any)=>candidate.kind===operation.kind && String(candidate.doc?.fecha||'')===String(doc?.fecha||''));
       if(!operationRows.length && sameDateLegacyOperations.length>1) throw new Error('No se puede reparar de forma segura: hay varias operaciones del mismo tipo y fecha sin referencias inequívocas.');
