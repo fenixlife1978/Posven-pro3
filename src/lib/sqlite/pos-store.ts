@@ -3257,7 +3257,8 @@ export async function repairReturnInventoryAndCxcTransaction(params:{saleId:stri
       const operationMarker=String(doc?.movementReferenceId||doc?.id||'').trim();
       const operationRows=movementRows.filter((m:any)=>operationMarker && String(m?.referencia||'').includes(operationMarker));
       const sameDateLegacyOperations=operations.filter((candidate:any)=>candidate.kind===operation.kind && String(candidate.doc?.fecha||'')===String(doc?.fecha||''));
-      if(movementRows.length && !operationRows.length && sameDateLegacyOperations.length>1) throw new Error('No se puede reparar de forma segura: hay varias operaciones del mismo tipo y fecha sin referencias inequívocas.');
+      const unmatchedLegacyRows=movementRows.filter((m:any)=>!String(m?.reparadoPorOperacion||'').trim());
+      if(unmatchedLegacyRows.length && !operationRows.length && sameDateLegacyOperations.length>1) throw new Error('No se puede reparar de forma segura: hay varias operaciones del mismo tipo y fecha sin referencias inequívocas.');
       const candidateRows=operationRows.length?operationRows:movementRows.filter((m:any)=>String(m?.fecha||'')===String(doc?.fecha||'') && !String(m?.reparadoPorOperacion||'').trim());
       const usedMovementIds=new Set<string>();
       const byProduct=new Map<string,any>();
