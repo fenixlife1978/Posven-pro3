@@ -2980,7 +2980,7 @@ export async function processReturnOrCancellationTransaction(params:any){
         fecha:String(operationDoc?.fecha||new Date().toISOString()),
         referencia:operationType==='ANULACION'
           ? 'ANULACIÓN TOTAL FACTURA #'+String(saleId)
-          : 'DEVOLUCIÓN '+String(operationDoc?.id||operationId)+' - REF VENTA '+String(saleId),
+          : 'DEVOLUCIÓN '+String(canonicalId)+' - REF VENTA '+String(saleId),
         terminalId:terminalId||operationDoc?.terminalId||'GLOBAL',
       });
     }
