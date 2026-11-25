@@ -3583,7 +3583,7 @@ export async function deleteCustomerAndDebtsTransaction(params:any){
     const exact=customerCedula?String(customerName||customer.cliente||customer.nombre||'')+' ['+customerCedula+']':String(customerName||customer.cliente||customer.nombre||'');
     const found=await tx.execute({sql:"SELECT id,data_json FROM cxc WHERE json_extract(data_json,'$.cliente') IN (?,?)",args:[exact,String(customerName||customer.cliente||customer.nombre||'')]});
     const debts=found.rows.map(rowFromDb);
-    const active=debts.find((d:any)=>d.estado!=='pagada'&&(Number(d.saldoUSD)||0)>.001); if(active) throw new Error('El cliente tiene una deuda pendiente.');
+    const active=debts.find((d:any)=>d.estado!=='pagada'&&(Number(d.saldoUSD)||0)>.001); if(active) throw new Error('El cliente tiene una deuda pendiente.');const debtWithPayments=debts.find((d)=>Array.isArray(d.historialPagos)&&d.historialPagos.length>0); if(debtWithPayments) throw new Error('No se puede eliminar un cliente que conserva historial de abonos en CxC. Preserve la trazabilidad de las facturas y pagos.');
     for(const d of debts) await tx.execute({sql:'DELETE FROM cxc WHERE id=?',args:[d.id],wantRows:false});
     await tx.execute({sql:'DELETE FROM clientes WHERE id=?',args:[customerId],wantRows:false});
     await tx.execute({sql:'INSERT INTO operaciones(id,prefijo,operation_id,data_json) VALUES(?,?,?,?)',args:['ELIMINAR-CLIENTE-'+opId,'ELIMINAR-CLIENTE',opId,JSON.stringify({tipo:'ELIMINAR-CLIENTE',operationId:opId,referencia:customerId,customerSnapshot:customer,deletedDebts:debts.length})],wantRows:false});
