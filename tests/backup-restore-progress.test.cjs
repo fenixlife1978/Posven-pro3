@@ -58,3 +58,10 @@ test('restore exige autenticar antes de leer el payload de respaldo', () => {
   assert.ok(authIndex >= 0, 'POST debe autenticar y autorizar');
   assert.ok(bodyReadIndex > authIndex, 'el cuerpo grande no debe leerse antes de autenticar');
 });
+
+test('respuesta de restauración y cookie de sesión no permiten caché ni CSRF lax', () => {
+  const postStart = backupRoute.indexOf('export async function POST(request: Request)');
+  const postSection = backupRoute.slice(postStart);
+  assert.ok(postSection.includes("'Cache-Control': 'no-store'"));
+  assert.ok(postSection.includes("sameSite: 'strict'"));
+});
