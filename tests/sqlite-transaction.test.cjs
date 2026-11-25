@@ -436,10 +436,12 @@ test('la reparación de devoluciones reconstruye el Kardex con el costo históri
   // Simula el caso legado: el documento de devolución existe, pero su
   // movimiento de inventario se perdió y debe ser reconstruido por reparación.
   await sqliteExecute({
-    sql: "DELETE FROM movimientos WHERE json_extract(data_json,'$.tipo')='devolucion' AND json_extract(data_json,'$.productoId')=?",
-    args: [product.id],
+    sql: "DELETE FROM movimientos WHERE json_extract(data_json,'$.tipo')='devolucion' AND json_extract(data_json,'$.referencia') LIKE ?",
+    args: ['%'+saleResult.sale.id+'%'],
     wantRows: false,
   });
+  const missingReturnMovements = await sqliteExecute({ sql: "SELECT COUNT(*) AS total FROM movimientos WHERE json_extract(data_json,'$.tipo')='devolucion' AND json_extract(data_json,'$.referencia') LIKE ?", args: ['%'+saleResult.sale.id+'%'] });
+  assert.equal(Number(missingReturnMovements.rows[0].total), 0);
   const repaired = await posStore.repairReturnInventoryAndCxcTransaction({ saleId: saleResult.sale.id });
   assert.equal(repaired.correctedOperations, 2);
 
