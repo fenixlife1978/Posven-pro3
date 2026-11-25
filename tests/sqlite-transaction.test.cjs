@@ -1586,6 +1586,24 @@ test('eliminar CxC con historial de abonos se bloquea y conserva el registro', a
   assert.equal(preserved.historialPagos[0].id, 'PAYMENT-TRACE-1');
 });
 
+test('eliminar cliente con historial de abonos CxC se bloquea y preserva la cartera', async () => {
+  await schema.ensureSqliteSchema();
+  const adminResult = await sqliteExecute({
+    sql: "SELECT id FROM users WHERE rol='administrador' AND acceso_bloqueado=0 LIMIT 1",
+  });
+  assert.ok(adminResult.rows[0], 'la prueba requiere un administrador activo');
+  const user = { id: String(adminResult.rows[0].id), rol: 'administrador' };
+  const at = new Date().toISOString();
+  const customer = { id: 'DELETE-CUSTOMER-PAYMENTS', nombre: 'Cliente con abonos', cliente: 'Cliente con abonos', cedula: 'V-321', debt: 0 };
+  const debt = { id: 'DELETE-CUSTOMER-PAYMENTS-CXC', cliente: 'Cliente con abonos [V-321]', montoUSD: 10, abonadoUSD: 10, saldoUSD: 0, estado: 'pagada', historialPagos: [{ id: 'DELETE-CUSTOMER-PAYMENTS-PAY', montoUSD: 10, fecha: at }] };
+  await sqliteExecute({ sql: 'INSERT OR REPLACE INTO clientes(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)', args: [customer.id, JSON.stringify(customer)], wantRows: false });
+  await sqliteExecute({ sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)', args: [debt.id, JSON.stringify(debt), at], wantRows: false });
+  await assert.rejects(posStore.deleteCustomerAndDebtsTransaction({ operationId: 'DELETE-CUSTOMER-PAYMENTS-OP', customerId: customer.id, customerName: customer.nombre, customerCedula: customer.cedula, user }), /conserva historial de abonos/);
+  assert.ok(await posStore.getRecord('clientes', customer.id, user));
+  const preservedDebt = await posStore.getRecord('cxc', debt.id, user);
+  assert.equal(preservedDebt.estado, 'pagada');
+  assert.equal(preservedDebt.historialPagos.length, 1);
+});
 test('un cobro global CxC actualiza el saldo del cliente cuando la deuda histórica solo tiene nombre', async () => {
   await schema.ensureSqliteSchema();
   const at = '2026-11-19T14:10:00.000Z';
