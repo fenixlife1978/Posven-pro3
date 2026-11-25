@@ -2604,11 +2604,17 @@ test('reversión de compra elimina CxP y asientos vinculados y restaura stock y 
   for (const [table, record, dateColumn, storedAt] of [['compras', purchase, 'fecha', at], ['cxp', debt, 'fecha', at], ['movimientos', openingMovement, 'fecha', openingAt], ['movimientos', movement, 'fecha', at], ['libro_diario', purchaseJournal, 'fecha', at], ['libro_diario', paymentJournal, 'fecha', at]]) {
     await sqliteExecute({ sql: 'INSERT OR REPLACE INTO '+table+'(id,data_json,'+dateColumn+') VALUES(?,?,?)', args: [record.id, JSON.stringify(record), storedAt], wantRows: false });
   }
+  const paymentReversal = await posStore.reverseDebtPaymentTransaction({
+    operationId: 'PURCHASE-REVERSAL-CXP-REVERSE-PAYMENT',
+    collection: 'cxp', debtId, paymentId: 'PAY-REVERSAL-CXP-001', journalId: paymentJournalId,
+  });
+  assert.equal(paymentReversal.saldoUSD, 32);
+  assert.equal(paymentReversal.historialPagos.length, 0);
   const result = await posStore.deletePurchaseTransaction({ operationId: 'PURCHASE-REVERSAL-CXP-OP', purchaseId, invoiceNumber: invoice, supplier: 'Proveedor Reversión', purchaseDate: '2026-11-21' });
   assert.equal(result.deletedPurchase, 1);
   assert.equal(result.deletedMovements, 1);
   assert.equal(result.deletedDebts, 1);
-  assert.equal(result.deletedJournals, 2);
+  assert.equal(result.deletedJournals, 1);
   const restored = await posStore.getRecord('productos', productId, { id: 'admin-purchase-reversal-test', rol: 'administrador' });
   assert.equal(restored.stock, 10);
   assert.equal(restored.costoUSD, 5);
