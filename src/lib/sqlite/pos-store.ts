@@ -3608,6 +3608,25 @@ export async function createPurchaseTransaction(params:any){
     if(!Number.isFinite(quantity)||quantity<=0) throw new Error('La cantidad de la línea '+(index+1)+' debe ser mayor que cero.');
     if(!Number.isFinite(cost)||cost<0) throw new Error('El costo unitario de la línea '+(index+1)+' no es válido.');
     if(!Number.isFinite(subtotal)||subtotal<0) throw new Error('El subtotal de la línea '+(index+1)+' no es válido.');
+    if(Math.abs(subtotal-quantity*cost)>0.0001) throw new Error('El subtotal de la línea '+(index+1)+' no coincide con cantidad por costo unitario.');
+  }
+  const totalLineasUSD=items.reduce((sum:any,item:any)=>sum+Number(item.subtotalUSD||0),0);
+  const totalCompraUSD=Number(purchase.montoUSD);
+  const pagadoUSD=Number(params.paidUSD ?? purchase.pagadoUSD ?? 0);
+  const saldoEsperadoUSD=Math.round((Math.max(0,totalLineasUSD-pagadoUSD)+Number.EPSILON)*1000000)/1000000;
+  const cercano=(a:any,b:any)=>Number.isFinite(Number(a))&&Math.abs(Number(a)-Number(b))<=0.00001;
+  if(!Number.isFinite(totalCompraUSD)||totalCompraUSD<0||!cercano(totalCompraUSD,totalLineasUSD)) throw new Error('El total de la compra no coincide con la suma de sus líneas.');
+  if(!Number.isFinite(pagadoUSD)||pagadoUSD<0||pagadoUSD>totalLineasUSD+0.00001) throw new Error('El monto pagado de la compra no es válido.');
+  if(!cercano(purchase.pagadoUSD??0,pagadoUSD)||!cercano(purchase.saldoUSD??0,saldoEsperadoUSD)) throw new Error('El pagado y saldo de la compra no coinciden con sus totales.');
+  if(saldoEsperadoUSD>0.0000005){
+    if(!debt||!cercano(debt.montoUSD,totalLineasUSD)||!cercano(debt.abonadoUSD,pagadoUSD)||!cercano(debt.saldoUSD,saldoEsperadoUSD)) throw new Error('La CxP de la compra no coincide con el total, pagado y saldo calculados.');
+  }else if(debt){
+    throw new Error('No debe generarse una CxP cuando la compra está completamente pagada.');
+  }
+  if(pagadoUSD>0.0000005){
+    if(!journal||!cercano(journal.montoUSD,pagadoUSD)) throw new Error('El asiento contable del pago inicial no coincide con el monto pagado.');
+  }else if(journal){
+    throw new Error('No debe generarse un asiento de pago inicial cuando no se pagó la compra.');
   }
   const opId=String(operationId||purchase.id||(invoiceNumber+'|'+supplier+'|'+purchaseDate));
   return sqliteInteractiveTransaction(async tx=>{
