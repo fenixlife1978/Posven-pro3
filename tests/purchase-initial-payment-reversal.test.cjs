@@ -15,3 +15,15 @@ test('eliminar compra permite revertir solo el abono inicial de contado y rechaz
   assert.match(deletion, /const paymentJournals[\s\S]*?libro_diario[\s\S]*?const journals=/);
   assert.doesNotMatch(deletion, /historialPagos\)&&d\.historialPagos\.length>0/);
 });
+
+test('la compra valida total de líneas, pagado, saldo, CxP y asiento inicial dentro de SQLite', () => {
+  const startCreate = store.indexOf('function createPurchaseTransaction');
+  const endCreate = store.indexOf('function deletePurchaseTransaction', startCreate);
+  const create = store.slice(startCreate, endCreate);
+  assert.match(create, /subtotal-quantity\*cost/);
+  assert.match(create, /totalCompraUSD[\s\S]*?totalLineasUSD/);
+  assert.match(create, /pagadoUSD[\s\S]*?saldoEsperadoUSD/);
+  assert.match(create, /debt\.montoUSD[\s\S]*?debt\.abonadoUSD[\s\S]*?debt\.saldoUSD/);
+  assert.match(create, /journal\.montoUSD[\s\S]*?pagadoUSD/);
+  assert.match(create, /initialPayments\.length!==1[\s\S]*?initialPayment\.asientoId/);
+});
