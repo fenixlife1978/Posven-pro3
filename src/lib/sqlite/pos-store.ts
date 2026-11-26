@@ -1806,6 +1806,8 @@ export async function patchTerminalTransaction(params: {
       }
     }
     if (patch.isCashOpen === true) {
+      const openingBS=Number(patch.fondoCajaHoyBS ?? 0), openingUSD=Number(patch.fondoCajaHoyUSD ?? 0);
+      if(!Number.isFinite(openingBS)||!Number.isFinite(openingUSD)||openingBS<0||openingUSD<0||!(openingBS>0||openingUSD>0)) throw new Error('El fondo inicial debe contener montos válidos no negativos y al menos una moneda con saldo mayor que cero.');
       const requestedOpenId = String(patch.cashData?.openOperationId || patch.cashData?.openDate || '');
       const currentOpenId = String(current.cashData?.openOperationId || current.cashData?.openDate || '');
       if (current.isCashOpen === true && requestedOpenId && requestedOpenId !== currentOpenId) {
