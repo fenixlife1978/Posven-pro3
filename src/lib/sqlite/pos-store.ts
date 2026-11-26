@@ -3482,6 +3482,8 @@ export async function createCashMovementTransaction(params: {
       assertTerminalAccess(params.user, terminal);
       if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el movimiento.');
     }
+    const existingJournalEntry=rowFromDb((await tx.execute(txSelect('libroDiario',String(movement.id)))).rows[0]);
+    if(existingJournalEntry) throw new Error('El identificador del movimiento de caja ya existe en el libro diario. No se sobrescribió el asiento previo.');
     const canonicalMovement = {
       ...movement,
       terminalId: terminalId || movement.terminalId || 'GLOBAL',
