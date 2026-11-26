@@ -3737,8 +3737,8 @@ export async function deletePurchaseTransaction(params:any){
     // Si la compra generó una CxP y luego recibió abonos, esos abonos también
     // generaron asientos contables. Al eliminar la compra se eliminan esos
     // asientos junto con la deuda para que no quede ningún efecto contable.
-    const debtWithPayments=debts.find((d:any)=>Array.isArray(d.historialPagos)&&d.historialPagos.length>0);
-    if(debtWithPayments) throw new Error('No se puede eliminar una compra con CxP que conserva historial de abonos. Reversar los abonos primero para mantener la trazabilidad contable.');
+    const debtWithExternalPayments=debts.find((d:any)=>Array.isArray(d.historialPagos)&&d.historialPagos.some((p:any)=>String(p?.reciboId||'')!=='INICIAL-CONTADO'));
+    if(debtWithExternalPayments) throw new Error('No se puede eliminar una compra con CxP que conserva abonos posteriores. Reversar los abonos primero para mantener la trazabilidad contable.');
     const paymentJournalIds=[...new Set(
       debts.flatMap((d:any)=>Array.isArray(d.historialPagos)?d.historialPagos:[])
         .map((p:any)=>String(p?.asientoId||'').trim())
