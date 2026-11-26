@@ -3628,6 +3628,15 @@ export async function createPurchaseTransaction(params:any){
   }else if(journal){
     throw new Error('No debe generarse un asiento de pago inicial cuando no se pagó la compra.');
   }
+  if(debt){
+    const initialPayments=Array.isArray(debt.historialPagos)?debt.historialPagos:[];
+    if(pagadoUSD>0.0000005){
+      const initialPayment=initialPayments.find((p:any)=>String(p?.reciboId||'')==='INICIAL-CONTADO');
+      if(initialPayments.length!==1||!initialPayment||!cercano(initialPayment.montoUSD,pagadoUSD)||String(initialPayment.asientoId||'')!==String(journal?.id||'')) throw new Error('El historial de pago inicial de la CxP no coincide con el pago registrado.');
+    }else if(initialPayments.length){
+      throw new Error('La CxP no debe incluir abonos iniciales cuando la compra no se pagó.');
+    }
+  }
   const opId=String(operationId||purchase.id||(invoiceNumber+'|'+supplier+'|'+purchaseDate));
   return sqliteInteractiveTransaction(async tx=>{
     const prior=await tx.execute({sql:'SELECT data_json FROM operaciones WHERE prefijo=? AND operation_id=? LIMIT 1',args:['COMPRA',opId]});
