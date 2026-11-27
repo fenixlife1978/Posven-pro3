@@ -48,3 +48,15 @@ test('sondeos SQLite de fondo se serializan y se suspenden con ventana oculta', 
 test('Electron devuelve el foco del teclado al contenido web al recuperar la ventana', () => {
   assert.match(desktop, /mainWindow\.on\('focus',[\s\S]*?mainWindow\.webContents\.focus\(\)/);
 });
+
+test('el cierre de sesión recupera el foco tras la recarga completa de /login', () => {
+  // La ventana sigue enfocada tras window.location.replace('/login'), por lo que
+  // el evento 'focus' no se dispara: el foco del contenido debe restaurarse en
+  // cada carga completa (did-finish-load) y no solo al recuperar la ventana.
+  assert.match(desktop, /webContents\.on\('did-finish-load',[\s\S]*?webContents\.focus\(\)/);
+  assert.match(desktop, /if \(!mainWindow\.isFocused\(\)\) return;/);
+  // Un primer clic que solo activa la ventana no debe perder el cursor.
+  assert.match(login, /ensureFieldFocus/);
+  assert.match(login, /document\.addEventListener\("pointerdown", ensureFieldFocus, true\)/);
+  assert.match(login, /document\.removeEventListener\("pointerdown", ensureFieldFocus, true\)/);
+});

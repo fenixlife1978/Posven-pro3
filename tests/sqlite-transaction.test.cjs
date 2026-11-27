@@ -2530,3 +2530,107 @@ test('eliminar compra no borra asiento COMPRA de otro proveedor con la misma fac
   assert.equal((await sqliteExecute({sql:'SELECT id FROM libro_diario WHERE id=?',args:['JOURNAL-COLLISION-ALFA']})).rows.length,0);
   assert.equal((await sqliteExecute({sql:'SELECT id FROM libro_diario WHERE id=?',args:['JOURNAL-COLLISION-BETA']})).rows.length,1,'el asiento de proveedor Beta debe preservarse');
 });
+test('un cobro global CxC no comparte serie entre cajas con el mismo prefijo', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-21T13:00:00.000Z';
+  for (const id of ['TERM-SERIES-A', 'TERM-SERIES-B']) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO terminales(id,data_json,fecha) VALUES(?,?,?)',
+      args: [id, JSON.stringify({
+        id, nombre: id, prefijoCaja: 'CAJA01', isCashOpen: true, proximoCobroDeuda: 1,
+      }), at],
+      wantRows: false,
+    });
+  }
+  for (const [id, name] of [['CXC-SERIES-A', 'Cliente Serie A'], ['CXC-SERIES-B', 'Cliente Serie B']]) {
+    await sqliteExecute({
+      sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+      args: [id, JSON.stringify({
+        id, cliente: name, montoUSD: 40, abonadoUSD: 0, saldoUSD: 40,
+        estado: 'pendiente', fecha: at, historialPagos: [],
+      }), at],
+      wantRows: false,
+    });
+  }
+
+  const first = await posStore.applyGlobalCustomerPaymentTransaction({
+    operationId: 'SERIES-CXC-A-001',
+    customerName: 'Cliente Serie A',
+    amountUSD: 10,
+    payment: { id: 'PAY-SERIES-A', fecha: at, metodo: 'efectivo_usd', tasaAplicada: 370 },
+    terminalId: 'TERM-SERIES-A',
+  });
+  const second = await posStore.applyGlobalCustomerPaymentTransaction({
+    operationId: 'SERIES-CXC-B-001',
+    customerName: 'Cliente Serie B',
+    amountUSD: 10,
+    payment: { id: 'PAY-SERIES-B', fecha: at, metodo: 'efectivo_usd', tasaAplicada: 370 },
+    terminalId: 'TERM-SERIES-B',
+  });
+
+  assert.notEqual(first.receiptId, second.receiptId);
+  const admin = { id: 'admin-series-test', rol: 'administrador' };
+  const saleA = await posStore.getRecord('ventas', first.receiptId, admin);
+  const saleB = await posStore.getRecord('ventas', second.receiptId, admin);
+  assert.equal(saleA.terminalId, 'TERM-SERIES-A');
+  assert.equal(saleB.terminalId, 'TERM-SERIES-B');
+  assert.equal(saleA.totalUSD, 10);
+  assert.equal(saleB.totalUSD, 10);
+});
+
+test('un cobro global CxC avanza el correlativo y nunca sobrescribe un comprobante existente', async () => {
+  await schema.ensureSqliteSchema();
+  const at = '2026-11-21T15:00:00.000Z';
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO terminales(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['TERM-STALE-COUNTER', JSON.stringify({
+      id: 'TERM-STALE-COUNTER', nombre: 'Caja migrada', prefijoCaja: 'CAJA09',
+      isCashOpen: true, proximoCobroDeuda: 1,
+    }), at],
+    wantRows: false,
+  });
+  // Base migrada: el contador quedó atrás y el recibo calculado ya existe.
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO ventas(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CAJA09-CXC-000001', JSON.stringify({
+      id: 'CAJA09-CXC-000001', fecha: at, cliente: 'VENTA HISTÓRICA',
+      totalUSD: 99, estado: 'completada', terminalId: 'TERM-HISTORICO',
+    }), at],
+    wantRows: false,
+  });
+  await sqliteExecute({
+    sql: 'INSERT OR REPLACE INTO cxc(id,data_json,fecha) VALUES(?,?,?)',
+    args: ['CXC-STALE-COUNTER', JSON.stringify({
+      id: 'CXC-STALE-COUNTER', cliente: 'Cliente Correlativo', montoUSD: 30,
+      abonadoUSD: 0, saldoUSD: 30, estado: 'pendiente', fecha: at, historialPagos: [],
+    }), at],
+    wantRows: false,
+  });
+
+  const result = await posStore.applyGlobalCustomerPaymentTransaction({
+    operationId: 'STALE-COUNTER-CXC-001',
+    customerName: 'Cliente Correlativo',
+    amountUSD: 10,
+    payment: { id: 'PAY-STALE-COUNTER', fecha: at, metodo: 'efectivo_usd', tasaAplicada: 370 },
+    terminalId: 'TERM-STALE-COUNTER',
+  });
+
+  assert.notEqual(result.receiptId, 'CAJA09-CXC-000001');
+  const admin = { id: 'admin-series-test', rol: 'administrador' };
+  const historical = await posStore.getRecord('ventas', 'CAJA09-CXC-000001', admin);
+  assert.equal(historical.cliente, 'VENTA HISTÓRICA');
+  assert.equal(historical.totalUSD, 99);
+  const collected = await posStore.getRecord('ventas', result.receiptId, admin);
+  assert.equal(collected.terminalId, 'TERM-STALE-COUNTER');
+  assert.equal(collected.totalUSD, 10);
+});
+
+test('la configuración rechaza una tasa BCV inválida y conserva la anterior', async () => {
+  await schema.ensureSqliteSchema();
+  await posStore.patchAppConfig({ tasa: 370 });
+  await assert.rejects(posStore.patchAppConfig({ tasa: 0 }), /tasa BCV/);
+  await assert.rejects(posStore.patchAppConfig({ tasa: -5 }), /tasa BCV/);
+  await assert.rejects(posStore.patchAppConfig({ tasa: 'no-es-numero' }), /tasa BCV/);
+  const config = await posStore.getAppConfig();
+  assert.equal(Number(config.tasa), 370);
+});

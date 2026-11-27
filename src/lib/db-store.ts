@@ -891,15 +891,20 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
   try {
     // SQLite local filtra en SQL y pagina todo el intervalo para no descargar
     // registros ajenos al reporte ni truncar historiales extensos.
-    const start = String(desde) + 'T00:00:00';
-    // listRecords usa fechaDesde con operador estricto (>); consultar desde
-    // el día anterior evita perder registros exactamente a las 00:00 del inicio.
-    const queryStartDate = new Date(String(desde) + 'T00:00:00.000Z');
-    queryStartDate.setUTCDate(queryStartDate.getUTCDate() - 1);
-    const queryStart = queryStartDate.toISOString().slice(0, 10) + 'T00:00:00';
+    // El filtro del usuario trabaja con fechas locales, mientras que las marcas
+    // temporales persistidas están en UTC. Los límites se convierten a instantes
+    // reales: comparar cadenas de ambas bases incluía operaciones del día
+    // anterior (o excluía las de la mañana) según la zona horaria del equipo.
+    const startDate = new Date(String(desde) + 'T00:00:00');
     const endDate = new Date(String(hasta) + 'T00:00:00');
+    if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) return;
     endDate.setDate(endDate.getDate() + 1);
-    const end = endDate.toISOString().slice(0, 19);
+    const startMs = startDate.getTime();
+    const endMs = endDate.getTime();
+    // listRecords aplica fechaDesde con operador estricto (>); se consulta un
+    // milisegundo antes para no perder un registro en el límite exacto.
+    const queryStart = new Date(startMs - 1).toISOString();
+    const end = new Date(endMs - 1).toISOString();
     let offset = 0;
     let loaded = 0;
     while (true) {
@@ -912,8 +917,8 @@ async function ensureReportRange(name: string, desde: string, hasta: string, ter
       });
       if (serverItems === null) break;
       const items = serverItems.filter((item: any) => {
-        const fecha = String(item?.fecha || '');
-        return fecha >= start && fecha < end;
+        const itemMs = Date.parse(String(item?.fecha || '').trim());
+        return Number.isFinite(itemMs) && itemMs >= startMs && itemMs < endMs;
       });
       if (items.length) {
         applyPatch({ [name]: mergeById((cache as any)[name], items) });

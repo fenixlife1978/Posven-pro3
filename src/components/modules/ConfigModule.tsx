@@ -71,15 +71,28 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     }
   };
 
-  const guardarEmpresa = () => {
-    updateState({ empresa });
-    toast({ title: "Perfil Actualizado", description: "Los datos fiscales han sido guardados." });
+  const guardarEmpresa = async () => {
+    try {
+      // Confirmar en SQLite antes de anunciar el guardado: el estado visual
+      // del Store era optimista y podía mostrar "guardado" aunque la escritura
+      // de configuración hubiera sido rechazada.
+      await Store.patchConfig({ empresa });
+      toast({ title: "Perfil Actualizado", description: "Los datos fiscales han sido guardados." });
+    } catch (error: any) {
+      console.error('Error guardando datos fiscales en SQLite local:', error);
+      toast({ variant: 'destructive', title: 'No se guardó el perfil', description: error?.message || 'SQLite local no confirmó el cambio.' });
+    }
   };
 
-  const guardarPin = () => {
-    if (pinDevolucion.length !== 6) return alert('El PIN debe ser de 6 dígitos exactos');
-    updateState({ pinDevolucion });
-    toast({ title: "Seguridad Actualizada", description: "PIN de autorización establecido correctamente." });
+  const guardarPin = async () => {
+    if (pinDevolucion.length !== 6 || !/^\d{6}$/.test(pinDevolucion)) return alert('El PIN debe ser de 6 dígitos exactos');
+    try {
+      await Store.patchConfig({ pinDevolucion });
+      toast({ title: "Seguridad Actualizada", description: "PIN de autorización establecido correctamente." });
+    } catch (error: any) {
+      console.error('Error guardando el PIN en SQLite local:', error);
+      toast({ variant: 'destructive', title: 'No se guardó el PIN', description: error?.message || 'SQLite local no confirmó el cambio.' });
+    }
   };
 
   const handleCrearRespaldo = async () => {
@@ -122,20 +135,20 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     let allowPartialTursoRestore = false;
     try {
       const partial = detectarRespaldoTursoTruncado(parsed);
-      if (partial.cappedTables.length) {
-        const oldestDate = partial.oldestMovementDate || 'no identificable en el archivo';
+      // El tamaño y la cantidad de registros nunca bloquean la carga: se
+      // restauran todas las ventas y movimientos del archivo. Solo un
+      // manifiesto que se declare incompleto requiere confirmación.
+      if (partial.incompleteManifest) {
         const movementCount = partial.movementCount.toLocaleString('es-VE');
         const warning =
-          'ADVERTENCIA: RESTAURACIÓN PARCIAL DE HISTORIAL\n\n' +
-          (partial.cappedTables.includes('movimientos')
-            ? 'La tabla movimientos contiene ' + movementCount + ' registros y alcanza el límite de 10.000. El Kardex anterior al ' + oldestDate + ' podría faltar; la fecha más antigua incluida no demuestra que el historial comience allí.'
-            : 'El manifiesto alcanza el límite de 10.000 registros en: ' + partial.cappedTables.join(', ') + '. Parte del historial de esas tablas podría faltar.') + '\n\n' +
-          'La fotografía de existencias se restaurará desde los productos incluidos, pero NO se garantiza la integridad histórica del Kardex ni que estén presentes todos los movimientos anteriores.\n\n' +
-          'Tablas afectadas: ' + partial.cappedTables.join(', ') + '.\n\n' +
-          'Si continúa, acepta expresamente restaurar este respaldo incompleto. ¿Autoriza la restauración parcial?';
+          'ADVERTENCIA: EL RESPALDO DECLARA UN MANIFIESTO INCOMPLETO\n\n' +
+          'El archivo marca su exportación como incompleta (complete: false). No es un límite de cantidad: ' +
+          'se restaurarán todos los registros incluidos (' + movementCount + ' movimientos en el archivo), sin topes.\n\n' +
+          'Si el origen declaró la exportación incompleta, el historial contenido en el archivo podría no ser todo el del sistema de origen.\n\n' +
+          '¿Autoriza restaurar este respaldo declarado como incompleto por su origen?';
         allowPartialTursoRestore = window.confirm(warning);
         if (!allowPartialTursoRestore) {
-          setBackupError('Restauración cancelada. No se modificó SQLite local porque no se autorizó la restauración parcial.');
+          setBackupError('Restauración cancelada. No se modificó SQLite local porque no se autorizó restaurar un manifiesto incompleto.');
           return;
         }
       }
@@ -149,7 +162,7 @@ export default function ConfigModule({ state, updateState }: { state: AppState, 
     try {
       await cargarRespaldoDesdeContenido(content, (progress) => setBackupProgress(progress), allowPartialTursoRestore);
       toast({ title: "Respaldo Restaurado", description: allowPartialTursoRestore
-        ? "La restauración parcial SQLite terminó. El Kardex histórico anterior a la fecha indicada puede estar incompleto."
+        ? "La restauración SQLite terminó. El respaldo estaba declarado como incompleto por su origen."
         : "La restauración SQLite terminó correctamente. La aplicación se actualizará ahora." });
       setTimeout(() => window.location.reload(), 900);
     } catch (err: any) {

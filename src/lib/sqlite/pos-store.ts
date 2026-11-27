@@ -232,14 +232,17 @@ export function assertSQLiteReady() {
   if (!isSQLiteConfigured()) throw new Error('SQLite local no está configurado.');
 }
 
-const DEFAULT_MAX_BACKUP_BYTES = 64 * 1024 * 1024;
-
-/** Límite técnico de bytes configurable; nunca limita la cantidad de registros. */
+/**
+ * Sin tope de tamaño por defecto: exportar y restaurar respaldos no se limita
+ * por bytes ni por cantidad de registros (ventas, movimientos, filas o
+ * catálogos). Solo si el operador configura POSVEN_MAX_BACKUP_BYTES se aplica
+ * un límite técnico explícito para proteger una instalación concreta.
+ */
 export function getMaxBackupBytes(): number {
   const configured = Number(process.env.POSVEN_MAX_BACKUP_BYTES);
   return Number.isSafeInteger(configured) && configured >= 1024 * 1024
     ? configured
-    : DEFAULT_MAX_BACKUP_BYTES;
+    : Infinity;
 }
 
 function clean(value: any): any {
@@ -528,7 +531,7 @@ export async function exportBackupSnapshot() {
       meta: { sqliteTables, catalogs, source: 'sqlite-local', complete: true },
     };
     if (Buffer.byteLength(JSON.stringify(snapshot), 'utf8') > getMaxBackupBytes()) {
-      throw new Error('El respaldo supera el límite técnico de tamaño configurado (POSVEN_MAX_BACKUP_BYTES). No se limitó por cantidad de operaciones.');
+      throw new Error('El respaldo supera el límite de tamaño que el operador configuró en POSVEN_MAX_BACKUP_BYTES. No es un límite de cantidad de operaciones: sin esa variable no hay tope de tamaño.');
     }
     return snapshot;
   });
@@ -768,13 +771,12 @@ export async function restoreBackupTransaction(params: { user: { id: string; rol
   if (!Array.isArray(data.users)) {
     throw new Error('El respaldo no contiene la lista de usuarios. Genere un nuevo respaldo administrativo desde POSVEN2 antes de restaurar.');
   }
-  if (backup.meta?.source === 'turso' && backup.meta.complete !== true) {
-    const capped = Object.entries(backup.meta.tursoTables || {})
-      .filter(([, count]) => Number(count) >= 10000)
-      .map(([name]) => name);
-    if (capped.length && params.allowPartialTursoRestore !== true) {
-      throw new Error('Respaldo antiguo posiblemente truncado en: ' + capped.join(', ') + '. La restauración parcial requiere confirmación explícita del administrador.');
-    }
+  // La cantidad de registros no demuestra truncamiento: un respaldo heredado
+  // con 10.000, 50.000 o más ventas y movimientos es válido y se restaura
+  // completo. Solo un manifiesto que declare explícitamente la exportación
+  // incompleta (complete: false) exige confirmación del administrador.
+  if (backup.meta?.source === 'turso' && backup.meta.complete === false && params.allowPartialTursoRestore !== true) {
+    throw new Error('El respaldo declara un manifiesto incompleto (complete: false). La restauración requiere confirmación explícita del administrador.');
   }
   if (backup.meta?.source === 'turso' && backup.meta.tursoTables) {
     for (const [tableName, count] of Object.entries(backup.meta.tursoTables)) {
@@ -1032,6 +1034,16 @@ export async function getAppConfig(): Promise<any> {
 
 export async function patchAppConfig(patch: Record<string, any>): Promise<any> {
   assertSQLiteReady();
+  // La tasa es la base de toda conversión Bs/USD del sistema. Aunque los
+  // formularios la validan, la API debe rechazar valores no finitos o <= 0:
+  // una tasa inválida produce divisiones infinitas en ventas, arqueos y CxC.
+  if (Object.prototype.hasOwnProperty.call(patch || {}, 'tasa')) {
+    const tasa = Number(patch.tasa);
+    if (!Number.isFinite(tasa) || tasa <= 0) {
+      throw new Error('La tasa BCV debe ser un número mayor que cero.');
+    }
+    patch = { ...patch, tasa };
+  }
   const current = await getAppConfig();
   const next = { ...current, ...clean(patch) };
   await sqliteExecute({ sql: 'INSERT INTO app_config(id,data_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, updated_at=CURRENT_TIMESTAMP', args: ['general', JSON.stringify(next)], wantRows: false });
@@ -2361,10 +2373,6 @@ export async function applyDebtPaymentTransaction(params: {
       assertTerminalAccess(params.user, terminal);
       if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el cobro.');
     }
-    if (terminalForOperation && terminal) {
-      assertTerminalAccess(params.user, terminal);
-      if (terminal.isCashOpen !== true) throw new Error('La caja está cerrada. No se puede registrar el cobro.');
-    }
     const field = collection==='cxc'?'proximoCobroDeuda':'proximoPagoProveedor';
     const label = collection==='cxc'?'CXC':'CXP';
     const counter=Number(terminal?.[field])||1;
@@ -2495,8 +2503,22 @@ async function applyGlobalPayment(params:any, collection:'cxc'|'cxp'){
     if(terminalForOperation&&!terminal) throw new Error('La caja/terminal ya no existe en SQLite local.');
     const field=collection==='cxp'?'proximoPagoProveedor':'proximoCobroDeuda';
     const label=collection==='cxp'?'CXP':'CXC';
-    const counter=Number(terminal?.[field])||1;
-    const receiptId=terminal?terminalSeries(terminalPrefix(terminal,terminalId),label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
+    let counter=Number(terminal?.[field])||1;
+    // La serie del cobro pertenece a UNA sola caja. Se usa el mismo criterio
+    // que ventas, devoluciones y Z: si dos cajas comparten prefijo, cada una
+    // conserva una serie exclusiva y nunca sobrescribe el comprobante ajeno.
+    const seriesPrefix=terminal?await terminalUniquePrefix(tx,terminal,terminalForOperation):'GLOBAL';
+    let receiptId=terminal?terminalSeries(seriesPrefix,label,counter,6):terminalSeries('GLOBAL',label,Date.now(),6);
+    if(terminal){
+      // Correlativo atrasado en una base migrada: avanzar SOLO el contador de
+      // esta caja hasta el primer identificador libre.
+      for(let guard=0;guard<100000;guard++){
+        if(!(await tx.execute(txSelect('ventas',receiptId))).rows.length) break;
+        counter+=1;
+        receiptId=terminalSeries(seriesPrefix,label,counter,6);
+        if(guard===99999) throw new Error('No se pudo obtener un correlativo libre para esta caja.');
+      }
+    }
     const matchField=collection==='cxp'?'proveedor':'cliente';
     const matchValue=collection==='cxp'?String(provider||''):String(customerName||'');
     let docs:any[] = [];

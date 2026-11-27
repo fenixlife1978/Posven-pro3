@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { getSessionUser } from '@/lib/sqlite/auth';
+import { getRequestSessionId, getSessionUser } from '@/lib/sqlite/auth';
 import { isSQLiteConfigured } from '@/lib/sqlite/client';
 import { repararDeudasMigradas } from '@/lib/sqlite/cxc-repair';
 
@@ -8,8 +7,9 @@ export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   if (!isSQLiteConfigured()) return NextResponse.json({ error: 'SQLite local no está disponible.' }, { status: 503 });
-  const cookieStore = await cookies();
-  const user = await getSessionUser(cookieStore.get('posven_session')?.value);
+  // Misma resolución de sesión que /api/pos/store: cookie o cabecera de
+  // sesión por pestaña (x-posven-session-mode: tab), sin identidades cruzadas.
+  const user = await getSessionUser(getRequestSessionId(request));
   if (!user || user.rol !== 'administrador') return NextResponse.json({ error: 'Se requiere un administrador.' }, { status: 403 });
   try {
     const body = await request.json();

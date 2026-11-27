@@ -137,10 +137,26 @@ export default function LoginPage() {
     });
     window.addEventListener("focus", focusWhenWindowReturns);
     document.addEventListener("visibilitychange", focusWhenWindowReturns);
+    // Red de seguridad en Electron/Windows: cuando la ventana se acaba de
+    // activar, el primer clic puede consumirse en la activación y no colocar el
+    // cursor. Tras el clic se fuerza el foco real del campo pulsado; si el foco
+    // ya era correcto no se hace nada y no se interrumpe la escritura.
+    const ensureFieldFocus = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      const field = target?.closest?.("input, select, textarea") as HTMLInputElement | null;
+      if (!field || field.disabled || field.readOnly) return;
+      window.requestAnimationFrame(() => {
+        if (document.activeElement === field) return;
+        try { window.focus(); } catch {}
+        try { field.focus({ preventScroll: true }); } catch { field.focus(); }
+      });
+    };
+    document.addEventListener("pointerdown", ensureFieldFocus, true);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("focus", focusWhenWindowReturns);
       document.removeEventListener("visibilitychange", focusWhenWindowReturns);
+      document.removeEventListener("pointerdown", ensureFieldFocus, true);
     };
   }, [mode]);
 

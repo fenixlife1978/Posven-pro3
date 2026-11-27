@@ -14,7 +14,8 @@ test('la restauración informa el progreso real de transferencia y distingue el 
 });
 
 test('la restauración permite procesos largos y advierte ante timeout sin reintento ciego', () => {
-  assert.match(backup, /xhr\.timeout = 15 \* 60 \* 1000/);
+  assert.match(backup, /xhr\.timeout = 0/);
+  assert.doesNotMatch(backup, /xhr\.timeout = 15 \* 60 \* 1000/);
   assert.match(backup, /No vuelva a intentarlo a ciegas/);
   assert.match(backup, /xhr\.onerror/);
   assert.match(backup, /xhr\.ontimeout/);
@@ -36,19 +37,24 @@ test('la API consume el cuerpo limitado mientras espera la autenticación SQLite
   assert.doesNotMatch(backup, /content\.length > 64 \* 1024 \* 1024/);
 });
 
-test('un respaldo Turso truncado requiere confirmación explícita antes de iniciar XHR', () => {
+test('un manifiesto declarado incompleto requiere confirmación explícita antes de iniciar XHR', () => {
   assert.match(backup, /detectarRespaldoTursoTruncado/);
   assert.match(backup, /validarRespaldoParaRestauracion\(backup, allowPartialTursoRestore\)/);
-  assert.match(backup, /cappedTables\.length && !allowPartialTursoRestore/);
+  assert.match(backup, /incompleteManifest && !allowPartialTursoRestore/);
   assert.match(backup, /confirmPartialTursoRestore: allowPartialTursoRestore/);
-  assert.match(backup, /Number\(count\) === 10000/);
+  // La cantidad de filas deja de ser señal de truncamiento: un respaldo con
+  // 10.000 o más ventas/movimientos no se bloquea ni se marca como parcial.
+  assert.match(backup, /incompleteManifest: backup\?\.meta\?\.complete === false/);
+  assert.doesNotMatch(backup, /=== 10000/);
   const config = fs.readFileSync(path.join(__dirname, '..', 'src/components/modules/ConfigModule.tsx'), 'utf8');
-  assert.match(config, /Kardex anterior al /);
-  assert.match(config, /¿Autoriza la restauración parcial\?/);
+  assert.match(config, /manifiesto incompleto|MANIFIESTO INCOMPLETO/i);
+  assert.match(config, /¿Autoriza restaurar este respaldo declarado como incompleto/);
+  assert.doesNotMatch(config, /límite de 10\.000/);
   assert.match(config, /cargarRespaldoDesdeContenido\(content, \(progress\) => setBackupProgress\(progress\), allowPartialTursoRestore\)/);
   const store = fs.readFileSync(path.join(__dirname, '..', 'src/lib/sqlite/pos-store.ts'), 'utf8');
   assert.match(store, /allowPartialTursoRestore\?: boolean/);
   assert.match(store, /params\.allowPartialTursoRestore !== true/);
+  assert.doesNotMatch(store, /Number\(count\) >= 10000/);
   const route = fs.readFileSync(path.join(__dirname, '..', 'src/app/api/pos/backup/route.ts'), 'utf8');
   assert.match(route, /confirmPartialTursoRestore === true/);
 });

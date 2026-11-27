@@ -132,33 +132,33 @@ function descargarCredencialesRestauradas(credentials: Array<{ username: string;
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function detectarRespaldoTursoTruncado(backup: BackupFile): { cappedTables: string[]; oldestMovementDate: string | null; movementCount: number } {
-  const meta = backup?.meta;
-  if (!meta || meta.source !== 'turso' || meta.complete === true || !meta.tursoTables) {
-    return { cappedTables: [], oldestMovementDate: null, movementCount: 0 };
-  }
-  const cappedTables = Object.entries(meta.tursoTables)
-    .filter(([, count]) => Number(count) === 10000)
-    .map(([name]) => name);
-  const movements = Array.isArray(backup.data?.movimientos) ? backup.data.movimientos as any[] : [];
+/**
+ * La cantidad de registros NO se usa como señal de truncamiento: un respaldo
+ * con 10.000, 50.000 o más ventas y movimientos es válido y debe restaurarse
+ * completo. Solo el manifiesto puede declarar de forma explícita que la
+ * exportación quedó incompleta (complete: false).
+ */
+export function detectarRespaldoTursoTruncado(backup: BackupFile): { incompleteManifest: boolean; oldestMovementDate: string | null; movementCount: number } {
+  const movements = Array.isArray(backup?.data?.movimientos) ? backup.data.movimientos as any[] : [];
   const dates = movements
     .map(row => String(row?.fecha || row?.createdAt || row?.fechaMovimiento || '').slice(0, 10))
     .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
     .sort();
   return {
-    cappedTables,
+    incompleteManifest: backup?.meta?.complete === false,
     oldestMovementDate: dates[0] || null,
     movementCount: movements.length,
   };
 }
 
 export function validarRespaldoParaRestauracion(backup: BackupFile, allowPartialTursoRestore = false): void {
-  const { cappedTables } = detectarRespaldoTursoTruncado(backup);
-  if (cappedTables.length && !allowPartialTursoRestore) {
+  const { incompleteManifest } = detectarRespaldoTursoTruncado(backup);
+  if (incompleteManifest && !allowPartialTursoRestore) {
     throw new Error(
-      'Respaldo antiguo posiblemente truncado en: ' + cappedTables.join(', ') +
-      '. POSVEN-Pro3 detuvo la carga antes de enviar el archivo para evitar restaurar un historial incompleto. ' +
-      'La restauración parcial requiere confirmación explícita del administrador.'
+      'El respaldo declara un manifiesto incompleto (complete: false). ' +
+      'POSVEN-Pro3 detuvo la carga antes de enviar el archivo. ' +
+      'La restauración requiere confirmación explícita del administrador. ' +
+      'La cantidad de ventas o movimientos del archivo no es la causa.'
     );
   }
 }
@@ -175,7 +175,9 @@ async function restaurarBackupLocal(
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/pos/backup', true);
     xhr.withCredentials = true;
-    xhr.timeout = 15 * 60 * 1000;
+    // Sin límite de tiempo: restaurar un respaldo grande puede tardar y el
+    // tamaño del archivo no debe provocar un aborto por temporizador.
+    xhr.timeout = 0;
     xhr.setRequestHeader('Content-Type', 'application/json');
     // Mantiene el mismo contexto de sesión que el wrapper global de fetch.
     try {
@@ -202,7 +204,7 @@ async function restaurarBackupLocal(
       resolve(parsed);
     };
     xhr.onerror = () => reject(new Error('Se perdió la conexión con el servidor local durante la restauración. Compruebe el estado de la base de datos antes de volver a intentarlo.'));
-    xhr.ontimeout = () => reject(new Error('La restauración superó el límite de 15 minutos. No vuelva a intentarlo a ciegas: compruebe primero si la base de datos fue restaurada y conserve la copia de seguridad automática.'));
+    xhr.ontimeout = () => reject(new Error('La restauración superó el límite de tiempo configurado. No vuelva a intentarlo a ciegas: compruebe primero si la base de datos fue restaurada y conserve la copia de seguridad automática.'));
     xhr.onabort = () => reject(new Error('La solicitud de restauración fue cancelada.'));
     xhr.send(payload);
   });

@@ -102,7 +102,10 @@ function getLanIPv4Addresses() {
   const interfaces = os.networkInterfaces();
   for (const entries of Object.values(interfaces)) {
     for (const item of entries || []) {
-      if (item.family === 'IPv4' && !item.internal && isPrivateIPv4(item.address)) found.push(item.address);
+      // Las direcciones APIPA (169.254.x.x) son privadas para el control de
+      // acceso pero no sirven para conectar clientes: saveNetworkConfig ya las
+      // rechaza y el servidor no debe anunciarlas como dirección de conexión.
+      if (item.family === 'IPv4' && !item.internal && isPrivateIPv4(item.address) && !item.address.startsWith('169.254.')) found.push(item.address);
     }
   }
   return [...new Set(found)];
@@ -399,6 +402,17 @@ function createWindow(appUrl) {
   // webContents conserva el campo activo y permite volver a escribir en Login.
   mainWindow.on('focus', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.focus();
+  });
+  // El cierre de sesión recarga la ventana con window.location.replace('/login').
+  // La ventana nunca pierde el foco del sistema, así que el evento 'focus' de
+  // arriba no se dispara y el contenido web quedaba sin foco de teclado: el
+  // formulario de acceso se veía pero no admitía escritura. Devolver el foco al
+  // webContents en cada carga completa resuelve ese caso sin robar el foco a
+  // otras ventanas (solo se aplica si esta ventana ya está activa).
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindow.isFocused()) return;
+    mainWindow.webContents.focus();
   });
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error('did-fail-load:', errorCode, errorDescription, validatedURL);
@@ -788,8 +802,15 @@ ipcMain.handle('select-backup-file', async () => {
     if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
     const selectedPath = result.filePaths[0];
     const stat = await fs.promises.stat(selectedPath);
-    if (!stat.isFile() || stat.size <= 0 || stat.size > 64 * 1024 * 1024) {
-      throw new Error('El respaldo debe ser un archivo válido y no superar 64 MB.');
+    // Sin tope de tamaño por defecto: la cantidad de ventas, movimientos o MB
+    // no debe impedir cargar un respaldo. Solo un operador que configure
+    // POSVEN_MAX_BACKUP_BYTES aplica un límite técnico explícito.
+    const configuredMaxBytes = Number(process.env.POSVEN_MAX_BACKUP_BYTES);
+    const hasConfiguredLimit = Number.isSafeInteger(configuredMaxBytes) && configuredMaxBytes >= 1024 * 1024;
+    if (!stat.isFile() || stat.size <= 0 || (hasConfiguredLimit && stat.size > configuredMaxBytes)) {
+      throw new Error(hasConfiguredLimit
+        ? 'El respaldo supera el límite de tamaño configurado en POSVEN_MAX_BACKUP_BYTES.'
+        : 'El archivo de respaldo está vacío o no es un archivo válido.');
     }
     return {
       canceled: false,
