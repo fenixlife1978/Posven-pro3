@@ -3,6 +3,7 @@ name: TypeScript validation
 on:
   push:
     branches:
+      - feat/pos3-sqlite-local-lan
       - feat/posven-pro3-parity-unlimited-backups
   pull_request:
     branches:
