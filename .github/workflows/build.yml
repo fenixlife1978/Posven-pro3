@@ -111,15 +111,21 @@ jobs:
         run: |
           $target = node -p "require('./node_modules/electron/package.json').version"
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($target)) { throw 'No se pudo determinar la versión de Electron.' }
-          Write-Host "Recompilando better-sqlite3 para Electron $target"
-          npx --no-install @electron/rebuild -f -w better-sqlite3
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host 'electron-rebuild falló; se compila contra las cabeceras de Electron.'
-            Push-Location node_modules\better-sqlite3
-            npx --yes node-gyp rebuild --release --target=$target --dist-url=https://electronjs.org/headers --arch=x64
-            $gypExit = $LASTEXITCODE
+          Write-Host "Compilando better-sqlite3 desde fuente para Electron $target"
+          # prebuild-install (usado por electron-rebuild) se salta la descarga si ya
+          # existe un binario, así que conservaba el de Node sin avisar. Se elimina
+          # el artefacto previo y se compila contra las cabeceras de Electron.
+          Remove-Item -Recurse -Force 'node_modules\better-sqlite3\build' -ErrorAction SilentlyContinue
+          Push-Location node_modules\better-sqlite3
+          npx --yes node-gyp rebuild --release --target=$target --dist-url=https://electronjs.org/headers --arch=x64
+          $gypExit = $LASTEXITCODE
+          if ($gypExit -ne 0) {
+            Write-Host 'node-gyp falló; se reintenta con npm rebuild --build-from-source.'
             Pop-Location
-            if ($gypExit -ne 0) { throw "node-gyp no pudo compilar better-sqlite3 para Electron (código $gypExit)" }
+            npm rebuild better-sqlite3 --build-from-source --runtime=electron --target=$target --dist-url=https://electronjs.org/headers --foreground-scripts
+            if ($LASTEXITCODE -ne 0) { throw "No se pudo compilar better-sqlite3 para Electron (código $LASTEXITCODE)" }
+          } else {
+            Pop-Location
           }
 
       - name: Diagnóstico del ABI de SQLite (informativo)
