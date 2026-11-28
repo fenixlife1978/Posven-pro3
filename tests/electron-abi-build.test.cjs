@@ -21,7 +21,8 @@ test('el workflow recompila better-sqlite3 para el ABI de Electron antes de empa
   assert.ok(verifyIndex > rebuildIndex, 'la verificación del ABI debe ejecutarse después de la recompilación');
   assert.ok(packageIndex > verifyIndex, 'el empaquetado debe ejecutarse después de verificar el ABI');
 
-  assert.match(workflow, /npm rebuild better-sqlite3 --runtime=electron --target=\$target/);
+  assert.match(workflow, /@electron\/rebuild -f -w better-sqlite3/);
+  assert.match(workflow, /node-gyp rebuild --release --target=\$target/);
   assert.match(workflow, /ELECTRON_RUN_AS_NODE/);
   assert.match(workflow, /require\('better-sqlite3'\)/);
 });

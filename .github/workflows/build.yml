@@ -86,30 +86,6 @@ jobs:
       - name: Run regression tests
         run: npm test
 
-      # Las pruebas anteriores dejan better-sqlite3 compilado para Node (ABI de
-      # node:test). El instalador ejecuta Next.js dentro de un UtilityProcess de
-      # Electron, que usa otro ABI: si se empaqueta el binario de Node, las rutas
-      # API fallan con ERR_DLOPEN_FAILED mientras las páginas estáticas sí cargan.
-      - name: Rebuild SQLite binding for the Electron ABI
-        shell: pwsh
-        run: |
-          $target = node -p "require('./node_modules/electron/package.json').version"
-          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($target)) { throw 'No se pudo determinar la versión de Electron.' }
-          Write-Host "Recompilando better-sqlite3 para Electron $target"
-          npm rebuild better-sqlite3 --runtime=electron --target=$target --dist-url=https://electronjs.org/headers --foreground-scripts
-          if ($LASTEXITCODE -ne 0) { throw "npm rebuild falló con código $LASTEXITCODE" }
-
-      - name: Verify SQLite loads with the Electron ABI
-        shell: pwsh
-        run: |
-          $electron = Join-Path $PWD 'node_modules\electron\dist\electron.exe'
-          if (-not (Test-Path $electron)) { throw 'No se encontró el binario de Electron para verificar el ABI.' }
-          $env:ELECTRON_RUN_AS_NODE = '1'
-          & $electron -e "require('better-sqlite3'); console.log('better-sqlite3 carga con el ABI de Electron');"
-          $code = $LASTEXITCODE
-          Remove-Item Env:\ELECTRON_RUN_AS_NODE
-          if ($code -ne 0) { throw 'better-sqlite3 no carga con el ABI de Electron; el instalador fallaría en todas las rutas API.' }
-
       - name: Build Next.js desktop SQLite server
         run: npm run build
         env:
@@ -125,6 +101,42 @@ jobs:
             throw 'No se generó .next/BUILD_ID; el servidor local de POSVEN3 no está listo.'
           }
           Write-Host 'Build de Next.js verificado para el servidor SQLite local.'
+
+      # El servidor Next.js del instalador corre en un UtilityProcess de Electron,
+      # que usa un ABI distinto al de Node. Las pruebas de la suite dejan
+      # better-sqlite3 compilado para Node 20: si ese binario se empaqueta, la
+      # interfaz carga pero todas las rutas API fallan con ERR_DLOPEN_FAILED.
+      - name: Rebuild SQLite binding for the Electron ABI
+        shell: pwsh
+        run: |
+          $target = node -p "require('./node_modules/electron/package.json').version"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($target)) { throw 'No se pudo determinar la versión de Electron.' }
+          Write-Host "Recompilando better-sqlite3 para Electron $target"
+          npx --no-install @electron/rebuild -f -w better-sqlite3
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host 'electron-rebuild falló; se compila contra las cabeceras de Electron.'
+            Push-Location node_modules\better-sqlite3
+            npx --yes node-gyp rebuild --release --target=$target --dist-url=https://electronjs.org/headers --arch=x64
+            $gypExit = $LASTEXITCODE
+            Pop-Location
+            if ($gypExit -ne 0) { throw "node-gyp no pudo compilar better-sqlite3 para Electron (código $gypExit)" }
+          }
+
+      - name: Diagnóstico del ABI de SQLite (informativo)
+        continue-on-error: true
+        run: |
+          node -e "require('better-sqlite3');console.log('Atención: el binario sigue siendo el de Node, no el de Electron.')"
+
+      - name: Verify SQLite loads with the Electron ABI
+        shell: pwsh
+        run: |
+          $electron = Join-Path $PWD 'node_modules\electron\dist\electron.exe'
+          if (-not (Test-Path $electron)) { throw 'No se encontró el binario de Electron para verificar el ABI.' }
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          & $electron -e "require('better-sqlite3'); console.log('better-sqlite3 carga con el ABI de Electron');"
+          $code = $LASTEXITCODE
+          Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          if ($code -ne 0) { throw 'better-sqlite3 no carga con el ABI de Electron; el instalador fallaría en todas las rutas API.' }
 
       - name: Build Windows installer without publishing a Release
         shell: pwsh
