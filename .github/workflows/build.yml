@@ -150,14 +150,17 @@ jobs:
           $probeCode = "const Database = require('better-sqlite3'); const db = new Database(':memory:'); const row = db.prepare('SELECT 1 AS ok').get(); if (row.ok !== 1) { process.exit(2); } console.log('better-sqlite3 OK con el ABI de Electron');"
           Set-Content -Path $probe -Value $probeCode -Encoding UTF8
           $env:ELECTRON_RUN_AS_NODE = '1'
-          try {
-            & $electron $probe
-            $code = $LASTEXITCODE
-          } finally {
-            Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
-            Remove-Item -Force $probe -ErrorAction SilentlyContinue
+          $output = & $electron $probe 2>&1
+          $code = $LASTEXITCODE
+          Remove-Item Env:\ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          Remove-Item -Force $probe -ErrorAction SilentlyContinue
+          $text = ($output | Out-String)
+          Write-Host $text
+          if ($code -ne 0) {
+            $tail = (($text -split "`n") | Where-Object { $_ -match '\S' } | Select-Object -Last 4) -join ' | '
+            Write-Host "::error title=Electron SQLite ABI::$tail (codigo $code)"
+            throw 'better-sqlite3 no carga con el ABI de Electron; el instalador fallaría en todas las rutas API.'
           }
-          if ($code -ne 0) { throw 'better-sqlite3 no carga con el ABI de Electron; el instalador fallaría en todas las rutas API.' }
           exit 0
 
       - name: Build Windows installer without publishing a Release
