@@ -35,6 +35,22 @@ const activeHttpRequests = new Set();
 const activeHttpRequestWaiters = [];
 const SHUTDOWN_WARNING_MS = 30000;
 
+// La app instalada en Windows no tiene consola visible: sin este registro, un
+// fallo del proceso de datos o del certificado TLS no deja ninguna evidencia y
+// solo se ve la pantalla de error de la interfaz. Escribir en disco nunca debe
+// impedir el arranque, por eso todos los errores del registro se ignoran.
+function appendStartupLog(message) {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(
+      path.join(dir, 'posven3-arranque.log'),
+      new Date().toISOString() + ' ' + String(message) + os.EOL,
+      { encoding: 'utf8' },
+    );
+  } catch {}
+}
+
 function trackHttpRequest(request, response, handler) {
   const state = { handlerDone: false, responseDone: false };
   activeHttpRequests.add(state);
@@ -453,14 +469,26 @@ async function startLocalNextServer(port) {
     },
   });
   const activeWorker = serverWorker;
-  serverWorker.stdout?.on('data', chunk => console.log('[POSVEN3 server]', String(chunk).trimEnd()));
-  serverWorker.stderr?.on('data', chunk => console.error('[POSVEN3 server]', String(chunk).trimEnd()));
-  serverWorker.on('error', error => console.error('[POSVEN3 server] Error del proceso utility:', error));
+  serverWorker.stdout?.on('data', chunk => {
+    const line = String(chunk).trimEnd();
+    console.log('[POSVEN3 server]', line);
+    appendStartupLog('[servidor] ' + line);
+  });
+  serverWorker.stderr?.on('data', chunk => {
+    const line = String(chunk).trimEnd();
+    console.error('[POSVEN3 server]', line);
+    appendStartupLog('[servidor:error] ' + line);
+  });
+  serverWorker.on('error', error => {
+    console.error('[POSVEN3 server] Error del proceso utility:', error);
+    appendStartupLog('[servidor:error] ' + (error?.message || String(error)));
+  });
   serverWorker.on('exit', code => {
     if (serverWorker === activeWorker && !serverShuttingDown) {
       serverWorker = null;
       serverWorkerPort = null;
       console.error('[POSVEN3 server] El proceso SQLite terminó inesperadamente:', code);
+      appendStartupLog('[servidor] El proceso SQLite terminó inesperadamente con código ' + code);
       fatalError('Servidor POSVEN3 detenido', 'El proceso independiente de datos se cerró inesperadamente. Las operaciones nuevas no se aceptarán. Reinicia la aplicación y verifica el registro de Windows.');
     }
   });
@@ -613,9 +641,11 @@ app.whenReady().then(async () => {
 
     networkConfig = readNetworkConfig() || await showNetworkSetup();
     if (!networkConfig) { app.quit(); return; }
+    appendStartupLog('[arranque] Modo ' + networkConfig.mode + ' puerto ' + networkConfig.port);
 
     if (networkConfig.mode === 'server') {
       const port = await startLocalNextServer(networkConfig.port);
+      appendStartupLog('[arranque] Servidor local listo en https://127.0.0.1:' + port);
       configurePinnedCertificate(serverTls.fingerprint, new Set(['localhost','127.0.0.1','::1',...getLanIPv4Addresses()]));
       createWindow('https://127.0.0.1:' + port);
       const addresses = getLanIPv4Addresses();
@@ -673,6 +703,7 @@ app.whenReady().then(async () => {
       }
     });
   } catch (error) {
+    appendStartupLog('[arranque] Fallo: ' + (error?.stack || String(error)));
     fatalError('No se pudo iniciar POSVEN3', String(error));
     app.quit();
   }

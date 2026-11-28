@@ -16,6 +16,17 @@ async function start() {
   const next = require('next');
   application = next({ dev: false, dir: nextDir });
   await application.prepare();
+
+  // Comprobación temprana del módulo nativo. Next.js lo carga recién en la
+  // primera ruta API; si el paquete trae un binario compilado para otro ABI,
+  // la interfaz se ve pero el login nunca responde. Fallar aquí deja el motivo
+  // real en el registro de arranque en lugar de una pantalla sin explicación.
+  try {
+    require('better-sqlite3');
+  } catch (error) {
+    throw new Error('El controlador SQLite no puede cargarse en este proceso: ' + (error?.message || String(error)));
+  }
+
   const handler = application.getRequestHandler();
 
   server = http.createServer((request, response) => {

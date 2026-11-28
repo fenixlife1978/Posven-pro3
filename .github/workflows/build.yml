@@ -86,6 +86,30 @@ jobs:
       - name: Run regression tests
         run: npm test
 
+      # Las pruebas anteriores dejan better-sqlite3 compilado para Node (ABI de
+      # node:test). El instalador ejecuta Next.js dentro de un UtilityProcess de
+      # Electron, que usa otro ABI: si se empaqueta el binario de Node, las rutas
+      # API fallan con ERR_DLOPEN_FAILED mientras las páginas estáticas sí cargan.
+      - name: Rebuild SQLite binding for the Electron ABI
+        shell: pwsh
+        run: |
+          $target = node -p "require('./node_modules/electron/package.json').version"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($target)) { throw 'No se pudo determinar la versión de Electron.' }
+          Write-Host "Recompilando better-sqlite3 para Electron $target"
+          npm rebuild better-sqlite3 --runtime=electron --target=$target --dist-url=https://electronjs.org/headers --foreground-scripts
+          if ($LASTEXITCODE -ne 0) { throw "npm rebuild falló con código $LASTEXITCODE" }
+
+      - name: Verify SQLite loads with the Electron ABI
+        shell: pwsh
+        run: |
+          $electron = Join-Path $PWD 'node_modules\electron\dist\electron.exe'
+          if (-not (Test-Path $electron)) { throw 'No se encontró el binario de Electron para verificar el ABI.' }
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          & $electron -e "require('better-sqlite3'); console.log('better-sqlite3 carga con el ABI de Electron');"
+          $code = $LASTEXITCODE
+          Remove-Item Env:\ELECTRON_RUN_AS_NODE
+          if ($code -ne 0) { throw 'better-sqlite3 no carga con el ABI de Electron; el instalador fallaría en todas las rutas API.' }
+
       - name: Build Next.js desktop SQLite server
         run: npm run build
         env:
