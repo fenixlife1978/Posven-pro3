@@ -24,6 +24,8 @@ test('el workflow recompila better-sqlite3 para el ABI de Electron antes de empa
   assert.match(workflow, /better-sqlite3-v\$sqliteVersion-electron-v\$abi-win32-x64\.tar\.gz/);
   assert.match(workflow, /posven3-abi-probe\.cjs/);
   assert.match(workflow, /getAbi\('\$electronVersion','electron'\)/);
+  // El addon nativo se carga al abrir la base, no con require().
+  assert.match(workflow, /new D\(':memory:'\)/);
   assert.match(workflow, /ELECTRON_RUN_AS_NODE/);
   assert.match(workflow, /require\('better-sqlite3'\)/);
 });
