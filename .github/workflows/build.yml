@@ -109,24 +109,27 @@ jobs:
       - name: Rebuild SQLite binding for the Electron ABI
         shell: pwsh
         run: |
+          $root = $PWD.Path
           $target = node -p "require('./node_modules/electron/package.json').version"
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($target)) { throw 'No se pudo determinar la versión de Electron.' }
-          Write-Host "Compilando better-sqlite3 desde fuente para Electron $target"
-          # prebuild-install (usado por electron-rebuild) se salta la descarga si ya
-          # existe un binario, así que conservaba el de Node sin avisar. Se elimina
-          # el artefacto previo y se compila contra las cabeceras de Electron.
-          Remove-Item -Recurse -Force 'node_modules\better-sqlite3\build' -ErrorAction SilentlyContinue
-          Push-Location node_modules\better-sqlite3
-          npx --yes node-gyp rebuild --release --target=$target --dist-url=https://electronjs.org/headers --arch=x64
-          $gypExit = $LASTEXITCODE
-          if ($gypExit -ne 0) {
-            Write-Host 'node-gyp falló; se reintenta con npm rebuild --build-from-source.'
-            Pop-Location
+          $moduleDir = Join-Path $root 'node_modules\better-sqlite3'
+          $prebuild = Join-Path $root 'node_modules\.bin\prebuild-install.cmd'
+          if (-not (Test-Path $prebuild)) { throw 'No se encontró prebuild-install en node_modules.' }
+          Write-Host "Instalando better-sqlite3 precompilado para Electron $target"
+          # prebuild-install se salta la descarga si ya hay un binario, así que
+          # electron-rebuild conservaba el de Node sin avisar. --force obliga a
+          # traer el binario del ABI de Electron (better-sqlite3 los publica).
+          Push-Location $moduleDir
+          & $prebuild --runtime=electron --target=$target --arch=x64 --force
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0) {
+            Write-Host 'Sin prebuild para Electron; se compila desde fuente.'
+            Remove-Item -Recurse -Force (Join-Path $moduleDir 'build') -ErrorAction SilentlyContinue
             npm rebuild better-sqlite3 --build-from-source --runtime=electron --target=$target --dist-url=https://electronjs.org/headers --foreground-scripts
-            if ($LASTEXITCODE -ne 0) { throw "No se pudo compilar better-sqlite3 para Electron (código $LASTEXITCODE)" }
-          } else {
-            Pop-Location
+            $code = $LASTEXITCODE
           }
+          if ($code -ne 0) { throw "No se pudo obtener better-sqlite3 para Electron (código $code)" }
 
       - name: Diagnóstico del ABI de SQLite (informativo)
         continue-on-error: true
