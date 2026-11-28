@@ -111,35 +111,29 @@ jobs:
         run: |
           try {
             $root = $PWD.Path
-            $target = node -p "require('./node_modules/electron/package.json').version"
-            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($target)) { throw 'No se pudo determinar la versión de Electron.' }
+            $electronVersion = node -p "require('./node_modules/electron/package.json').version"
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($electronVersion)) { throw 'No se pudo determinar la versión de Electron.' }
+            $abi = node -p "require('node-abi').getAbi('$electronVersion','electron')"
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($abi)) { throw "No se pudo resolver el ABI de Electron $electronVersion." }
+            $sqliteVersion = node -p "require('./node_modules/better-sqlite3/package.json').version"
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sqliteVersion)) { throw 'No se pudo determinar la versión de better-sqlite3.' }
+            # prebuild-install se salta la descarga si ya existe un binario y sale
+            # con código 0 sin avisar, así que el paquete llevaba el de Node. Se
+            # descarga el prebuild exacto del ABI de Electron desde la release.
+            $url = "https://github.com/WiseLibs/better-sqlite3/releases/download/v$sqliteVersion/better-sqlite3-v$sqliteVersion-electron-v$abi-win32-x64.tar.gz"
+            Write-Host "Descargando $url"
+            $tgz = Join-Path $env:RUNNER_TEMP "better-sqlite3-electron-v$abi.tar.gz"
+            Invoke-WebRequest -Uri $url -OutFile $tgz -UseBasicParsing
             $moduleDir = Join-Path $root 'node_modules\better-sqlite3'
-            $prebuild = Join-Path $root 'node_modules\.bin\prebuild-install.cmd'
-            if (-not (Test-Path $prebuild)) { throw 'No se encontró prebuild-install en node_modules.' }
-            Write-Host "Instalando better-sqlite3 precompilado para Electron $target"
-            # prebuild-install se salta la descarga si ya hay un binario, así que
-            # electron-rebuild conservaba el de Node sin avisar. --force obliga a
-            # traer el binario del ABI de Electron (better-sqlite3 los publica).
-            Push-Location $moduleDir
-            & $prebuild --runtime=electron --target=$target --arch=x64 --force
-            $code = $LASTEXITCODE
-            Pop-Location
-            if ($code -ne 0) { throw "prebuild-install falló con código $code" }
-            # Con el binario de Electron instalado, Node no puede cargarlo (otro ABI).
+            Remove-Item -Recurse -Force (Join-Path $moduleDir 'build') -ErrorAction SilentlyContinue
+            tar -xzf $tgz -C $moduleDir
+            if ($LASTEXITCODE -ne 0) { throw "La extracción del prebuild falló con código $LASTEXITCODE" }
+            $binary = Join-Path $moduleDir 'build\Release\better_sqlite3.node'
+            if (-not (Test-Path $binary)) { throw 'El prebuild descargado no contiene build/Release/better_sqlite3.node.' }
+            # Con el ABI de Electron, Node no puede cargar el addon.
             node -e "require('better-sqlite3')" 2>$null
-            $stillNodeAbi = ($LASTEXITCODE -eq 0)
+            if ($LASTEXITCODE -eq 0) { throw 'El binario descargado sigue siendo el de Node, no el de Electron.' }
             $global:LASTEXITCODE = 0
-            if ($stillNodeAbi) {
-              Write-Host 'El binario sigue siendo el de Node; se compila desde fuente.'
-              Remove-Item -Recurse -Force (Join-Path $moduleDir 'build') -ErrorAction SilentlyContinue
-              npm rebuild better-sqlite3 --build-from-source --runtime=electron --target=$target --dist-url=https://electronjs.org/headers --foreground-scripts
-              if ($LASTEXITCODE -ne 0) { throw "npm rebuild --build-from-source falló con código $LASTEXITCODE" }
-              node -e "require('better-sqlite3')" 2>$null
-              $stillNodeAbi = ($LASTEXITCODE -eq 0)
-              $global:LASTEXITCODE = 0
-              if ($stillNodeAbi) { throw 'El binario sigue siendo el de Node incluso tras compilar desde fuente.' }
-            }
-            if (-not (Test-Path (Join-Path $moduleDir 'build\Release\better_sqlite3.node'))) { throw 'No se generó el binario SQLite para Electron.' }
             exit 0
           } catch {
             Write-Host "::error title=SQLite ABI::$($_.Exception.Message)"
