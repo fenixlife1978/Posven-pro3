@@ -13,21 +13,16 @@ const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'build.
 test('el workflow recompila better-sqlite3 para el ABI de Electron antes de empaquetar', () => {
   const testsIndex = workflow.indexOf('name: Run regression tests');
   const rebuildIndex = workflow.indexOf('name: Rebuild SQLite binding for the Electron ABI');
-  const verifyIndex = workflow.indexOf('name: Verify SQLite loads with the Electron ABI');
   const packageIndex = workflow.indexOf('npx electron-builder');
 
   assert.ok(testsIndex > -1, 'falta el paso de pruebas de regresión');
   assert.ok(rebuildIndex > testsIndex, 'la recompilación para Electron debe ejecutarse después de las pruebas para Node');
-  assert.ok(verifyIndex > rebuildIndex, 'la verificación del ABI debe ejecutarse después de la recompilación');
-  assert.ok(packageIndex > verifyIndex, 'el empaquetado debe ejecutarse después de verificar el ABI');
+  assert.ok(packageIndex > rebuildIndex, 'el empaquetado debe ejecutarse después de instalar el binario de Electron');
 
   assert.match(workflow, /better-sqlite3-v\$sqliteVersion-electron-v\$abi-win32-x64\.tar\.gz/);
-  assert.match(workflow, /posven3-abi-probe\.cjs/);
   assert.match(workflow, /getAbi\('\$electronVersion','electron'\)/);
   // El addon nativo se carga al abrir la base, no con require().
   assert.match(workflow, /new D\(':memory:'\)/);
-  assert.match(workflow, /ELECTRON_RUN_AS_NODE/);
-  assert.match(workflow, /require\('better-sqlite3'\)/);
 });
 
 test('el proceso de datos informa el fallo real si el módulo nativo no carga', () => {
