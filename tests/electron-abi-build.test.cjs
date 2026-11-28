@@ -24,6 +24,7 @@ test('el workflow recompila better-sqlite3 para el ABI de Electron antes de empa
   assert.match(workflow, /prebuild-install\.cmd/);
   assert.match(workflow, /--runtime=electron --target=\$target --arch=x64 --force/);
   assert.match(workflow, /--build-from-source --runtime=electron/);
+  assert.match(workflow, /posven3-abi-probe\.cjs/);
   assert.match(workflow, /ELECTRON_RUN_AS_NODE/);
   assert.match(workflow, /require\('better-sqlite3'\)/);
 });
