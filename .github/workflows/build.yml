@@ -127,6 +127,9 @@ jobs:
           # Si Node todavía lo carga, el binario sigue siendo el de Node.
           node -e "require('better-sqlite3')" 2>$null
           $stillNodeAbi = ($LASTEXITCODE -eq 0)
+          # El wrapper de Actions termina con $LASTEXITCODE. Esta comprobación
+          # debe fallar con el binario de Electron, así que se limpia el código.
+          $global:LASTEXITCODE = 0
           if ($code -ne 0 -or $stillNodeAbi) {
             Write-Host 'Se compila better-sqlite3 desde fuente contra las cabeceras de Electron.'
             Remove-Item -Recurse -Force (Join-Path $moduleDir 'build') -ErrorAction SilentlyContinue
@@ -134,6 +137,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'No se pudo compilar better-sqlite3 para Electron.' }
           }
           if (-not (Test-Path (Join-Path $moduleDir 'build\Release\better_sqlite3.node'))) { throw 'No se generó el binario SQLite para Electron.' }
+          exit 0
 
       - name: Verify SQLite loads with the Electron ABI
         shell: pwsh
@@ -152,6 +156,7 @@ jobs:
             Remove-Item -Force $probe -ErrorAction SilentlyContinue
           }
           if ($code -ne 0) { throw 'better-sqlite3 no carga con el ABI de Electron; el instalador fallaría en todas las rutas API.' }
+          exit 0
 
       - name: Build Windows installer without publishing a Release
         shell: pwsh
